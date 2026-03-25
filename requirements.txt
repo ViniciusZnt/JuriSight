@@ -1,0 +1,28 @@
+# Scraping
+scrapy>=2.11.0
+scrapy-playwright>=0.0.40
+playwright>=1.40.0
+pdfplumber>=0.10.0
+
+# NLP / NER
+spacy>=3.7.0
+# LeNER-Br: instalar manualmente via https://github.com/peluz/lener-br
+
+# Embeddings e LLM local
+ollama>=0.2.0
+
+# Vector DB e GraphRAG
+chromadb>=0.5.0
+lightrag-hku>=1.0.0
+
+# Busca lexical
+rank-bm25>=0.2.2
+
+# Interface
+streamlit>=1.35.0
+
+# Utilitários
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+loguru>=0.7.0
+tqdm>=4.66.0

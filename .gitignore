@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Dados locais (não versionar — muito grandes)
+data/raw/
+data/processed/
+data/index/
+
+# Ambiente
+.env
+*.env
+
+# Scrapy
+.scrapy/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
