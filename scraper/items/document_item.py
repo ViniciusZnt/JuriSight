@@ -2,34 +2,43 @@
 Definição dos campos de um documento jurídico coletado do TST.
 """
 
+# scraper/items/document_item.py
+
 import scrapy
 
-
 class DocumentItem(scrapy.Item):
-    # --- Identificação ---
-    numero_processo = scrapy.Field()
-    tipo_documento  = scrapy.Field()   # ACORDAO | SUMULA | OJ | PRECEDENTE_NORMATIVO | DECISAO_MONOCRATICA
-    hierarquia_categoria = scrapy.Field()  # 1=Súmula ... 5=Decisão Monocrática (só para ordenação)
-    url_original    = scrapy.Field()
+    # Metadados do pipeline
+    tipo_documento          = scrapy.Field()
+    hierarquia_categoria    = scrapy.Field()
+    ano                     = scrapy.Field()
+    mes                     = scrapy.Field()
 
-    # --- Metadados ---
-    data_julgamento = scrapy.Field()
-    relator         = scrapy.Field()
-    orgao_julgador  = scrapy.Field()
+    # Identificação
+    id_documento            = scrapy.Field()
+    numero_processo         = scrapy.Field()
+    tribunal                = scrapy.Field()
+    classe_processo         = scrapy.Field()
+    sigla_classe            = scrapy.Field()
 
-    # --- Partes ---
-    partes = scrapy.Field()  # [{"nome": str, "tipo": "RECLAMANTE"|"RECLAMADO"}]
+    # Pessoas
+    relator                 = scrapy.Field()
+    turma                   = scrapy.Field()
+    gabinete                = scrapy.Field()
+    id_gabinete             = scrapy.Field()
+    id_turma                = scrapy.Field()
 
-    # --- Seções do documento ---
-    ementa     = scrapy.Field()
-    relatorio  = scrapy.Field()
-    votos      = scrapy.Field()   # [str]
-    resultado  = scrapy.Field()   # PROVIDO | NAO_PROVIDO | PARCIALMENTE_PROVIDO
+    # Datas
+    data_julgamento         = scrapy.Field()
+    data_juntada            = scrapy.Field()
 
-    # --- Classificação (preenchida pelo NER após coleta) ---
-    tipo_violacao  = scrapy.Field()   # insalubridade | periculosidade | horas_extras | rescisao
-    agente_nocivo  = scrapy.Field()   # benzeno | ruido | calor | ...
-    nrs_citadas    = scrapy.Field()   # [str]
+    # Conteúdo — seções separadas
+    ementa                  = scrapy.Field()  # campo "ementa" da API (já limpo)
+    cabecalho               = scrapy.Field()  # partes, recorrente, recorrido
+    dispositivo             = scrapy.Field()  # o que foi decidido
+    relatorio               = scrapy.Field()  # resumo do caso
+    fundamentacao           = scrapy.Field()  # argumentação jurídica
+    votos                   = scrapy.Field()  # quem participou
 
-    # --- Texto bruto (para reprocessamento) ---
-    texto_integral = scrapy.Field()
+    # Metadados jurídicos
+    possui_ementa           = scrapy.Field()
+    referencia_legislativa  = scrapy.Field()
