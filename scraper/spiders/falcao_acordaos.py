@@ -6,27 +6,7 @@ from urllib.parse import urlencode
 import scrapy
 from scraper.items.document_item import DocumentItem
 from scraper.spiders.utils.juristkn import token_manager, JuristknRefreshError
-
-
-class HTMLTextExtractor(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self._parts = []
-
-    def handle_data(self, data):
-        self._parts.append(data)
-
-    def get_text(self):
-        return " ".join(p.strip() for p in self._parts if p.strip())
-
-
-def html_to_text(html: str) -> str:
-    if not html:
-        return ""
-    html = re.sub(r'src="data:image/[^"]*"', 'src=""', html)
-    parser = HTMLTextExtractor()
-    parser.feed(html)
-    return parser.get_text()
+from scraper.spiders.utils.html_parser import parse_document
 
 
 class FalcaoSpider(scrapy.Spider):
@@ -35,7 +15,7 @@ class FalcaoSpider(scrapy.Spider):
 
     BASE_URL = "https://jurisprudencia.jt.jus.br/jurisprudencia-nacional-backend/api/no-auth/pesquisa"
     PAGE_SIZE = 10
-    TASKS_FILE = "tasks.json"
+    TASKS_FILE = "tasks.json" # Pode ser alterado depois para uma lógica melhor
 
     custom_settings = {
         "CONCURRENT_REQUESTS": 2,
@@ -44,7 +24,7 @@ class FalcaoSpider(scrapy.Spider):
         "AUTOTHROTTLE_TARGET_CONCURRENCY": 1.5,
         "RETRY_TIMES": 3,
         "RETRY_HTTP_CODES": [429, 500, 502, 503, 504],
-        # 403 NÃO entra aqui — tratamos manualmente no errback
+        # 403 NÃO entra aqui — tratado errback
     }
 
     def build_url(self, data_inicio: str, data_fim: str, page: int) -> str:
@@ -67,7 +47,7 @@ class FalcaoSpider(scrapy.Spider):
         }
         return f"{self.BASE_URL}?{urlencode(params)}"
 
-    def start_requests(self):
+    async def start_requests(self):
         try:
             with open(self.TASKS_FILE, encoding="utf-8") as f:
                 tasks = json.load(f)
@@ -180,27 +160,27 @@ class FalcaoSpider(scrapy.Spider):
         # Metadados do pipeline
         item["tipo_documento"]       = "ACORDAO"
         item["hierarquia_categoria"] = 4
-        item["ano"]                  = task["ano"]
-        item["mes"]                  = task["mes"]
+        item["data_filtro"]          = task["data_inicio"]            # Data que o filtro foi aplicado para extração = DataJuntada
 
         # Campos diretos — confirmados no JSON real
         item["numero_processo"]      = doc.get("numeroProcesso", "")
-        item["tribunal"]             = doc.get("tribunal", "")        # "TRT4"
-        item["relator"]              = doc.get("relator", "")
-        item["turma"]                = doc.get("turma", "")           # "3ª Turma"
-        item["gabinete"]             = doc.get("gabinete", "")
-        item["classe_processo"]      = doc.get("classeProcesso", "")  # "Recurso Ordinário Trabalhista"
-        item["sigla_classe"]         = doc.get("siglaClasseProcesso", "") # "ROT"
-        item["data_julgamento"]      = doc.get("dataJulgamento", "")  # "11/03/2026"
-        item["data_juntada"]         = doc.get("dataJuntada", "")     # "12/03/2026"
-        item["id_documento"]         = doc.get("idDocumentoAcordao", "")
-        item["referencia_legislativa"] = doc.get("referenciaLegislativa", [])
-        item["possui_ementa"]        = doc.get("possuiEmenta", "N") == "S"
+        item["tribunal"]             = doc.get("tribunal", "")                # "TRT4"
+        item["relator"]              = doc.get("relator", "")                 # "PLAUTO CARNEIRO PORTO"
+        item["turma"]                = doc.get("turma", "")                   # "3ª Turma"
+        item["gabinete"]             = doc.get("gabinete", "")                # "Gab. Des. Plauto Carneiro Porto"
+        item["classe_processo"]      = doc.get("classeProcesso", "")          # "Recurso Ordinário Trabalhista"
+        item["sigla_classe"]         = doc.get("siglaClasseProcesso", "")     # "ROT"
+        item["data_julgamento"]      = doc.get("dataJulgamento", "")          # "11/03/2026"
+        item["data_juntada"]         = doc.get("dataJuntada", "")             # "12/03/2026"
+        item["id_documento"]         = doc.get("idDocumentoAcordao", "") 
+        item["referencia_legislativa"] = doc.get("referenciaLegislativa", []) # "art_11_clt", "trt7", "sumula_214_tst"....
+        item["possui_ementa"]        = doc.get("possuiEmenta", "N") == "S"    # "S"
 
 
         # HTML para texto
-        item["ementa"]               = html_to_text(doc.get("ementa", ""))
-        item["texto_acordao"]        = html_to_text(doc.get("textoAcordao", ""))
+        ementa_Acordao = parse_document(doc.get("ementa", ""),doc.get("textoAcordao", ""))
+        item["ementa"]               = ementa_Acordao["ementa"]
+        item["texto_acordao"]        = ementa_Acordao["acordao_section"]
 
         return item
     

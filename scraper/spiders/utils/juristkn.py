@@ -1,50 +1,54 @@
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from playwright.async_api import async_playwright
-
-
+ 
+# Tempo do token extraido empiricamente
+TOKEN_TTL_SECONDS = 3600
+ 
+ 
 class JuristknRefreshError(Exception):
     pass
-
-
+ 
+ 
 class TokenManager:
     """
-    Gerencia o ciclo de vida do juristkn + sessionId.
-    Renova proativamente 5 minutos antes de expirar.
+    Gerencia juristkn + sessionId do portal TST.
+ 
+    Como o cookie não possui expires_at, o TTL é fixo via TOKEN_TTL_SECONDS.
+    Renova automaticamente quando o token expira.
     """
-    RENEW_BEFORE_EXPIRY_SECONDS = 300  # renova 5 min antes
-
-    def __init__(self):
-        self._tokens: dict | None = None
+ 
+    def __init__(self, ttl_seconds: int = TOKEN_TTL_SECONDS):
+        self._ttl_seconds = ttl_seconds
+        self._juristkn: str | None = None
+        self._session_id: str | None = None
         self._expires_at: datetime | None = None
-
+ 
     @property
     def is_expired(self) -> bool:
         if self._expires_at is None:
             return True
-        now = datetime.now(tz=timezone.utc)
-        remaining = (self._expires_at - now).total_seconds()
-        return remaining < self.RENEW_BEFORE_EXPIRY_SECONDS
-
-    def get_tokens(self) -> dict:
-        """Retorna tokens válidos, renovando se necessário."""
+        return datetime.now(tz=timezone.utc) >= self._expires_at
+ 
+    def get_tokens(self) -> tuple[str, str]:
+        """Retorna (juristkn, sessionId), renovando se necessário."""
         if self.is_expired:
-            self._tokens = self._refresh()
-        return self._tokens
-
-    def force_refresh(self) -> dict:
-        """Força renovação imediata — chamado ao receber 403."""
-        self._tokens = self._refresh()
-        return self._tokens
-
-    def _refresh(self) -> dict:
+            self._refresh()
+        return self._juristkn, self._session_id
+ 
+    def force_refresh(self) -> tuple[str, str]:
+        """Força renovação imediata — chamar ao receber 403."""
+        self._refresh()
+        return self._juristkn, self._session_id
+ 
+    def _refresh(self) -> None:
         try:
-            return asyncio.run(self._fetch_async())
+            asyncio.run(self._fetch_async())
         except Exception as e:
-            raise JuristknRefreshError(f"Erro ao refresh juristkn: {e}") from e
-
-    async def _fetch_async(self) -> dict:
+            raise JuristknRefreshError(f"Erro ao renovar token: {e}") from e
+ 
+    async def _fetch_async(self) -> None:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(
@@ -55,58 +59,32 @@ class TokenManager:
                 )
             )
             page = await context.new_page()
-
+ 
             await page.goto(
                 "https://jurisprudencia.jt.jus.br/jurisprudencia-nacional/pesquisa",
                 wait_until="load",
             )
-
+ 
             async with page.expect_request(
                 lambda r: "/api/no-auth/pesquisa" in r.url
             ) as req_info:
                 await page.reload()
-
-            request = await req_info.value
-            url = request.url
-
-            # Extrai token e sessionId da URL
-            juristkn_match = re.search(r"juristkn=([^&]+)", url)
-            session_match = re.search(r"sessionId=([^&]+)", url)
-
-            if not juristkn_match or not session_match:
-                await browser.close()
-                raise JuristknRefreshError(
-                    "Não foi possível capturar juristkn/sessionId."
-                )
-
-            # Extrai expiração do cookie de sessão
-            cookies = await context.cookies()
-            session_cookie = next(
-                (c for c in cookies if c["name"] == "SESSION_ID_COOKIE"), None
-            )
-
+ 
+            url = (await req_info.value).url
             await browser.close()
-
-            # Converte unix timestamp para datetime
-            if session_cookie and session_cookie.get("expires", -1) > 0:
-                self._expires_at = datetime.fromtimestamp(
-                    session_cookie["expires"], tz=timezone.utc
-                )
-            else:
-                # Fallback: 30 minutos
-                from datetime import timedelta
-                self._expires_at = datetime.now(tz=timezone.utc) + timedelta(minutes=30)
-
-            remaining = (self._expires_at - datetime.now(tz=timezone.utc)).total_seconds()
-
-            return {
-                "juristkn":    juristkn_match.group(1),
-                "sessionId":   session_match.group(1),
-                "captured_at": datetime.now().isoformat(),
-                "expires_at":  self._expires_at.isoformat(),
-                "ttl_seconds": int(remaining),
-            }
-
-
+ 
+        juristkn_match = re.search(r"juristkn=([^&]+)", url)
+        session_match  = re.search(r"sessionId=([^&]+)", url)
+ 
+        if not juristkn_match or not session_match:
+            raise JuristknRefreshError(
+                "juristkn/sessionId não encontrados na URL capturada."
+            )
+ 
+        self._juristkn   = juristkn_match.group(1)
+        self._session_id = session_match.group(1)
+        self._expires_at = datetime.now(tz=timezone.utc) + timedelta(seconds=self._ttl_seconds)
+ 
+ 
 # Singleton
 token_manager = TokenManager()

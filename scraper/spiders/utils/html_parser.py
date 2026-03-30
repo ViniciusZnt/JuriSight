@@ -1,100 +1,109 @@
-# scraper/spiders/utils/html_parser.py
-
 import re
-from html.parser import HTMLParser
 from bs4 import BeautifulSoup
 
 
 def _remove_base64(html: str) -> str:
-    """Remove imagens base64 que chegam a centenas de KB por documento."""
+    """Remove imagens base64 para não poluir o texto extraído."""
     return re.sub(r'src="data:image/[^"]*"', 'src=""', html)
-
-
-class _TextExtractor(HTMLParser):
-    """Parser simples que coleta apenas o texto entre as tags."""
-    def __init__(self):
-        super().__init__()
-        self._parts = []
-
-    def handle_data(self, data):
-        stripped = data.strip()
-        if stripped:
-            self._parts.append(stripped)
-
-    def get_text(self) -> str:
-        return " ".join(self._parts)
 
 
 def html_to_text(html: str) -> str:
     """Converte HTML para texto puro."""
     if not html:
         return ""
-    html = _remove_base64(html)
-    parser = _TextExtractor()
-    parser.feed(html)
-    return parser.get_text()
+    soup = BeautifulSoup(_remove_base64(html), "html.parser")
+    return soup.get_text(separator=" ", strip=True)
 
 
 # Mapeamento dos títulos das seções para nomes de campo
 _SECTION_MAP = {
-    "Identificação":  "cabecalho",
-    "EMENTA":         "ementa_secao",   # ementa extraída do textoAcordao
-    "ACÓRDÃO":        "dispositivo",
-    "RELATÓRIO":      "relatorio",
-    "FUNDAMENTAÇÃO":  "fundamentacao",
-    "Fundamentação":  "fundamentacao",  # alguns TRTs usam capitalização diferente
-    "VOTOS":          "votos",
-    "Votos":          "votos",
+    "Identificação": "cabecalho",
+    "EMENTA":        "ementa",
+    "RELATÓRIO":     "relatorio",
+    "FUNDAMENTAÇÃO": "fundamentacao",
+    "Fundamentação": "fundamentacao",
+    "ACÓRDÃO":       "dispositivo",
+    "VOTOS":         "votos",
+    "Votos":         "votos",
 }
 
 
-def extract_sections(html: str) -> dict:
+def extract_ementa(ementa_html: str) -> str:
     """
-    Extrai as seções do textoAcordao separadamente.
+    Extrai o texto puro do campo textoEmenta.
 
-    O HTML do acórdão tem uma estrutura de divs com IDs no padrão:
-        id_XXXXXXX_titulo    → título da seção (ex: "EMENTA")
+    textoEmenta é um HTML simples — apenas parágrafos <p> com o texto
+    da ementa, sem a estrutura de id_XXXXX_titulo/conteudo.
+    Não passa por extract_sections.
+    """
+    return html_to_text(ementa_html)
+
+
+def extract_sections(acordao_html: str) -> dict:
+    """
+    Extrai as seções do campo textoAcordao separadamente.
+
+    O HTML segue o padrão:
+        id_XXXXXXX_titulo    → título da seção (ex: "EMENTA", "RELATÓRIO")
         id_XXXXXXX_conteudo  → conteúdo da seção
 
-    Retorna um dicionário com as seções encontradas.
-    Seções não encontradas ficam como string vazia.
+    Retorna dict com as seções encontradas. Seções ausentes ficam como "".
     """
     result = {field: "" for field in _SECTION_MAP.values()}
 
-    if not html:
+    if not acordao_html:
         return result
 
-    html = _remove_base64(html)
+    soup = BeautifulSoup(_remove_base64(acordao_html), "html.parser")
 
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-    except Exception:
-        return result
-
-    # Busca todos os divs de título (excluindo os "_titulo_completo")
+    # Busca divs de título — exclui os "_titulo_completo"
     titulo_divs = soup.find_all(
         "div",
-        id=lambda x: x and x.endswith("_titulo") and "completo" not in x
+        id=lambda x: x and x.endswith("_titulo") and "completo" not in x,
     )
 
     for titulo_div in titulo_divs:
+        # O título pode estar num <p> filho (alguns TRTs fazem isso)
         titulo_texto = titulo_div.get_text(strip=True)
 
-        if titulo_texto not in _SECTION_MAP:
+        field_name = _SECTION_MAP.get(titulo_texto)
+        if not field_name:
             continue
 
-        field_name = _SECTION_MAP[titulo_texto]
-
-        # O conteúdo tem o mesmo prefixo numérico mas termina em "_conteudo"
         content_id = titulo_div["id"].replace("_titulo", "_conteudo")
         content_div = soup.find("div", id=content_id)
 
-        if content_div:
-            text = content_div.get_text(separator=" ", strip=True)
-            # Acumula se o mesmo campo aparecer mais de uma vez
-            if result[field_name]:
-                result[field_name] += " " + text
-            else:
-                result[field_name] = text
+        if not content_div:
+            continue
+
+        text = content_div.get_text(separator=" ", strip=True)
+        if not text:
+            continue
+
+        # Acumula se o mesmo campo aparecer mais de uma vez (ex: dois blocos de VOTOS)
+        if result[field_name]:
+            result[field_name] += " " + text
+        else:
+            result[field_name] = text
 
     return result
+
+
+def parse_document(ementa_html: str, acordao_html: str) -> dict:
+    """
+    Ponto de entrada principal — processa os dois campos separados da API.
+
+    Args:
+        ementa_html:  campo textoEmenta da resposta da API
+        acordao_html: campo textoAcordao da resposta da API
+
+    Returns:
+        dict com ementa (do textoEmenta) + seções do textoAcordao
+    """
+    sections = {}
+    sections["acordao_section"] = extract_sections(acordao_html)
+
+    # A ementa canônica vem do textoEmenta — mais limpa que a do textoAcordao
+    sections["ementa"] = extract_ementa(ementa_html) or sections.get("ementa", "")
+
+    return sections

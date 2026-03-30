@@ -10,8 +10,7 @@ class DocumentItem(scrapy.Item):
     # Metadados do pipeline
     tipo_documento          = scrapy.Field()
     hierarquia_categoria    = scrapy.Field()
-    ano                     = scrapy.Field()
-    mes                     = scrapy.Field()
+    data_filtro             = scrapy.Field()
 
     # Identificação
     id_documento            = scrapy.Field()
