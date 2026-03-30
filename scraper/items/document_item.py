@@ -32,6 +32,7 @@ class DocumentItem(scrapy.Item):
 
     # Conteúdo — seções separadas
     ementa                  = scrapy.Field()  # campo "ementa" da API (já limpo)
+    texto_acordao           = scrapy.Field()
     cabecalho               = scrapy.Field()  # partes, recorrente, recorrido
     dispositivo             = scrapy.Field()  # o que foi decidido
     relatorio               = scrapy.Field()  # resumo do caso

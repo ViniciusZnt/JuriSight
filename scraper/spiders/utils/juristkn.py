@@ -5,7 +5,6 @@ from playwright.async_api import async_playwright
  
 # Tempo do token extraido empiricamente
 TOKEN_TTL_SECONDS = 3600
-##asas
  
 class JuristknRefreshError(Exception):
     pass
