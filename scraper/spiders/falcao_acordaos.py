@@ -24,11 +24,11 @@ class FalcaoSpider(scrapy.Spider):
         "AUTOTHROTTLE_TARGET_CONCURRENCY": 1.5,
         "RETRY_TIMES": 3,
         "RETRY_HTTP_CODES": [429, 500, 502, 503, 504],
+        "LOG_LEVEL": "DEBUG"
         # 403 NÃO entra aqui — tratado errback
     }
 
-    def build_url(self, data_inicio: str, data_fim: str, page: int) -> str:
-        tokens = token_manager.get_tokens()  # renova se necessário
+    def build_url(self, data_inicio: str, data_fim: str, page: int, tokens: dict) -> str:
         params = {
             "sessionId":              tokens["sessionId"],
             "latitude":               0,
@@ -46,8 +46,36 @@ class FalcaoSpider(scrapy.Spider):
             "size":                   self.PAGE_SIZE,
         }
         return f"{self.BASE_URL}?{urlencode(params)}"
+    
+    def _make_request(self, data_inicio: str, data_fim: str, page: int, meta: dict) -> scrapy.Request:
+        """Constrói a requisição com a URL (via build_url) e os cookies necessários."""
+        tokens = token_manager.get_tokens()
+        url = self.build_url(data_inicio, data_fim, page, tokens)
 
-    async def start_requests(self):
+        cookies = {
+            "JSESSIONID": tokens.get("jsessionid"),
+            "SESSION_ID_COOKIE_PUJ": tokens["sessionId"],
+        }
+        header = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+            "Referer": "https://jurisprudencia.jt.jus.br/jurisprudencia-nacional/pesquisa",
+            "Origin": "https://jurisprudencia.jt.jus.br",
+            "Connection": "keep-alive",
+        }
+        
+        return scrapy.Request(
+            url,
+            headers=header,
+            #cookies=cookies,
+            meta=meta,
+            callback=self.parse_results,
+            errback=self.errback,
+            dont_filter=True,
+        )
+
+    async def start(self):
         try:
             with open(self.TASKS_FILE, encoding="utf-8") as f:
                 tasks = json.load(f)
@@ -73,18 +101,18 @@ class FalcaoSpider(scrapy.Spider):
         self.logger.info(f"{len(tasks)} tasks carregadas.")
 
         for task in tasks:
-            yield scrapy.Request(
-                self.build_url(task["data_inicio"], task["data_fim"], page=0),
-                meta={"task": task, "page": 0, "retry_on_403": True},
-                callback=self.parse_results,
-                errback=self.errback,
-                dont_filter=True,
+            yield self._make_request(
+                task["data_inicio"],
+                task["data_fim"],
+                page=0,
+                meta={"task": task, "page": 0, "retry_on_403": True}
             )
 
     def parse_results(self, response):
         # 403 durante a coleta — token expirou no meio do caminho
         if response.status == 403:
             return self._handle_expired_token(response)
+            
 
         try:
             data = response.json()
@@ -110,12 +138,11 @@ class FalcaoSpider(scrapy.Spider):
 
         if len(documentos) == self.PAGE_SIZE:
             next_page = page + 1
-            yield scrapy.Request(
-                self.build_url(task["data_inicio"], task["data_fim"], page=next_page),
-                meta={"task": task, "page": next_page, "retry_on_403": True},
-                callback=self.parse_results,
-                errback=self.errback,
-                dont_filter=True,
+            yield self._make_request(
+                task["data_inicio"],
+                task["data_fim"],
+                page=next_page,
+                meta={"task": task, "page": next_page, "retry_on_403": True}
             )
 
     def _handle_expired_token(self, response):
@@ -144,14 +171,12 @@ class FalcaoSpider(scrapy.Spider):
             self.logger.error(f"Falha ao renovar token: {e}")
             return
 
-        # Re-emite a mesma request com token novo e sem retry_on_403
-        # para evitar loop infinito
-        yield scrapy.Request(
-            self.build_url(task["data_inicio"], task["data_fim"], page=page),
-            meta={"task": task, "page": page, "retry_on_403": False},
-            callback=self.parse_results,
-            errback=self.errback,
-            dont_filter=True,
+        # Re-emite a mesma request com token novo e sem retry_on_403 para evitar loop infinito
+        yield self._make_request(
+            task["data_inicio"],
+            task["data_fim"],
+            page=page,
+            meta={"task": task, "page": page, "retry_on_403": False}
         )
 
     def extract_item(self, doc: dict, task: dict) -> DocumentItem:
@@ -160,7 +185,7 @@ class FalcaoSpider(scrapy.Spider):
         # Metadados do pipeline
         item["tipo_documento"]       = "ACORDAO"
         item["hierarquia_categoria"] = 4
-        item["data_filtro"]          = task["data_inicio"]            # Data que o filtro foi aplicado para extração = DataJuntada
+        item["data_filtro"]          = task["data_inicio"]                    # Data que o filtro foi aplicado para extração = DataJuntada
 
         # Campos diretos — confirmados no JSON real
         item["numero_processo"]      = doc.get("numeroProcesso", "")
@@ -180,7 +205,7 @@ class FalcaoSpider(scrapy.Spider):
         # HTML para texto
         ementa_Acordao = parse_document(doc.get("ementa", ""),doc.get("textoAcordao", ""))
         item["ementa"]               = ementa_Acordao["ementa"]
-        item["texto_acordao"]        = ementa_Acordao["acordao_section"]
+        item["acordao"]        = ementa_Acordao["acordao_section"]
 
         return item
     

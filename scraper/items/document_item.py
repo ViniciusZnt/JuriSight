@@ -30,13 +30,12 @@ class DocumentItem(scrapy.Item):
     data_julgamento         = scrapy.Field()
     data_juntada            = scrapy.Field()
 
-    # Conteúdo — seções separadas
-    ementa                  = scrapy.Field()  # campo "ementa" da API (já limpo)
-    texto_acordao           = scrapy.Field()
+    # Conteúdo Acordão — seções separadas
     cabecalho               = scrapy.Field()  # partes, recorrente, recorrido
-    dispositivo             = scrapy.Field()  # o que foi decidido
+    ementa                  = scrapy.Field()  # campo "ementa" da API (já limpo)
     relatorio               = scrapy.Field()  # resumo do caso
     fundamentacao           = scrapy.Field()  # argumentação jurídica
+    acordao                 = scrapy.Field()
     votos                   = scrapy.Field()  # quem participou
 
     # Metadados jurídicos

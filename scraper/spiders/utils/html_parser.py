@@ -17,14 +17,12 @@ def html_to_text(html: str) -> str:
 
 # Mapeamento dos títulos das seções para nomes de campo
 _SECTION_MAP = {
-    "Identificação": "cabecalho",
+    "CABEÇALHO": "cabecalho",
     "EMENTA":        "ementa",
     "RELATÓRIO":     "relatorio",
     "FUNDAMENTAÇÃO": "fundamentacao",
-    "Fundamentação": "fundamentacao",
-    "ACÓRDÃO":       "dispositivo",
+    "ACÓRDÃO":       "acordao",
     "VOTOS":         "votos",
-    "Votos":         "votos",
 }
 
 
@@ -63,21 +61,23 @@ def extract_sections(acordao_html: str) -> dict:
     )
 
     for titulo_div in titulo_divs:
-        # O título pode estar num <p> filho (alguns TRTs fazem isso)
         titulo_texto = titulo_div.get_text(strip=True)
 
         field_name = _SECTION_MAP.get(titulo_texto)
         if not field_name:
+            ##Talvez nessa parte criar logica de logger
             continue
 
         content_id = titulo_div["id"].replace("_titulo", "_conteudo")
         content_div = soup.find("div", id=content_id)
 
         if not content_div:
+            ##Talvez nessa parte criar logica de logger
             continue
 
         text = content_div.get_text(separator=" ", strip=True)
         if not text:
+            ##Talvez nessa parte criar logica de logger
             continue
 
         # Acumula se o mesmo campo aparecer mais de uma vez (ex: dois blocos de VOTOS)
@@ -102,8 +102,6 @@ def parse_document(ementa_html: str, acordao_html: str) -> dict:
     """
     sections = {}
     sections["acordao_section"] = extract_sections(acordao_html)
-
-    # A ementa canônica vem do textoEmenta — mais limpa que a do textoAcordao
     sections["ementa"] = extract_ementa(ementa_html) or sections.get("ementa", "")
 
     return sections
