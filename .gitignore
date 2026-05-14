@@ -14,7 +14,6 @@ data/index/
 
 # Ambiente
 .env
-*.env
 
 # Scrapy
 .scrapy/
