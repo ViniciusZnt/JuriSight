@@ -1,11 +1,9 @@
 {
   "completed": false,
-  "current_date": "2023-01-01",
-  "current_delay_seconds": 30.0,
-  "documents_saved": 0,
-  "halt_message": "Too Many Requests",
-  "halt_reason": "blocked",
-  "next_page": 0,
-  "requests_made": 0,
-  "updated_at": "2026-05-14T22:37:45.812759Z"
+  "current_date": "2023-06-04",
+  "current_delay_seconds": 2.0,
+  "documents_saved": 27571,
+  "next_page": 8,
+  "requests_made": 2776,
+  "updated_at": "2026-05-17T17:45:39.038916Z"
 }
