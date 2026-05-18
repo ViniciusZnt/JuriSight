@@ -1,0 +1,103 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 150
+skinparam ranksep 120
+skinparam ArrowFontSize 10
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_TOP_DOWN()
+
+title JuriSight — Nível 3: Backend API
+
+' ── Externos ────────────────────────────────────────
+Container(frontend,   "Frontend",       "Next.js 14",   "Upload PDF, revisão de entidades, filtros e cards.")
+Container(ollama,     "Ollama",         "Runtime local", "Llama 3.2 3B + nomic-embed-text-v2")
+ContainerDb(postgres, "PostgreSQL",     "Banco Relacional", "Source of truth — DocumentoJuridico")
+ContainerDb(chroma,   "ChromaDB",       "Banco Vetorial",   "Chunks + 2 embeddings/chunk + metadados")
+ContainerDb(bm25f,    "BM25 Index",     "JSON / pickle",    "Índice lexical em memória")
+
+Container_Boundary(backend, "Backend API [FastAPI]") {
+
+    ' Entrada
+    Component(ctrl,     "API Controller",       "FastAPI Router",        "POST /enrich  POST /query\nGET /document/{id}  GET /health")
+
+    ' Ramo: extração de PDF
+    Component(pdf,      "PDF Extractor",        "pdfplumber",            "Extrai texto. Sumarização\nhierárquica para docs longos.")
+    Component(enrich,   "Query Enrichment",     "Llama 3.2 3B",          "Extrai EstruturaArgumentativa\nvia prompt few-shot → JSON.")
+
+    ' Construção da query
+    Component(qbuilder, "Query Builder",        "Python",                "String lexical (BM25)\ne frase tese (embedding).")
+    Component(emb,      "Embedding Service",    "nomic-embed-text-v2",   "Embedding 768d da frase tese.")
+
+    ' Busca híbrida
+    Component(hybrid,   "Hybrid Retrieval",     "Orquestrador",          "Coordena BM25 + vetorial\ncom filtros opcionais.")
+    Component(bm25comp, "BM25 Search",          "rank_bm25",             "Busca lexical por termos exatos:\nNR-15, CLT art. 192, benzeno.")
+    Component(vsearch,  "Vector Search",        "ChromaDB client",       "Busca vetorial Poly-Vector\ncom filtros de metadados.")
+    Component(rrf,      "RRF Fusion",           "Reciprocal Rank Fusion","Combina rankings BM25 + vetorial.\nRetorna top-20 documento_id.")
+
+    ' Recuperação e resposta
+    Component(retriever,"Doc Retriever",        "psycopg2 / asyncpg",    "Busca DocumentoJuridico\npor documento_id.")
+    Component(ranker,   "Hierarchical Ranker",  "Python",                "Ordena por hierarquia_categoria:\nsúmula → OJ → acórdão.")
+    Component(formatter,"Result Formatter",     "Pydantic",              "Serializa cards: tipo, ementa,\nrelator, provimento, link.")
+}
+
+' ── Layout ──────────────────────────────────────────
+' Espinha vertical (fluxo principal)
+Lay_D(ctrl,     pdf)
+Lay_D(pdf,      qbuilder)
+Lay_D(qbuilder, hybrid)
+Lay_D(hybrid,   rrf)
+Lay_D(rrf,      retriever)
+Lay_D(retriever,ranker)
+Lay_D(ranker,   formatter)
+
+' Ramos à direita
+Lay_R(pdf,      enrich)
+Lay_R(qbuilder, emb)
+Lay_R(hybrid,   bm25comp)
+Lay_R(bm25comp, vsearch)
+
+' Externos
+Lay_L(frontend, ctrl)
+Lay_R(enrich,   ollama)
+Lay_R(emb,      ollama)
+Lay_R(vsearch,  chroma)
+Lay_D(bm25comp, bm25f)
+Lay_R(retriever,postgres)
+
+' ── Relações ────────────────────────────────────────
+' Entrada
+Rel(frontend, ctrl,     "POST /enrich, POST /query")
+Rel(ctrl,     frontend, "EstruturaArgumentativa\n/ cards de resultado")
+
+' Extração PDF
+Rel(ctrl,     pdf,      "texto do PDF")
+Rel(pdf,      enrich,   "texto extraído")
+Rel(pdf,      ollama,   "sumarização (doc longo)")
+Rel(enrich,   ollama,   "prompt → JSON")
+
+' Construção da query
+Rel(ctrl,     qbuilder, "EstruturaArgumentativa")
+Rel(qbuilder, emb,      "frase tese")
+Rel(emb,      ollama,   "gera embedding")
+
+' Busca híbrida
+Rel(qbuilder, hybrid,   "string lexical + embedding")
+Rel(hybrid,   bm25comp, "busca lexical")
+Rel(hybrid,   vsearch,  "busca vetorial")
+Rel(bm25comp, bm25f,    "consulta")
+Rel(vsearch,  chroma,   "query + filtros")
+Rel(hybrid,   rrf,      "rankings")
+
+' Recuperação
+Rel(rrf,      retriever,"top-20 documento_id")
+Rel(retriever,postgres, "busca por ID")
+Rel(ctrl,     retriever,"GET /document/{id}")
+
+' Resposta
+Rel(retriever,ranker,   "documentos completos")
+Rel(ranker,   formatter,"ordenados por hierarquia")
+Rel(formatter,ctrl,     "payload JSON")
+
+@enduml

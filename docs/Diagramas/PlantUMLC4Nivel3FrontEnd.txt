@@ -1,0 +1,69 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 250
+skinparam ranksep 60
+skinparam ArrowFontSize 1
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_TOP_DOWN()
+
+title JuriSight — Nível 3: Frontend
+
+Container_Boundary(frontend, "Frontend [Next.js 14 — App Router]") {
+
+    Component(spage,  "Search / Upload Page",  "React Server Component '/'", "Ponto de entrada para UC01 (com PDF) e UC02 (sem PDF).")
+    Component(upload, "PDF Upload Component",  "React Client Component",     "Upload do PDF. Envia via POST /enrich. RF01, RNF03.")
+    Component(intent, "Intent Form",           "React Client Component",     "Intenção argumentativa em texto livre. UC01 e UC02. RF03.")
+    Component(apicli, "API Client Layer",      "fetch / TypeScript",         "POST /enrich  ·  POST /query  ·  GET /document/{id}")
+    Component(review, "Entity Review Form",    "React Client Component",     "Campos editáveis da EstruturaArgumentativa. UC04.")
+    Component(results,"Results View",          "React Client Component",     "Lista ordenada por hierarquia_categoria. UC08.")
+    Component(filters,"Filters Panel",         "React Client Component",     "Provimento, período e tipo de documento. UC03, UC05.")
+    Component(card,   "Result Card",           "React Client Component",     "Tipo, número, ementa, relator, provimento (badge) e link TST.")
+    Component(copier, "Citation Copier",       "React Client Component",     "Formata e copia citação para clipboard. UC07.")
+    Component(modal,  "Document Detail Modal", "React Client Component",     "Ementa integral, texto completo, relator, referências, link. UC06.")
+}
+
+Container(backend, "Backend API", "FastAPI", "POST /enrich, POST /query, GET /document/{id}")
+
+' ── Layout ──────────────────────────────────────────
+' Linha 1: entrada
+Lay_R(spage,  upload)
+Lay_R(upload, intent)
+Lay_R(intent, apicli)
+Lay_R(apicli, backend)
+
+' Linha 2: processamento
+Lay_D(spage,  review)
+Lay_R(review, results)
+
+' Linha 3: resultados
+Lay_D(review, filters)
+Lay_R(filters, card)
+Lay_R(card,   copier)
+
+' Linha 4: detalhe
+Lay_D(card, modal)
+
+' ── Relações ────────────────────────────────────────
+Rel(spage,   upload,  "renderiza")
+Rel(spage,   intent,  "renderiza")
+
+Rel(upload,  apicli,  "POST /enrich")
+Rel(intent,  apicli,  "POST /query")
+Rel(apicli,  backend, "REST / JSON")
+
+Rel(apicli,  review,  "EstruturaArgumentativa")
+Rel(review,  apicli,  "POST /query")
+Rel(apicli,  results, "lista rankeada")
+
+Rel(results, review,  "refinar (UC08)")
+Rel(results, filters, "renderiza")
+Rel(results, card,    "renderiza")
+
+Rel(card,    modal,   "abre detalhe (UC06)")
+Rel(modal,   apicli,  "GET /document/{id}")
+Rel(card,    copier,  "copiar citação (UC07)")
+Rel(modal,   copier,  "copiar citação")
+
+@enduml

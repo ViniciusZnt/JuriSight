@@ -1,0 +1,83 @@
+@startuml
+skinparam nodesep 400
+skinparam ranksep 200
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title JuriSight — Nível 3: Backend API
+
+Container(frontend, "Frontend", "Next.js 14", "Interface web: upload PDF, revisão de entidades, filtros e cards")
+
+Container_Boundary(backend, "Backend API [FastAPI]") {
+
+    Component(ctrl,      "API Controller",         "FastAPI Router",        "POST /query  POST /enrich\nGET /document/{id}  GET /health")
+    Component(pdf,       "PDF Extraction",         "pdfplumber",            "Extrai texto do PDF.\nSumarização hierárquica\nse o doc for longo. (RAM only)")
+    Component(enrich,    "Query Enrichment",       "Llama 3.2 3B",         "Extrai EstruturaArgumentativa\nvia prompt few-shot → JSON\nvalidado por Pydantic.")
+    Component(qbuilder,  "Query Builder",          "Python",                "Produz string lexical (BM25)\ne frase tese (embedding)\na partir da Estrutura.")
+    Component(emb,       "Embedding Service",      "nomic-embed-text-v2",   "Gera embedding 768d\nda frase tese.")
+    Component(hybrid,    "Hybrid Retrieval",       "Orquestrador",         "Coordena BM25 + vetorial\ncom filtros opcionais.")
+    Component(bm25comp,  "BM25 Lexical Search",    "rank_bm25 (memória)",   "Busca por termos exatos:\nNR-15, CLT art. 192, benzeno.")
+    Component(vsearch,   "Vector Search Adapter",  "ChromaDB client",       "Busca vetorial Poly-Vector\ncom filtros de metadados.")
+    Component(rrf,       "RRF Score Fusion",       "Reciprocal Rank Fusion","Combina rankings BM25 + vetorial.\nRetorna top-20 documento_id.")
+    Component(retriever, "Document Retriever",     "psycopg2 / asyncpg",    "Busca DocumentoJuridico\ncompleto por documento_id.")
+    Component(ranker,    "Hierarchical Ranker",    "Python",                "Ordena por hierarquia_categoria:\nsúmula → OJ → acórdão.")
+    Component(formatter, "Result Formatter",       "Pydantic",              "Serializa cards: tipo, ementa,\nrelator, provimento, link.")
+}
+
+ContainerDb(postgres, "PostgreSQL", "Banco Documental", "DocumentoJuridico completo (source of truth)")
+ContainerDb(chroma,   "ChromaDB",   "Banco Vetorial",   "Chunks + 2 embeddings/chunk + metadados mínimos")
+ContainerDb(bm25f,    "BM25 Index", "JSON/pickle",      "Índice lexical em memória (rank_bm25)")
+Container(ollama,     "Ollama Runtime", "Ollama",       "Llama 3.2 3B + nomic-embed-text-v2")
+Person(user,          "Advogado / Assistente Jurídico")
+
+' Posicionamento manual (mesmo layout, apenas trocado mongo → postgres)
+Lay_D(ctrl, pdf)
+Lay_D(pdf, qbuilder)
+Lay_D(qbuilder, hybrid)
+Lay_D(hybrid, rrf)
+Lay_D(rrf, retriever)
+Lay_D(retriever, ranker)
+Lay_D(ranker, formatter)
+
+Lay_R(pdf, enrich)
+Lay_R(hybrid, emb)
+Lay_D(hybrid, bm25comp)
+Lay_R(bm25comp, vsearch)
+
+Lay_R(enrich, ollama)
+Lay_R(emb, ollama)
+Lay_R(vsearch, chroma)
+Lay_R(bm25comp, bm25f)
+Lay_R(retriever, postgres)   ' agora aponta para PostgreSQL
+
+Lay_L(ctrl, frontend)
+Lay_L(frontend, user)
+
+' ===== RELAÇÕES (sem ortogonalidade) =====
+Rel(user, frontend, "Acessa via browser")
+Rel(frontend, ctrl, "POST /enrich / POST /query")
+
+Rel(ctrl, pdf, "Extrai texto")
+Rel(pdf, enrich, "Texto extraído")
+Rel(pdf, ollama, "Sumarização (doc longo)")
+Rel(enrich, ollama, "Prompt few-shot → JSON")
+Rel(ctrl, frontend, "EstruturaArgumentativa")
+
+Rel(ctrl, qbuilder, "EstruturaArgumentativa")
+Rel(qbuilder, emb, "frase tese")
+Rel(emb, ollama, "Gera embedding 768d")
+Rel(qbuilder, hybrid, "string lexical + embedding + filtros")
+Rel(hybrid, bm25comp, "Busca lexical")
+Rel(hybrid, vsearch, "Busca vetorial")
+Rel(bm25comp, bm25f, "Consulta índice")
+Rel(vsearch, chroma, "Query com filtros")
+Rel(hybrid, rrf, "Rankings BM25 + vetorial")
+Rel(rrf, retriever, "Top-20 documento_id")
+Rel(retriever, postgres, "Documentos por ID")   ' seta para PostgreSQL
+Rel(retriever, ranker, "Documentos completos")
+Rel(ranker, formatter, "Ordenados por hierarquia")
+Rel(formatter, ctrl, "Payload JSON")
+Rel(ctrl, frontend, "Cards de resultado")
+
+Rel(ctrl, retriever, "GET /document/{id}")
+
+@enduml

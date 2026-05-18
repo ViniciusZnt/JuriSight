@@ -1,0 +1,17 @@
+@startuml C4Context_JuriSight
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title JuriSight — Nível 1: Contexto
+
+Person(user,     "Advogado / Assistente Jurídico", "Usuário do Sistema")
+System(jurisight,"JuriSight",                       "Busca híbrida de jurisprudências trabalhistas.\nQuery Enrichment + RAG + ordenação por hierarquia jurídica.")
+System_Ext(falcao,"Portal Falcão / TST",            "jurisprudencia.tst.jus.br")
+
+Lay_R(user, jurisight)
+Lay_R(jurisight, falcao)
+
+Rel_R(user,      jurisight, "Pesquisa jurisprudências")
+Rel_R(jurisight, falcao,    "Coleta documentos via scraping")
+
+SHOW_LEGEND()
+@enduml
