@@ -1,9 +1,9 @@
 {
-  "completed": false,
-  "current_date": "2023-06-04",
+  "completed": true,
+  "current_date": "2024-01-01",
   "current_delay_seconds": 2.0,
-  "documents_saved": 27571,
-  "next_page": 8,
-  "requests_made": 2776,
-  "updated_at": "2026-05-17T17:45:39.038916Z"
+  "documents_saved": 38602,
+  "next_page": 0,
+  "requests_made": 3884,
+  "updated_at": "2026-05-18T21:07:57.571436Z"
 }

@@ -1,3 +1,9 @@
+"""
+Web Scraper (componente C4 — Pipeline de Ingestão).
+
+Coleta documentos e metadados do portal da Justiça do Trabalho via a API REST
+pública (no-auth), usando `requests`.
+"""
 import requests
 
 
@@ -30,7 +36,7 @@ class TransientApiError(ApiResponseError):
     pass
 
 
-class ApiClient:
+class WebScraper:
     def __init__(self, session=None, base_url=DEFAULT_BASE_URL, timeout=30):
         self.session = session or requests.Session()
         self.base_url = base_url

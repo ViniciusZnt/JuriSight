@@ -11,7 +11,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,9 +20,10 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
-from scraper.api import ApiClient
-from scraper.core import Scraper
-from scraper.db import CheckpointStore, PostgresStore
+from scraper.web_scraper import WebScraper
+from scraper.orchestrator import Orchestrator
+from scraper.db_writer import PostgresWriter
+from scraper.delta import CheckpointStore, resolve_collection_window
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -36,24 +37,9 @@ DATABASE_URL = os.getenv(
 )
 CHECKPOINT_PATH = ROOT / "scraper" / "checkpoint.json"
 
-COLLECTION_START = date(2023, 1, 1)
 
-
-def resolve_dates(from_date: date | None, to_date: date | None, store: PostgresStore) -> tuple[date, date]:
-    end = to_date or date.today() - timedelta(days=1)
-
-    if from_date:
-        print(f"Data de início forçada: {from_date}")
-        return from_date, end
-
-    last_raw = store.get_last_collected_date()
-    if last_raw:
-        last = date.fromisoformat(last_raw)
-        print(f"Último dia coletado: {last} — re-coletando a partir desse dia.")
-        return last, end
-
-    print(f"Banco vazio — iniciando do começo: {COLLECTION_START}")
-    return COLLECTION_START, end
+def resolve_dates(from_date: date | None, to_date: date | None, writer: PostgresWriter) -> tuple[date, date]:
+    return resolve_collection_window(from_date, to_date, writer.get_last_collected_date())
 
 
 def main() -> None:
@@ -88,40 +74,40 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    store = PostgresStore(DATABASE_URL)
+    writer = PostgresWriter(DATABASE_URL)
     try:
-        store.connect()
+        writer.connect()
     except Exception as e:
         print(f"Erro ao conectar no PostgreSQL: {e}", file=sys.stderr)
         sys.exit(1)
 
     try:
-        start, end = resolve_dates(args.from_date, args.to_date, store)
+        start, end = resolve_dates(args.from_date, args.to_date, writer)
     except Exception as e:
         print(f"Erro ao resolver datas: {e}", file=sys.stderr)
-        store.close()
+        writer.close()
         sys.exit(1)
 
     if start > end:
         print(f"Nenhuma coleta necessária: início ({start}) >= fim ({end}).")
-        store.close()
+        writer.close()
         return
 
     print(f"\nColetando de {start} até {end}.")
 
     checkpoint = CheckpointStore(args.checkpoint)
-    api = ApiClient()
-    scraper = Scraper(
+    api = WebScraper()
+    orchestrator = Orchestrator(
         api_client=api,
-        store=store,
+        writer=writer,
         checkpoint_store=checkpoint,
         colecao=args.colecao,
     )
 
     try:
-        result = scraper.run(start.isoformat(), end.isoformat())
+        result = orchestrator.run(start.isoformat(), end.isoformat())
     finally:
-        store.close()
+        writer.close()
 
     print("\n--- Resultado ---")
     print(f"  Concluído:        {result['completed']}")

@@ -1,3 +1,10 @@
+"""
+HTML Extractor (componente C4 — Pipeline de Ingestão).
+
+Extrai as seções estruturadas do HTML do documento (ementa, relatório,
+fundamentação, acórdão/dispositivo, votos) usando BeautifulSoup. O texto do
+acórdão é a base para a classificação de provimento.
+"""
 import re
 from bs4 import BeautifulSoup
 

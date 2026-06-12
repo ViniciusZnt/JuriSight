@@ -6,11 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.14.3",
-    "playwright>=1.58.0",
     "psycopg[binary]>=3.2",
+    "pydantic>=2.0",
     "python-dotenv>=1.0",
     "requests>=2.32",
-    "scrapy>=2.14.2",
 ]
 
 [build-system]
