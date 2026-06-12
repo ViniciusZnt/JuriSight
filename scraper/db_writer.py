@@ -106,6 +106,14 @@ class PostgresWriter:
         self._conn.commit()
         logger.info("PostgreSQL conectado — tabela documentos pronta.")
 
+    def reset(self) -> None:
+        """Dropa e recria a tabela — para re-scrape do zero com schema novo."""
+        with self._conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS documentos;")
+            cur.execute(_CREATE_TABLE)
+        self._conn.commit()
+        logger.warning("Tabela documentos dropada e recriada (reset).")
+
     def close(self) -> None:
         if self._buffer:
             self._flush()

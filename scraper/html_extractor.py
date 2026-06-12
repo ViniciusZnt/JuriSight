@@ -1,11 +1,20 @@
 """
 HTML Extractor (componente C4 — Pipeline de Ingestão).
 
-Extrai as seções estruturadas do HTML do documento (ementa, relatório,
-fundamentação, acórdão/dispositivo, votos) usando BeautifulSoup. O texto do
-acórdão é a base para a classificação de provimento.
+Extrai as seções estruturadas do HTML do documento usando BeautifulSoup.
+
+Os templates do portal variam o caixa dos títulos por tribunal (`EMENTA` vs
+`Ementa`, `ACÓRDÃO` vs `Acórdão`) e usam seções de título livre (`Conhecimento.`,
+`Mérito.`, `Do pedido de...`). Por isso:
+  - os títulos são normalizados (minúsculas, sem acento, sem pontuação final)
+    antes de casar com as seções nomeadas;
+  - além das seções nomeadas, monta-se o `texto_completo` concatenando TODO o
+    conteúdo — fonte robusta para a classificação de provimento (que ancora no
+    dispositivo onde quer que ele esteja).
 """
 import re
+import unicodedata
+
 from bs4 import BeautifulSoup
 
 
@@ -22,93 +31,81 @@ def html_to_text(html: str) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
-# Mapeamento dos títulos das seções para nomes de campo
+def _normalize_title(titulo: str) -> str:
+    """minúsculas, sem acento, sem pontuação/espaço final (Ementa/EMENTA/Conclusão. → ementa...)."""
+    t = unicodedata.normalize("NFKD", titulo.lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return t.strip(" .:;-").strip()
+
+
+# Seções nomeadas de interesse — chave = título normalizado.
 _SECTION_MAP = {
-    "CABEÇALHO": "cabecalho",
-    "EMENTA":        "ementa",
-    "RELATÓRIO":     "relatorio",
-    "FUNDAMENTAÇÃO": "fundamentacao",
-    "ACÓRDÃO":       "acordao",
-    "VOTOS":         "votos",
+    "cabecalho":     "cabecalho",
+    "ementa":        "ementa",
+    "relatorio":     "relatorio",
+    "fundamentacao": "fundamentacao",
+    "votos":         "votos",
 }
+_SECTION_FIELDS = ("cabecalho", "ementa", "relatorio", "fundamentacao", "votos")
 
 
 def extract_ementa(ementa_html: str) -> str:
-    """
-    Extrai o texto puro do campo textoEmenta.
-
-    textoEmenta é um HTML simples — apenas parágrafos <p> com o texto
-    da ementa, sem a estrutura de id_XXXXX_titulo/conteudo.
-    Não passa por extract_sections.
-    """
+    """Extrai o texto puro do campo textoEmenta (HTML simples de parágrafos)."""
     return html_to_text(ementa_html)
 
 
 def extract_sections(acordao_html: str) -> dict:
-    """
-    Extrai as seções do campo textoAcordao separadamente.
+    """Extrai as seções nomeadas do textoAcordao + o `texto_completo`.
 
-    O HTML segue o padrão:
-        id_XXXXXXX_titulo    → título da seção (ex: "EMENTA", "RELATÓRIO")
-        id_XXXXXXX_conteudo  → conteúdo da seção
-
-    Retorna dict com as seções encontradas. Seções ausentes ficam como "".
+    O HTML segue o padrão `id_XXXXX_titulo` (título da seção) +
+    `id_XXXXX_conteudo` (conteúdo). Seções ausentes ficam como "".
     """
-    result = {field: "" for field in _SECTION_MAP.values()}
+    result = {field: "" for field in _SECTION_FIELDS}
+    result["texto_completo"] = ""
 
     if not acordao_html:
         return result
 
     soup = BeautifulSoup(_remove_base64(acordao_html), "html.parser")
 
-    # Busca divs de título — exclui os "_titulo_completo"
+    # Seções nomeadas (casamento por título normalizado).
     titulo_divs = soup.find_all(
         "div",
         id=lambda x: x and x.endswith("_titulo") and "completo" not in x,
     )
-
     for titulo_div in titulo_divs:
-        titulo_texto = titulo_div.get_text(strip=True)
-
-        field_name = _SECTION_MAP.get(titulo_texto)
-        if not field_name:
-            ##Talvez nessa parte criar logica de logger
+        field = _SECTION_MAP.get(_normalize_title(titulo_div.get_text(strip=True)))
+        if not field:
             continue
-
-        content_id = titulo_div["id"].replace("_titulo", "_conteudo")
-        content_div = soup.find("div", id=content_id)
-
+        content_div = soup.find("div", id=titulo_div["id"].replace("_titulo", "_conteudo"))
         if not content_div:
-            ##Talvez nessa parte criar logica de logger
             continue
-
         text = content_div.get_text(separator=" ", strip=True)
         if not text:
-            ##Talvez nessa parte criar logica de logger
             continue
+        # Acumula se o mesmo campo aparecer mais de uma vez.
+        result[field] = f"{result[field]} {text}".strip() if result[field] else text
 
-        # Acumula se o mesmo campo aparecer mais de uma vez (ex: dois blocos de VOTOS)
-        if result[field_name]:
-            result[field_name] += " " + text
-        else:
-            result[field_name] = text
+    # Texto completo: todo o conteúdo, na ordem do documento — independe de título.
+    partes = [
+        text
+        for cdiv in soup.find_all("div", id=lambda x: x and x.endswith("_conteudo"))
+        if (text := cdiv.get_text(separator=" ", strip=True))
+    ]
+    result["texto_completo"] = " ".join(partes)
 
     return result
 
 
 def parse_document(ementa_html: str, acordao_html: str) -> dict:
-    """
-    Ponto de entrada principal — processa os dois campos separados da API.
-
-    Args:
-        ementa_html:  campo textoEmenta da resposta da API
-        acordao_html: campo textoAcordao da resposta da API
+    """Processa os dois campos da API (textoEmenta + textoAcordao).
 
     Returns:
-        dict com ementa (do textoEmenta) + seções do textoAcordao
+        dict com `acordao_section` (seções + texto_completo) e `ementa`
+        (preferindo o textoEmenta dedicado, com fallback à seção ementa).
     """
-    sections = {}
-    sections["acordao_section"] = extract_sections(acordao_html)
-    sections["ementa"] = extract_ementa(ementa_html) or sections.get("ementa", "")
-
-    return sections
+    sections = extract_sections(acordao_html)
+    return {
+        "acordao_section": sections,
+        "ementa": extract_ementa(ementa_html) or sections.get("ementa", ""),
+    }

@@ -1,63 +1,112 @@
 """
 Classificador de provimento (RFC §RN05 / Decisão 5).
 
-Componente "Provimento Clf [Regex]" do diagrama C4. A partir do texto do
-dispositivo do acórdão, classifica a decisão em APROVADO / NEGADO. Para
-súmulas e OJs, que não julgam um pedido, o valor é sempre NAO_APLICAVEL.
+Componente "Provimento Clf [Regex]" do diagrama C4. A partir do dispositivo do
+acórdão, classifica a decisão. Para súmulas e OJs (que não julgam um pedido) o
+valor é sempre NAO_APLICAVEL.
 
-⚠️ PROVISÓRIO — as regras abaixo são um primeiro rascunho a partir dos exemplos
-do RN05. O conjunto definitivo de padrões (e a fonte exata do dispositivo, já
-que a API não o entrega isolado) será fechado na conversa específica deste
-componente. A interface (`classify`) deve permanecer estável.
+Estratégia em camadas (ver discussão do componente):
+  1. normaliza o texto (minúsculas, sem acento, hífen→espaço);
+  2. ancora no dispositivo (trecho após "ante o exposto", "isto posto", ...);
+  3. casa vocabulário de resultado por família (recurso/embargos/MS/mérito),
+     na ordem NEGADO → PARCIAL → APROVADO.
+
+O regex cobre a maioria de alta confiança; o restante (NAO_APLICAVEL em
+acórdãos) deve cair no fallback de LLM previsto na arquitetura (§5.5).
 """
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from scraper.schema import Provimento, TipoDocumento
 
-# Padrões aplicados sobre o dispositivo, em ordem de prioridade.
-# NEGADO é checado antes de APROVADO porque "nego provimento" contém "provimento".
-_NEGADO_PATTERNS = [
-    r"\bneg\w*\s+provimento\b",   # "nego/negar/negado provimento"
-    r"\bimprovido\b",
-    r"\bimproced\w*\b",           # improcedente / improcedência
-    r"\bdenega\w*\b",             # denegado / denegação
-    r"\bnão\s+provido\b",
-]
+# Enquanto PARCIAL não for um valor próprio no schema, mapeia para cá.
+# Trocar para um Provimento.PARCIAL dedicado é a recomendação (ver conversa).
+_PARCIAL_MAPS_TO = Provimento.APROVADO
 
-_APROVADO_PATTERNS = [
-    r"\bdou\s+provimento\b",
-    r"\bdar\s+provimento\b",
+
+def _normalize(text: str) -> str:
+    """Minúsculas, sem acento, com hífen/pronome enclítico virando espaço."""
+    text = text.lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[-–—]", " ", text)       # negar-lhe -> negar lhe
+    return re.sub(r"\s+", " ", text).strip()
+
+
+# Marcadores que abrem o dispositivo — classificamos só o que vem depois deles.
+_DISPOSITIVO_MARKERS = (
+    "ante o exposto", "diante do exposto", "isto posto", "isto exposto",
+    "posto isso", "pelo exposto", "em face do exposto", "do exposto, decido",
+    "do exposto, decide",
+)
+
+
+def _dispositivo(text: str) -> str:
+    """Recorta o trecho a partir do último marcador de dispositivo (se houver)."""
+    cut = max((text.rfind(m) for m in _DISPOSITIVO_MARKERS), default=-1)
+    return text[cut:] if cut >= 0 else text
+
+
+# Ordem importa: NEGADO antes de APROVADO ("negar provimento" contém "provimento");
+# PARCIAL antes de APROVADO ("provimento parcial" é um subconjunto).
+_NEGADO_PATTERNS = (
+    r"\bneg\w*\s+(?:lhes?\s+)?provimento\b",         # nego/negar(-lhe) provimento
+    r"\bnao\s+(?:[oa]s?\s+|lhes?\s+)?prov\w*",        # não (o) prover
+    r"\bimprov\w*",                                   # improvido
+    r"\bimproced\w*",                                 # improcedente
+    r"\bdeneg\w*",                                    # denego/denegar a segurança
+    r"\brejeit\w*",                                   # rejeitar/rejeito os embargos
+    r"\bnao\s+conhec\w*",                             # não conhecer (inadmitido)
+    r"\bnao\s+acolh\w*",                             # não acolher
+)
+
+_PARCIAL_PATTERNS = (
+    r"\bprovimento\s+parcial",                        # dar/dou provimento parcial
+    r"\bparcial\w*\s+provimento",
+    r"\bconced\w*\s+parcial",                         # concedo parcialmente a segurança
+    r"\bproced\w*\s+em\s+parte",                      # procedente em parte
+    r"\bparcial\w*\s+proced\w*",
+)
+
+_APROVADO_PATTERNS = (
+    r"\b(?:dar|dou|deu|dao|dado|dada)\s+(?:lhes?\s+)?provimento\b",
     r"\bprovido\b",
-    r"\bdefer\w*\b",              # deferido / deferimento
-    r"\bproced\w*\b",            # procedente / procedência
-]
+    r"\bdefer\w*",                                    # deferido
+    r"\bacolh\w*",                                    # acolher embargos
+    r"\bproced\w*nte\b",                             # procedente
+    r"\bproced\w*ncia\b",                            # procedência
+    r"\bconced\w*\s+(?:a\s+)?(?:seguranca|ordem)",    # conceder a segurança/ordem
+)
 
-_NEGADO_RE   = re.compile("|".join(_NEGADO_PATTERNS), re.IGNORECASE)
-_APROVADO_RE = re.compile("|".join(_APROVADO_PATTERNS), re.IGNORECASE)
+_NEGADO_RE   = re.compile("|".join(_NEGADO_PATTERNS))
+_PARCIAL_RE  = re.compile("|".join(_PARCIAL_PATTERNS))
+_APROVADO_RE = re.compile("|".join(_APROVADO_PATTERNS))
+
+
+def _classify_outcome(dispositivo: str) -> str:
+    """Resultado bruto: NEGADO | PARCIAL | APROVADO | NAO_APLICAVEL."""
+    texto = _dispositivo(_normalize(dispositivo))
+    if _NEGADO_RE.search(texto):
+        return "NEGADO"
+    if _PARCIAL_RE.search(texto):
+        return "PARCIAL"
+    if _APROVADO_RE.search(texto):
+        return "APROVADO"
+    return "NAO_APLICAVEL"
 
 
 def classify(dispositivo: str, tipo_documento: TipoDocumento) -> Provimento:
-    """Classifica o provimento de um documento.
-
-    Args:
-        dispositivo: texto do dispositivo/acórdão (onde consta a decisão).
-        tipo_documento: tipo do documento; apenas ACORDAO é classificável.
-
-    Returns:
-        Provimento.APROVADO / NEGADO / NAO_APLICAVEL.
-    """
-    if tipo_documento is not TipoDocumento.ACORDAO:
+    """Classifica o provimento de um documento (apenas ACORDAO é classificável)."""
+    if tipo_documento is not TipoDocumento.ACORDAO or not dispositivo:
         return Provimento.NAO_APLICAVEL
 
-    if not dispositivo:
-        return Provimento.NAO_APLICAVEL
-
-    if _NEGADO_RE.search(dispositivo):
+    outcome = _classify_outcome(dispositivo)
+    if outcome == "NEGADO":
         return Provimento.NEGADO
-    if _APROVADO_RE.search(dispositivo):
+    if outcome == "APROVADO":
         return Provimento.APROVADO
-
-    # Sem padrão reconhecido — não inventa um posicionamento (RNF01).
+    if outcome == "PARCIAL":
+        return _PARCIAL_MAPS_TO
     return Provimento.NAO_APLICAVEL

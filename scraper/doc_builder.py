@@ -1,5 +1,5 @@
 """
-Doc Builder (RFC §5.3 etapas 1–2 / componente "Doc Builder [Pydantic v2]").
+Doc Builder).
 
 Converte o documento bruto vindo da API (Web Scraper) num `DocumentoJuridico`
 validado: resolve identidade, mapeia o tipo/hierarquia da coleção, extrai as
@@ -45,14 +45,21 @@ def _parse_api_date(value: str) -> date | None:
     return None
 
 
-def _build_link_original(doc_id: str, colecao: str) -> str | None:
+_CITACAO_BASE = "https://jurisprudencia.jt.jus.br/jurisprudencia-nacional/citacao"
+
+
+def _build_link_original(tribunal: str, doc_id: str, colecao: str) -> str | None:
     """Monta o link verificável do portal (RN04).
 
-    ⚠️ PENDENTE — o padrão de URL definitivo do visualizador será confirmado no
-    re-scrape (a coleta atual não capturou este campo). Mantido como None até lá
-    para não persistir um link possivelmente inválido.
+    Padrão de citação direta ao documento:
+        /jurisprudencia-nacional/citacao/{colecao}/{tribunal}/{idDocumentoAcordao}
+    Ex.: .../citacao/acordaos/TRT6/52258967
+
+    Requer tribunal e id; sem um deles, não há link verificável.
     """
-    return None
+    if not (tribunal and doc_id):
+        return None
+    return f"{_CITACAO_BASE}/{colecao}/{tribunal}/{doc_id}"
 
 
 def build_document(raw: dict) -> DocumentoJuridico | None:
@@ -71,7 +78,7 @@ def build_document(raw: dict) -> DocumentoJuridico | None:
     parsed   = parse_document(raw.get("ementa", ""), raw.get("textoAcordao", ""))
     sections = parsed["acordao_section"]
 
-    acordao = sections.get("acordao", "")
+    acordao = sections.get("texto_completo", "")
     provimento = classify(acordao, tipo)
 
     return DocumentoJuridico(
@@ -97,5 +104,5 @@ def build_document(raw: dict) -> DocumentoJuridico | None:
         possui_ementa=raw.get("possuiEmenta", "N") == "S",
         referencia_legislativa=raw.get("referenciaLegislativa", []) or [],
         provimento=provimento,
-        link_original=_build_link_original(doc_id, colecao),
+        link_original=_build_link_original(raw.get("tribunal", ""), doc_id, colecao),
     )

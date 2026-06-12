@@ -26,10 +26,13 @@ from scraper.db_writer import PostgresWriter
 from scraper.delta import CheckpointStore, resolve_collection_window
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+# Silencia o ruído de bibliotecas de terceiros.
+for noisy in ("urllib3", "asyncio", "playwright"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -72,6 +75,11 @@ def main() -> None:
         default=CHECKPOINT_PATH,
         help=f"Caminho do arquivo de checkpoint. Padrão: {CHECKPOINT_PATH}",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Dropa a tabela e zera o checkpoint antes de coletar (re-scrape do zero).",
+    )
     args = parser.parse_args()
 
     writer = PostgresWriter(DATABASE_URL)
@@ -80,6 +88,11 @@ def main() -> None:
     except Exception as e:
         print(f"Erro ao conectar no PostgreSQL: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if args.reset:
+        writer.reset()
+        args.checkpoint.unlink(missing_ok=True)
+        print("Reset: tabela recriada e checkpoint apagado.")
 
     try:
         start, end = resolve_dates(args.from_date, args.to_date, writer)
@@ -113,7 +126,6 @@ def main() -> None:
     print(f"  Concluído:        {result['completed']}")
     print(f"  Documentos salvos: {result['documents_saved']}")
     print(f"  Requisições feitas: {result['requests_made']}")
-    print(f"  Último delay:      {result['current_delay_seconds']}s")
 
     if not result["completed"]:
         print(f"\n  Motivo da parada: {result.get('halt_reason', '?')}")

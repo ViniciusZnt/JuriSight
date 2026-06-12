@@ -52,7 +52,7 @@ class Orchestrator:
         requests_made   = int(state.get("requests_made", 0))
 
         logger.info(
-            "Iniciando coleta:  → %s (checkpoint: pág %d do dia %s)",
+            "Iniciando coleta:  → De %s até %s (checkpoint: pág %d do dia %s)",
             start_date, end_date, next_page, current_date,
         )
 
@@ -139,8 +139,7 @@ class Orchestrator:
             logger.debug("  Requisição: %s pág %d (tentativa %d/%d)", date_str, page, attempt, self.max_retries)
             try:
                 payload = self.api_client.search_page(date_str, page, self.colecao)
-                if self.delay_seconds > 0:
-                    self.sleep_fn(self.delay_seconds)
+                self.sleep_fn(self.delay_seconds)
                 return payload
             except (BlockedResponseError, TransientApiError) as exc:
                 last_error = exc
