@@ -120,6 +120,17 @@ ollama pull llama3.2:3b
 ollama pull nomic-embed-text
 ```
 
+O servidor Ollama precisa estar no ar em `http://localhost:11434`. Na maioria
+das instalações ele já sobe sozinho como serviço em segundo plano — confira com:
+
+```bash
+ollama list            # lista os modelos baixados (só responde se o servidor está no ar)
+curl -s http://localhost:11434/api/tags   # deve retornar JSON com os modelos
+```
+
+Se `ollama serve` reclamar de `address already in use`, **não é erro** — significa
+que o servidor já está rodando. Não precisa iniciá-lo de novo.
+
 ### 4 — Configurar variáveis de ambiente
 
 ```bash
@@ -177,7 +188,19 @@ uv run python scraper/run.py
 
 O progresso é salvo em `scraper/checkpoint.json` a cada página coletada.
 
-### 7 — Rodar interface
+### 7 — Indexar documentos (SAC Chunking + Poly-Vector + BM25)
+
+Lê os documentos do PostgreSQL, gera os chunks e embeddings e popula o ChromaDB
+e o índice BM25. Roda **depois** da coleta. Requer o Ollama no ar (passo 3).
+
+```bash
+uv run python indexing/run.py
+
+# Reindexar do zero (limpa Chroma e BM25 antes)
+uv run python indexing/run.py --reset
+```
+
+### 8 — Rodar interface
 
 ```bash
 uv run streamlit run interface/app.py
