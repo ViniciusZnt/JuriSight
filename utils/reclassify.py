@@ -13,10 +13,6 @@ categoria própria no enum `Provimento`: os documentos já coletados guardavam
 `provimento = APROVADO` para decisões que eram, juridicamente, parcialmente
 providas. O backfill relê `acordao`, reclassifica e corrige a coluna in-place.
 
-Serve para qualquer mudança futura em `classify`: sempre que a regra evoluir,
-rode isto para alinhar os dados históricos à lógica atual. Como `classify` é
-determinística sobre `acordao`, o resultado equivale a ter coletado tudo de novo
-com a lógica vigente — e é idempotente (rodar de novo não muda mais nada).
 
 Uso:
     uv run python utils/reclassify.py --dry-run   # só mostra o que mudaria

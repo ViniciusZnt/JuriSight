@@ -10,8 +10,9 @@ Estratégia em camadas (ver discussão do componente):
   3. casa vocabulário de resultado por família (recurso/embargos/MS/mérito),
      na ordem NEGADO → PARCIAL → APROVADO.
 
-O regex cobre a maioria de alta confiança; o restante (NAO_APLICAVEL em
-acórdãos) deve cair no fallback de LLM previsto na arquitetura.
+Essa construção de logica de extração de provimento pode cometer erros, por não
+entender a semantica do contexto dos acordãos, pode acontecer de catalogar um 
+provimento erroniamente, mas terá atualizações com o passar do tempo.
 """
 from __future__ import annotations
 
@@ -22,9 +23,8 @@ from scraper.schema import Provimento, TipoDocumento
 
 ## Essa construção de logica de extração de provimento pode cometer erros, por não
 ## entender a semantica do contexto dos acordãos, pode acontecer de catalogar um
-## provimento erroniamente, mas terá atualizações com o passar do tempo
+## provimento erroniamente, mas terá atualizações com o passar do tempo.
 
-_PARCIAL_MAPS_TO = Provimento.PARCIAL
 
 
 def _normalize(text: str) -> str:
@@ -53,14 +53,14 @@ def _dispositivo(text: str) -> str:
 # Ordem importa: NEGADO antes de APROVADO ("negar provimento" contém "provimento");
 # PARCIAL antes de APROVADO ("provimento parcial" é um subconjunto).
 _NEGADO_PATTERNS = (
-    r"\bneg\w*\s+(?:lhes?\s+)?provimento\b",         # nego/negar(-lhe) provimento
+    r"\bneg\w*\s+(?:lhes?\s+)?provimento\b",          # nego/negar(-lhe) provimento
     r"\bnao\s+(?:[oa]s?\s+|lhes?\s+)?prov\w*",        # não (o) prover
     r"\bimprov\w*",                                   # improvido
     r"\bimproced\w*",                                 # improcedente
     r"\bdeneg\w*",                                    # denego/denegar a segurança
     r"\brejeit\w*",                                   # rejeitar/rejeito os embargos
     r"\bnao\s+conhec\w*",                             # não conhecer (inadmitido)
-    r"\bnao\s+acolh\w*",                             # não acolher
+    r"\bnao\s+acolh\w*",                              # não acolher
 )
 
 _PARCIAL_PATTERNS = (
@@ -76,8 +76,8 @@ _APROVADO_PATTERNS = (
     r"\bprovido\b",
     r"\bdefer\w*",                                    # deferido
     r"\bacolh\w*",                                    # acolher embargos
-    r"\bproced\w*nte\b",                             # procedente
-    r"\bproced\w*ncia\b",                            # procedência
+    r"\bproced\w*nte\b",                              # procedente
+    r"\bproced\w*ncia\b",                             # procedência
     r"\bconced\w*\s+(?:a\s+)?(?:seguranca|ordem)",    # conceder a segurança/ordem
 )
 
@@ -109,5 +109,5 @@ def classify(dispositivo: str, tipo_documento: TipoDocumento) -> Provimento:
     if outcome == "APROVADO":
         return Provimento.APROVADO
     if outcome == "PARCIAL":
-        return _PARCIAL_MAPS_TO
+        return Provimento.PARCIAL
     return Provimento.NAO_APLICAVEL
