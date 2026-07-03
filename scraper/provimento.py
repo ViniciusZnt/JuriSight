@@ -1,9 +1,8 @@
 """
-Classificador de provimento (RFC §RN05 / Decisão 5).
+Classificador de provimento.
 
-Componente "Provimento Clf [Regex]" do diagrama C4. A partir do dispositivo do
-acórdão, classifica a decisão. Para súmulas e OJs (que não julgam um pedido) o
-valor é sempre NAO_APLICAVEL.
+A partir do dispositivo do acórdão, classifica a decisão.
+Para súmulas e OJs (que não julgam um pedido) o valor é sempre NAO_APLICAVEL.
 
 Estratégia em camadas (ver discussão do componente):
   1. normaliza o texto (minúsculas, sem acento, hífen→espaço);
@@ -12,7 +11,7 @@ Estratégia em camadas (ver discussão do componente):
      na ordem NEGADO → PARCIAL → APROVADO.
 
 O regex cobre a maioria de alta confiança; o restante (NAO_APLICAVEL em
-acórdãos) deve cair no fallback de LLM previsto na arquitetura (§5.5).
+acórdãos) deve cair no fallback de LLM previsto na arquitetura.
 """
 from __future__ import annotations
 
@@ -21,9 +20,11 @@ import unicodedata
 
 from scraper.schema import Provimento, TipoDocumento
 
-# Enquanto PARCIAL não for um valor próprio no schema, mapeia para cá.
-# Trocar para um Provimento.PARCIAL dedicado é a recomendação (ver conversa).
-_PARCIAL_MAPS_TO = Provimento.APROVADO
+## Essa construção de logica de extração de provimento pode cometer erros, por não
+## entender a semantica do contexto dos acordãos, pode acontecer de catalogar um
+## provimento erroniamente, mas terá atualizações com o passar do tempo
+
+_PARCIAL_MAPS_TO = Provimento.PARCIAL
 
 
 def _normalize(text: str) -> str:

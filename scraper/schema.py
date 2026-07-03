@@ -2,8 +2,7 @@
 Schema tipado do pipeline de ingestão (RFC §5.2).
 
 Define o contrato `DocumentoJuridico` validado via Pydantic v2 antes da
-persistência no PostgreSQL — corresponde ao componente "Doc Builder [Pydantic v2]"
-do diagrama C4 (Nível 3 — Pipeline de Ingestão).
+persistência no PostgreSQL.
 
 A fonte de verdade é o PostgreSQL; o UUID `id` é a chave referenciada como
 `documento_id` (FK) pelos chunks no ChromaDB.
@@ -24,16 +23,17 @@ class TipoDocumento(str, Enum):
 
 
 class Provimento(str, Enum):
-    """Posicionamento da decisão — extraído via regex do dispositivo (RN05).
+    """Posicionamento da decisão — extraído via regex do dispositivo.
 
     Para súmulas/OJs (que não julgam um pedido) o valor é sempre NAO_APLICAVEL.
     """
     APROVADO      = "APROVADO"
+    PARCIAL       = "PARCIAL"        # provimento/procedência parcial — nem vitória nem derrota total
     NEGADO        = "NEGADO"
     NAO_APLICAVEL = "NAO_APLICAVEL"
 
 
-# Prioridade de ordenação categórica (RFC §5.2 — hierarquia_categoria).
+# Prioridade de ordenação categórica.
 HIERARQUIA_CATEGORIA: dict[TipoDocumento, int] = {
     TipoDocumento.SUMULA:     1,
     TipoDocumento.OJ:         2,
@@ -50,12 +50,12 @@ class DocumentoJuridico(BaseModel):
     """
 
     # Identidade
-    id_documento:         str            # identificador original do portal (chave natural)
+    id_documento:         str            # identificador original do portal (natural key)
     tipo_documento:       TipoDocumento
     hierarquia_categoria: int
 
     # Metadados processuais
-    data_filtro:          date | None = None  # dia usado no scraping (controle interno)
+    data_filtro:          date | None = None  # dia usado no filtro do scraping
     numero_processo:      str = ""
     tribunal:             str = ""
     classe_processo:      str = ""
@@ -66,7 +66,7 @@ class DocumentoJuridico(BaseModel):
     data_julgamento:      date | None = None
     data_juntada:         date | None = None
 
-    # Conteúdo (seções extraídas do HTML — RFC §5.3 etapa 2)
+    # Conteúdo (seções extraídas do HTML)
     cabecalho:            str = ""
     ementa:               str = ""
     relatorio:            str = ""
