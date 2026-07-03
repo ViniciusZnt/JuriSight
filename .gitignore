@@ -11,6 +11,8 @@ build/
 data/raw/
 data/processed/
 data/index/
+dumps/*
+
 
 # Ambiente
 .env

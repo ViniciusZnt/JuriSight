@@ -1,7 +1,7 @@
 """
 Session Minter — autenticação do Web Scraper (Pipeline de Ingestão).
 
-A API do portal protege as buscas com um desafio anti-bot baseado em cookies
+A API do portal tem proteção anti-bot baseado em cookies
 (JSESSIONID + cookie de WAF + SESSION_ID_COOKIE_PUJ) que só são emitidos quando
 o SPA é carregado num navegador real. Este módulo sobe um Chromium headless
 (Playwright) uma única vez por sessão, carrega o portal e colhe esses cookies +
@@ -14,11 +14,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from playwright.async_api import async_playwright
 
 logger = logging.getLogger(__name__)
 
-# Página de resultados qualquer: força o SPA a completar o fluxo de busca e a
-# assentar os cookies de sessão/anti-bot.
+# Página de resultados qualquer: força o SPA a completar o fluxo de busca e a coletar os cookies de sessão.
 WARMUP_URL = (
     "https://jurisprudencia.jt.jus.br/jurisprudencia-nacional/pesquisa/numero/"
     "0000039-30.2025.5.06.0001?abaSelecionada=acordaos"
@@ -36,7 +36,7 @@ class SessionMintError(RuntimeError):
 
 
 class SessionMinter:
-    """Cunha e mantém cookies + sessionId do portal via Chromium headless."""
+    """Cria e mantém cookies + sessionId do portal via Chromium headless."""
 
     def __init__(
         self,
@@ -67,15 +67,17 @@ class SessionMinter:
         return self._cookies, self._session_id
 
     def _refresh(self) -> None:
-        logger.info("Cunhando nova sessão do portal (Chromium headless)...")
+        logger.info("Criando nova sessão do portal (Chromium headless)...")
         try:
             cookies = asyncio.run(self._fetch_cookies())
         except Exception as exc:
-            raise SessionMintError(f"Falha ao cunhar sessão: {exc}") from exc
+            raise SessionMintError(f"Falha ao criar sessão: {exc}") from exc
 
-        session_id = next(
-            (c["value"] for c in cookies if c["name"] == SESSION_ID_COOKIE), None
-        )
+        session_id = None
+        for c in cookies:
+            if c["name"] == SESSION_ID_COOKIE:
+                session_id = c["value"]
+                break
         if not session_id:
             raise SessionMintError(f"Cookie {SESSION_ID_COOKIE} não encontrado.")
 
@@ -85,8 +87,6 @@ class SessionMinter:
         logger.info("Sessão cunhada (sessionId=%s, %d cookies).", session_id, len(cookies))
 
     async def _fetch_cookies(self) -> list[dict]:
-        from playwright.async_api import async_playwright
-
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=self.headless)
             try:

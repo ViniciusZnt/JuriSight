@@ -21,7 +21,7 @@ DEFAULT_BASE_URL = (
 )
 
 DEFAULT_HEADERS = {
-    "User-Agent": DEFAULT_USER_AGENT,  # mesmo UA da sessão cunhada (consistência anti-bot)
+    "User-Agent": DEFAULT_USER_AGENT, 
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     "Origin": "https://jurisprudencia.jt.jus.br",

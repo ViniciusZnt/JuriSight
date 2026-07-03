@@ -49,7 +49,7 @@ _CITACAO_BASE = "https://jurisprudencia.jt.jus.br/jurisprudencia-nacional/citaca
 
 
 def _build_link_original(tribunal: str, doc_id: str, colecao: str) -> str | None:
-    """Monta o link verificável do portal (RN04).
+    """Monta o link verificável do portal.
 
     Padrão de citação direta ao documento:
         /jurisprudencia-nacional/citacao/{colecao}/{tribunal}/{idDocumentoAcordao}
@@ -67,7 +67,11 @@ def build_document(raw: dict) -> DocumentoJuridico | None:
 
     Retorna None se o documento não tiver identificador (descartado a montante).
     """
-    doc_id = next((raw[f] for f in _ID_FIELDS if raw.get(f)), "")
+    doc_id = ""
+    for f in _ID_FIELDS:
+        if raw.get(f):
+            doc_id = raw[f]
+            break
     if not doc_id:
         logger.warning("Documento sem ID ignorado: %s", raw.get("numeroProcesso"))
         return None
