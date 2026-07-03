@@ -1,5 +1,5 @@
 """
-Delta Control (componente C4 — Pipeline de Ingestão).
+Delta Control.
 
 Evita reprocessamento: resolve a janela de coleta a partir do que já foi
 coletado e mantém o checkpoint retomável (dia/página corrente) em disco.
