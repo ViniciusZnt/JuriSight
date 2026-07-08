@@ -2,12 +2,9 @@
 SAC Chunker.
 
 Summary-Augmented Chunking: usa a ementa do documento como resumo global (SAC
-summary) e a injeta como prefixo de cada chunk do `acordao`. Isso ancora cada
+summary) e a injeta como prefixo de cada chunk do `acordao`. Isso fixa cada
 fragmento à decisão específica de onde veio, eliminando confusão entre acórdãos
 estruturalmente similares (mesmo tema, mesmo vocabulário).
-
-NÃO usa LLM (baixo custo computacional). O chunking é puramente
-textual: divide o `acordao` em janelas de 600–800 tokens e prefixa a ementa.
 
 Entrada:  DocumentoJuridico (lido do PostgreSQL — source of truth).
 Saída:    list[Chunk] pronta para o Poly-Vector Embedder e os indexadores.
@@ -19,18 +16,21 @@ import uuid
 from pydantic import BaseModel, Field
 
 from scraper.schema import DocumentoJuridico
-# Reusa a mesma lista de marcadores do classificador de provimento (fonte única):
+# Lista de marcadores do classificador de provimento:
 # é a âncora do dispositivo, usada aqui para o fallback de SAC summary.
 from scraper.provimento import _DISPOSITIVO_MARKERS
 
-# Alvo de tamanho do chunk (RFC §5.2 / §5.3 — 600–800 tokens).
-TARGET_TOKENS = 700
-MIN_TOKENS = 600
-MAX_TOKENS = 800
+
+# Alvo de tamanho da janela, em PALAVRAS. Nome está como 'TOKENS', MAS medimos palavras.
+# Veja os testes de test_chunker
+TARGET_TOKENS = 500
+MIN_TOKENS = 400
+MAX_TOKENS = 700
 # Sobreposição entre chunks consecutivos para não cortar contexto no limite.
 OVERLAP_TOKENS = 80
-# Tamanho máximo (em palavras) do resumo-proxy extraído do dispositivo.
-FALLBACK_SUMMARY_WORDS = 120
+# Teto (em palavras) do resumo global (prefixo SAC), aplicado tanto à ementa
+# quanto ao dispositivo: impede que um prefixo longo estoure o limite do nomic.
+SUMMARY_MAX_WORDS = 150
 
 
 class Chunk(BaseModel):
@@ -60,13 +60,13 @@ class Chunk(BaseModel):
 def _count_tokens(text: str) -> int:
     """Conta tokens do texto (aproximação por palavras).
 
-    Aproximação por whitespace: sem dependência e boa o bastante aqui, já que a
-    janela (700) tem folga grande sobre o limite de contexto do nomic (2048).
+    Sem dependência e com janela (700) com folga grande
+    sobre o limite de contexto do nomic (2048).
     """
     return len(text.split())
 
 
-def _dispositivo_summary(acordao: str, max_words: int = FALLBACK_SUMMARY_WORDS) -> str:
+def _dispositivo_summary(acordao: str, max_words: int = SUMMARY_MAX_WORDS) -> str:
     """Fallback para acórdãos SEM ementa, usado como SAC summary de fallback.
 
     Motivo: Até a coleta atual ~33% dos acórdãos do TST são publicados sem ementa (marcados como
@@ -75,13 +75,12 @@ def _dispositivo_summary(acordao: str, max_words: int = FALLBACK_SUMMARY_WORDS) 
     do SAC.
 
     O dispositivo (trecho após "ante o exposto…", onde a decisão é enunciada) é o
-    melhor sinal disponível nesse caso: ele diz O QUE foi decidido, que é
-    justamente o que distingue duas decisões estruturalmente similares. Recortamos
-    a partir do último marcador e limitamos a `max_words` para o prefixo não
-    inflar o chunk. Sem marcador, cai para o início do corpo (melhor que nada).
+    melhor substituto da ementa. Recortamos a partir do último marcador e limitamos 
+    a `max_words` como maximo de palavras para o fallback.
+    Sem marcador, cai para o início do corpo (melhor que nada).
     """
     low = acordao.lower()
-    cut = max((low.rfind(m) for m in _DISPOSITIVO_MARKERS), default=-1)
+    cut = max((low.rfind(m) for m in _DISPOSITIVO_MARKERS), default=-1)         # Default -1 para caso não ache use o inicio do corpo
     trecho = acordao[cut:] if cut >= 0 else acordao
     return " ".join(trecho.split()[:max_words])
 
@@ -97,7 +96,7 @@ def _split_into_windows(text: str) -> list[str]:
     if not words:
         return []
 
-    step = TARGET_TOKENS - OVERLAP_TOKENS      # avanço com sobreposição
+    step = TARGET_TOKENS - OVERLAP_TOKENS      # avanço com overlap
     windows: list[str] = []
     start = 0
     while start < len(words):
@@ -107,7 +106,8 @@ def _split_into_windows(text: str) -> list[str]:
             break 
         start += step
 
-    # Evita uma última janela muito curto: funde o restante com a janela anterior.
+    # Evita uma última janela muito curta
+    # funde o restante com a janela anterior.
     if len(windows) > 1 and len(windows[-1].split()) < MIN_TOKENS:
         tail = windows.pop()
         windows[-1] = f"{windows[-1]} {tail}"
@@ -145,13 +145,16 @@ class SACChunker:
         corpo = (doc.acordao or "").strip()
 
         if corpo:
-            # Acórdão: janela o corpo e usa a ementa como resumo global (SAC).
-            # ~33% dos acórdãos não têm ementa (possui_ementa=False no portal);
-            # nesses, cai para o dispositivo como resumo-proxy (ver _dispositivo_summary).
+            # Acórdão: janela o corpo e usa a ementa como SAC.
+            # ~33% dos acórdãos não têm ementa;
+            # nesses, cai para o dispositivo como resumo.
             sac_summary = ementa or _dispositivo_summary(corpo)
+            # Teto no prefixo, sem ele poderia estourar a capacidade do nomic.
+            sac_summary = " ".join(sac_summary.split()[:SUMMARY_MAX_WORDS])
             janelas = _split_into_windows(corpo)
         else:
             # Súmula/OJ e afins: sem seção de acórdão — a ementa é o conteúdo.
+            # TODO: Estrutura pode ser diferente, rever quando implementar
             if not ementa:
                 return []
             sac_summary = ""
