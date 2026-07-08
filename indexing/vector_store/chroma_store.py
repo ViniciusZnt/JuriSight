@@ -1,9 +1,9 @@
 """
-Vector Indexer / ChromaDB (componente C4 — Pipeline de Ingestão / RFC §5.3 etapa 5, Decisão 11).
+Vector Indexer / ChromaDB.
 
 Persiste os chunks e seus dois embeddings Poly-Vector no ChromaDB local, junto com
 os metadados mínimos de filtragem. O ChromaDB guarda APENAS chunks/embeddings/metadados
-de filtro — o documento integral fica no PostgreSQL (source of truth, Decisão 11).
+de filtro — o documento integral fica no PostgreSQL (source of truth).
 
 Poly-Vector: o Chroma armazena um embedding por registro/coleção. Modelamos DUAS
 coleções espelhadas pelo mesmo `chunk_id`:
@@ -11,16 +11,14 @@ coleções espelhadas pelo mesmo `chunk_id`:
   - COLLECTION_EMENTA   → embedding_ementa (ementa/tese).
 Na busca, consulta-se as duas e funde-se via RRF.
 
-Metadados gravados por chunk (RFC §5.2 — schema de metadados do ChromaDB):
+Metadados gravados por chunk:
   documento_id, tipo_documento, provimento, data_julgamento,
   numero_processo, hierarquia_categoria, posicao.
 """
 from __future__ import annotations
 
 import os
-
 import chromadb
-
 from processing.chunking.sac_chunker import Chunk
 
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/index")
@@ -35,8 +33,19 @@ def _to_metadata(chunk: Chunk) -> dict:
 
     ChromaDB aceita só tipos escalares (str/int/float/bool) — nada de None/listas.
     TODO: mapear campos e tratar data_julgamento None (ex.: string vazia).
+    
     """
-    raise NotImplementedError
+    return {
+        "documento_id":         chunk.documento_id,
+        "tipo_documento":       chunk.tipo_documento,
+        "provimento":           chunk.provimento,
+        "data_julgamento":      chunk.data_julgamento or "",   # None → "" (Chroma não aceita None)
+        "numero_processo":      chunk.numero_processo,
+        "hierarquia_categoria": chunk.hierarquia_categoria,
+        "posicao":              chunk.posicao,
+    }
+        
+    
 
 
 class ChromaStore:

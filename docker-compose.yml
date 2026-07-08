@@ -17,5 +17,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # Runtime dos modelos locais (embeddings nomic-embed-text + LLM de enriquecimento).
+  # Alternativa ao Ollama nativo; escolha um dos dois — ambos usam a porta 11434.
+  # O modelo é baixado dentro do container e persiste no volume ollama_models:
+  #   docker compose exec ollama ollama pull nomic-embed-text
+  ollama:
+    image: ollama/ollama
+    container_name: jurisight_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
 volumes:
   postgres_data:
+  ollama_models:
