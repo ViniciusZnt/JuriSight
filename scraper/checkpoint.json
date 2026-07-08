@@ -1,10 +1,10 @@
 {
   "completed": false,
-  "current_date": "2025-10-10",
-  "documents_saved": 54064,
-  "halt_message": "Rate limit (429) \u2014 tente novamente em 36540s",
+  "current_date": "2025-10-15",
+  "documents_saved": 55024,
+  "halt_message": "Rate limit (429) \u2014 tente novamente em 54540s",
   "halt_reason": "blocked",
-  "next_page": 6,
-  "requests_made": 5420,
-  "updated_at": "2026-07-03T16:50:24.656003Z"
+  "next_page": 2,
+  "requests_made": 5516,
+  "updated_at": "2026-07-07T11:50:20.955212Z"
 }
