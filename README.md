@@ -113,23 +113,39 @@ uv --version
 uv sync
 ```
 
-### 3 — Baixar modelos Ollama
+### 3 — Ollama (modelos locais)
+
+Há duas formas de rodar o Ollama — escolha **uma** (ambas usam a porta 11434):
+
+**Opção A — nativo (instala na máquina, sobe sozinho como serviço):**
 
 ```bash
 ollama pull llama3.2:3b
 ollama pull nomic-embed-text
 ```
 
-O servidor Ollama precisa estar no ar em `http://localhost:11434`. Na maioria
-das instalações ele já sobe sozinho como serviço em segundo plano — confira com:
+**Opção B — via Docker (junto do Postgres, no passo 5):** os modelos são baixados
+dentro do container e persistem no volume `ollama_models`:
 
 ```bash
-ollama list            # lista os modelos baixados (só responde se o servidor está no ar)
+docker compose up -d ollama
+docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+De qualquer forma, o servidor deve responder em `http://localhost:11434`:
+
+```bash
+ollama list            # lista os modelos (só responde se o servidor está no ar)
 curl -s http://localhost:11434/api/tags   # deve retornar JSON com os modelos
 ```
 
-Se `ollama serve` reclamar de `address already in use`, **não é erro** — significa
-que o servidor já está rodando. Não precisa iniciá-lo de novo.
+Observações:
+- Se `ollama serve` reclamar de `address already in use`, **não é erro** — o
+  servidor já está rodando; não precisa iniciá-lo de novo.
+- Não rode as duas opções ao mesmo tempo: a porta 11434 só comporta uma. Para
+  usar o Docker com o Ollama nativo instalado, pare o nativo antes
+  (`sudo systemctl stop ollama`).
 
 ### 4 — Configurar variáveis de ambiente
 
@@ -137,19 +153,27 @@ que o servidor já está rodando. Não precisa iniciá-lo de novo.
 cp .env.example .env
 ```
 
-| Variável         | Padrão                                              | Descrição                   |
-|------------------|-----------------------------------------------------|-----------------------------|
-| `DATABASE_URL`   | `postgresql://postgres:postgres@localhost:5432/jurisight` | Conexão com o PostgreSQL |
-| `OLLAMA_BASE_URL`| `http://localhost:11434`                            | URL do servidor Ollama      |
+| Variável            | Padrão                                              | Descrição                        |
+|---------------------|-----------------------------------------------------|----------------------------------|
+| `DATABASE_URL`      | `postgresql://postgres:postgres@localhost:5432/jurisight` | Conexão com o PostgreSQL   |
+| `OLLAMA_BASE_URL`   | `http://localhost:11434`                            | URL do servidor Ollama           |
+| `OLLAMA_EMBED_MODEL`| `nomic-embed-text`                                  | Modelo de embeddings (768d)      |
+| `CHROMA_PERSIST_DIR`| `./data/index`                                      | Diretório do índice ChromaDB     |
 
 ### 5 — Subir a infraestrutura (Docker)
 
 ```bash
-docker compose up -d
-docker compose ps   # aguarda "healthy"
+docker compose up -d          # sobe Postgres (+ Ollama, se optar pela opção B do passo 3)
+docker compose ps             # aguarda "healthy"
 ```
 
+Para subir só o Postgres (usando o Ollama nativo): `docker compose up -d postgres`.
+
 A tabela `documentos` é criada automaticamente na primeira execução do scraper.
+
+> **ChromaDB não é um serviço.** Ele roda embedded (biblioteca Python) e persiste
+> em disco no diretório `CHROMA_PERSIST_DIR` (`./data/index`), criado
+> automaticamente na primeira indexação — não há container nem porta para ele.
 
 Para parar sem apagar dados:
 
