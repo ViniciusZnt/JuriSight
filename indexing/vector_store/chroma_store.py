@@ -16,7 +16,6 @@ Metadados gravados por chunk:
   numero_processo, hierarquia_categoria, posicao.
 """
 from __future__ import annotations
-
 import os
 import chromadb
 from processing.chunking.sac_chunker import Chunk
