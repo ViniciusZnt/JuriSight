@@ -7,7 +7,8 @@ Roda DEPOIS do scraper/run.py (que já populou o PostgreSQL).
 
 Uso:
     uv run python indexing/run.py
-    uv run python indexing/run.py --reset      # reindexa do zero (limpa Chroma/BM25)
+    uv run python indexing/run.py --reset       # reindexa do zero (limpa Chroma/BM25)
+    uv run python indexing/run.py --limit 50    # indexa só 50 documentos (teste)
 """
 from __future__ import annotations
 
@@ -42,9 +43,27 @@ DATABASE_URL = os.getenv(
 )
 
 
+def _embed_e_grava(chunks, embedder, chroma) -> None:
+    """Embeda os chunks e grava no ChromaDB — a parte cara (chamadas ao Ollama).
+
+    embedding_completo: um por chunk (batch numa chamada). embedding do resumo: o
+    sac_summary é o mesmo em todos os chunks do doc, então embeda UMA vez e replica
+    (súmula com sac vazio reusa o vetor do texto — zero chamada extra).
+
+    Input:  chunks (todos de um mesmo documento); embedder; chroma.
+    Returns: None.
+    """
+    emb_completo = embedder.embed_batch([c.texto for c in chunks])
+    sac_summary = chunks[0].sac_summary
+    resumo_vec = embedder.embed_text(sac_summary) if sac_summary else emb_completo[0]
+    emb_ementa = [resumo_vec] * len(chunks)
+    chroma.add_chunks(chunks, emb_completo, emb_ementa)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Indexa documentos do PostgreSQL no ChromaDB + BM25.")
-    parser.add_argument("--reset", action="store_true", help="Limpa Chroma e BM25 antes de indexar.")
+    parser.add_argument("--reset", action="store_true", help="Limpa Chroma antes de indexar (força reindexação total).")
+    parser.add_argument("--limit", type=int, default=None, help="Indexa no máximo N documentos (teste).")
     args = parser.parse_args()
 
     source = DocumentSource(DATABASE_URL)
@@ -54,26 +73,51 @@ def main() -> None:
     bm25 = BM25Builder()
 
     if args.reset:
+        logger.info("Reset: limpando coleções do ChromaDB.")
         chroma.reset()
 
-    total_docs = total_chunks = 0
+    # Delta: documentos já no Chroma pulam o embedding (o caro). O BM25 NÃO é
+    # incremental, então todo chunk ainda é re-tokenizado (barato) para reconstruir
+    # o corpus — só o embedding + upsert dos já-indexados é que são evitados.
+    ja_indexados = chroma.documento_ids_indexados()
+    if ja_indexados:
+        logger.info("Delta: %d documentos já indexados — só os novos serão embedados.", len(ja_indexados))
 
-    # Pipeline por documento:
-    #   1. ler (uuid, doc) do PostgreSQL
-    #   2. chunks = chunker.chunk_document(doc, documento_id=uuid)
-    #   3. para o lote de chunks: emb_completo, emb_ementa = embedder...
-    #   4. chroma.add_chunks(chunks, emb_completo, emb_ementa)
-    #   5. bm25.add(chunks)
-    # Ao final: bm25.build_and_save()
-    #
-    # TODO: implementar o loop. Considerar processar em lotes para amortizar
-    #       a chamada de embeddings e o upsert no Chroma.
-    for documento_id, doc in source.iter_documents():
-        raise NotImplementedError  # remover ao implementar o corpo acima
+    total_docs = total_chunks = total_novos = total_falhas = 0
 
-    bm25.build_and_save()
+    for i, (documento_id, doc) in enumerate(source.iter_documents()):
+        if args.limit is not None and i >= args.limit:
+            break
+        try:
+            chunks = chunker.chunk_document(doc, documento_id)
+            if not chunks:
+                continue
+            bm25.add(chunks)                      # sempre: BM25 precisa do corpus completo
+            total_docs += 1
+            total_chunks += len(chunks)
 
-    logger.info("Indexação concluída: %d documentos, %d chunks.", total_docs, total_chunks)
+            if documento_id in ja_indexados:
+                continue                          # delta: já no Chroma, pula o embedding
+            _embed_e_grava(chunks, embedder, chroma)
+            total_novos += 1
+            if total_novos % 100 == 0:
+                logger.info("  ... %d novos documentos embedados", total_novos)
+        except Exception:
+            # Um documento problemático não deve abortar uma indexação de 54k.
+            total_falhas += 1
+            logger.exception("Falha ao indexar documento %s — pulando.", documento_id)
+
+    # BM25 é reconstruído do corpus inteiro (não incremental); só salva se há chunks.
+    if total_chunks:
+        bm25.build_and_save()
+        logger.info("Índice BM25 salvo em %s", bm25.index_path)
+    else:
+        logger.warning("Nenhum chunk indexado — BM25 não foi construído.")
+
+    logger.info(
+        "Indexação concluída: %d documentos (%d novos embedados), %d chunks, %d falhas.",
+        total_docs, total_novos, total_chunks, total_falhas,
+    )
 
 
 if __name__ == "__main__":
