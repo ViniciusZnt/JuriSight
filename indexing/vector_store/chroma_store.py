@@ -6,16 +6,16 @@ os metadados mínimos de filtragem. O ChromaDB guarda APENAS chunks/embeddings/m
 de filtro — o documento integral fica no PostgreSQL (source of truth).
 
 Poly-Vector: o Chroma armazena um embedding por registro/coleção. Modelamos DUAS
-coleções espelhadas pelo mesmo `chunk_id`:
-  - COLLECTION_COMPLETO → embedding_completo (chunk + SAC);
-  - COLLECTION_EMENTA   → embedding_ementa (ementa/tese).
-Na busca, consulta-se as duas e funde-se via RRF.
+coleções, em granularidades diferentes:
+  - COLLECTION_COMPLETO → embedding_completo (chunk + SAC): um registro por CHUNK
+    (id = chunk_id);
+  - COLLECTION_EMENTA   → embedding_ementa (ementa/tese): um registro por DOCUMENTO
+    (id = documento_id). A ementa é a mesma em todos os chunks do doc, então
+    guardá-la por chunk seria redundante prejudicaria o ranking.
 
-Metadados gravados por chunk:
-  documento_id, tipo_documento, provimento, data_julgamento,
-  numero_processo, hierarquia_categoria, posicao.
+Metadados de filtragem: documento_id, tipo_documento, provimento, data_julgamento,
+numero_processo, hierarquia_categoria (+ posicao só na coleção por chunk).
 """
-from __future__ import annotations
 import os
 import chromadb
 from processing.chunking.sac_chunker import Chunk
@@ -28,23 +28,31 @@ Vector = list[float]
 
 
 def _to_metadata(chunk: Chunk) -> dict:
-    """Extrai o dict de metadados de filtragem de um Chunk para o ChromaDB.
+    """Monta os metadados de filtragem por-CHUNK para o ChromaDB.
 
-    ChromaDB aceita só tipos escalares (str/int/float/bool) — nada de None/listas.
-    TODO: mapear campos e tratar data_julgamento None (ex.: string vazia).
-    
+    Input:  chunk.
+    Returns: dict só com escalares (Chroma não aceita None/listas); data_julgamento None vira "".
     """
     return {
         "documento_id":         chunk.documento_id,
         "tipo_documento":       chunk.tipo_documento,
         "provimento":           chunk.provimento,
-        "data_julgamento":      chunk.data_julgamento or "",   # Chroma não aceita None
+        "data_julgamento":      chunk.data_julgamento or "",
         "numero_processo":      chunk.numero_processo,
         "hierarquia_categoria": chunk.hierarquia_categoria,
         "posicao":              chunk.posicao,
     }
-        
-    
+
+
+def _to_metadata_documento(chunk: Chunk) -> dict:
+    """Metadados por-DOCUMENTO para a coleção da ementa.
+
+    Input:  chunk — um representante do documento.
+    Returns: mesmo dict de _to_metadata, sem a chave 'posicao'.
+    """
+    meta = _to_metadata(chunk)
+    meta.pop("posicao", None)
+    return meta
 
 
 class ChromaStore:
@@ -76,9 +84,12 @@ class ChromaStore:
         emb_completo: list[Vector],
         emb_ementa: list[Vector],
     ) -> None:
-        """Indexa (upsert) um lote de chunks nas duas coleções, espelhadas por chunk_id.
+        """Indexa (upsert) um lote nas duas coleções.
 
-        Input:  chunks; emb_completo/emb_ementa — vetores na mesma ordem dos chunks.
+        COMPLETO é por chunk (id = chunk_id); EMENTA é por documento (id =
+        documento_id) - (a ementa é a mesma em todos os chunks do doc).
+
+        Input:  chunks; (emb_completo, emb_ementa) — vetores na mesma ordem dos chunks.
         Returns: None.
         """
         if not chunks:
@@ -89,21 +100,32 @@ class ChromaStore:
                 f"{len(emb_completo)} emb_completo, {len(emb_ementa)} emb_ementa."
             )
 
-        ids = [c.chunk_id for c in chunks]
-        metadatas = [_to_metadata(c) for c in chunks]
-
-        # upsert (não add) → re-indexar o mesmo chunk_id sobrescreve em vez de duplicar.
+        # COMPLETO: um registro por chunk. upsert → chunk_id sobrescreve em vez de duplicar
         self._col_completo.upsert(
-            ids=ids,
+            ids=[c.chunk_id for c in chunks],
             embeddings=emb_completo,
             documents=[c.texto for c in chunks],
-            metadatas=metadatas,
+            metadatas=[_to_metadata(c) for c in chunks],
         )
+
+        # EMENTA: um registro por documento. Como o vetor de ementa é o mesmo em
+        # todos os chunks de um doc, percorremos os chunks e guardamos só o 1º de
+        # cada documento_id (o `set` lembra quais já entraram).
+        vistos: set[str] = set()
+        ids, embeddings, documents, metadatas = [], [], [], []
+        for c, emb in zip(chunks, emb_ementa):
+            if c.documento_id in vistos:
+                continue
+            vistos.add(c.documento_id)
+            ids.append(c.documento_id)
+            embeddings.append(emb)
+            documents.append(c.sac_summary or c.texto)
+            metadatas.append(_to_metadata_documento(c))
+
         self._col_ementa.upsert(
             ids=ids,
-            embeddings=emb_ementa,
-            # espelha o texto que gerou o embedding_ementa (fallback do sac vazio).
-            documents=[c.sac_summary or c.texto for c in chunks],
+            embeddings=embeddings,
+            documents=documents,
             metadatas=metadatas,
         )
 
@@ -118,8 +140,10 @@ class ChromaStore:
 
         Input:  embedding — vetor da query; n_results; where — filtro Chroma
                 (ex.: {"provimento": "APROVADO"} ou {"data_julgamento": {"$gte": "2020-01-01"}});
-                collection — COLLECTION_COMPLETO ou COLLECTION_EMENTA.
-        Returns: lista de {chunk_id, documento_id, distance, metadata}, mais próximos primeiro.
+                collection — COLLECTION_COMPLETO (id = chunk_id) ou COLLECTION_EMENTA
+                (id = documento_id).
+        Returns: lista de {id, documento_id, distance, metadata}, mais próximos primeiro.
+                 Em COMPLETO o id é o chunk_id; em EMENTA o id é o próprio documento_id.
         """
         col = self._col_completo if collection == COLLECTION_COMPLETO else self._col_ementa
         res = col.query(
@@ -127,19 +151,22 @@ class ChromaStore:
             n_results=n_results,
             where=where or None,
         )
-        # O Chroma devolve listas-de-listas (uma por query); pegamos a query 0.
+        # O Chroma devolve list[list] (uma por query); pegamos a query 0.
         ids = res["ids"][0]
         distancias = res["distances"][0]
         metadatas = res["metadatas"][0]
-        return [
-            {
-                "chunk_id": cid,
-                "documento_id": meta.get("documento_id"),
-                "distance": dist,
-                "metadata": meta,
-            }
-            for cid, dist, meta in zip(ids, distancias, metadatas)
-        ]
+
+        resultados = []
+        for rid, dist, meta in zip(ids, distancias, metadatas):
+            resultados.append(
+                {
+                    "id": rid,
+                    "documento_id": meta.get("documento_id"),
+                    "distance": dist,
+                    "metadata": meta,
+                }
+            )
+        return resultados
 
     def reset(self) -> None:
         """Apaga e recria as duas coleções (re-indexação do zero).
