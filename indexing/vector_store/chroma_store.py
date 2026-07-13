@@ -168,6 +168,15 @@ class ChromaStore:
             )
         return resultados
 
+    def documento_ids_indexados(self) -> set[str]:
+        """Retorna os documento_id já presentes na coleção da ementa (1 por doc).
+
+        Usado pela indexação delta para pular o embedding de quem já foi indexado.
+        Input:  nenhum.
+        Returns: set de documento_id (vazio após reset ou base nova).
+        """
+        return set(self._col_ementa.get(include=[])["ids"])
+
     def reset(self) -> None:
         """Apaga e recria as duas coleções (re-indexação do zero).
 
