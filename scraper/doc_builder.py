@@ -32,6 +32,15 @@ _COLECAO_TIPO: dict[str, TipoDocumento] = {
 _ID_FIELDS = ("idDocumentoAcordao", "idDocumento", "id")
 
 
+def _s(raw: dict, key: str) -> str:
+    """Lê um campo string do raw, tratando ausência e `null` explícito como "".
+
+    `dict.get(key, "")` não cobre o caso em que a API manda `{"gabinete": null}`:
+    a chave existe, então o default nunca entra e o valor vira `None`.
+    """
+    return raw.get(key) or ""
+
+
 def _parse_api_date(value: str) -> date | None:
     """Parse de datas da API (DD/MM/YYYY ou YYYY-MM-DD). None se vazio/inválido."""
     if not value:
@@ -90,13 +99,13 @@ def build_document(raw: dict) -> DocumentoJuridico | None:
         tipo_documento=tipo,
         hierarquia_categoria=HIERARQUIA_CATEGORIA[tipo],
         data_filtro=_parse_api_date(raw.get("_data_filtro", "")),
-        numero_processo=raw.get("numeroProcesso", ""),
-        tribunal=raw.get("tribunal", ""),
-        classe_processo=raw.get("classeProcesso", ""),
-        sigla_classe=raw.get("siglaClasseProcesso", ""),
-        relator=raw.get("relator", ""),
-        turma=raw.get("turma", ""),
-        gabinete=raw.get("gabinete", ""),
+        numero_processo=_s(raw, "numeroProcesso"),
+        tribunal=_s(raw, "tribunal"),
+        classe_processo=_s(raw, "classeProcesso"),
+        sigla_classe=_s(raw, "siglaClasseProcesso"),
+        relator=_s(raw, "relator"),
+        turma=_s(raw, "turma"),
+        gabinete=_s(raw, "gabinete"),
         data_julgamento=_parse_api_date(raw.get("dataJulgamento", "")),
         data_juntada=_parse_api_date(raw.get("dataJuntada", "")),
         cabecalho=sections.get("cabecalho", ""),
@@ -108,5 +117,5 @@ def build_document(raw: dict) -> DocumentoJuridico | None:
         possui_ementa=raw.get("possuiEmenta", "N") == "S",
         referencia_legislativa=raw.get("referenciaLegislativa", []) or [],
         provimento=provimento,
-        link_original=_build_link_original(raw.get("tribunal", ""), doc_id, colecao),
+        link_original=_build_link_original(_s(raw, "tribunal"), doc_id, colecao),
     )
