@@ -51,6 +51,17 @@ class Orchestrator:
         documents_saved = int(state.get("documents_saved", 0))
         requests_made   = int(state.get("requests_made", 0))
 
+        gap = self.writer.find_first_gap(start_date.isoformat(), current_date.isoformat())
+        if gap is not None:
+            logger.warning(
+                "Checkpoint alegava progresso até %s, mas o banco está vazio em %s "
+                "(checkpoint dessincronizado — provável restore/flush perdido). "
+                "Retomando a partir do gap, não do checkpoint.",
+                current_date, gap,
+            )
+            current_date = self._parse_date(gap)
+            next_page    = 0
+
         logger.info(
             "Iniciando coleta:  → De %s até %s (checkpoint: pág %d do dia %s)",
             start_date, end_date, next_page, current_date,
