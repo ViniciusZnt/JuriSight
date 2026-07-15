@@ -142,6 +142,27 @@ class PostgresWriter:
             result = cur.fetchone()
         return result[0].isoformat() if result and result[0] else None
 
+    def find_first_gap(self, start_date: str, end_date_exclusive: str) -> str | None:
+        """Retorna o primeiro dia sem nenhum documento em [start_date, end_date_exclusive).
+        """
+        if start_date >= end_date_exclusive:
+            return None
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT gs::date
+                FROM generate_series(%s::date, (%s::date - INTERVAL '1 day'), '1 day') gs
+                LEFT JOIN documentos d ON d.data_filtro = gs::date
+                GROUP BY gs
+                HAVING COUNT(d.id) = 0
+                ORDER BY gs
+                LIMIT 1
+                """,
+                (start_date, end_date_exclusive),
+            )
+            row = cur.fetchone()
+        return row[0].isoformat() if row else None
+
     def _flush(self) -> None:
         if not self._buffer:
             return
