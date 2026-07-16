@@ -46,21 +46,10 @@ class Orchestrator:
             raise ValueError("end_date não pode ser anterior a start_date")
 
         state           = self.checkpoint_store.load() or {}
-        current_date    = self._resolve_current_date(state, start_date)
-        next_page       = self._resolve_next_page(state, start_date, current_date)
+        current_date    = start_date  # o dia de retomada vem do banco (get_last_collected_date)
+        next_page       = self._resolve_next_page(state, start_date)
         documents_saved = int(state.get("documents_saved", 0))
         requests_made   = int(state.get("requests_made", 0))
-
-        gap = self.writer.find_first_gap(start_date.isoformat(), current_date.isoformat())
-        if gap is not None:
-            logger.warning(
-                "Checkpoint alegava progresso até %s, mas o banco está vazio em %s "
-                "(checkpoint dessincronizado — provável restore/flush perdido). "
-                "Retomando a partir do gap, não do checkpoint.",
-                current_date, gap,
-            )
-            current_date = self._parse_date(gap)
-            next_page    = 0
 
         logger.info(
             "Iniciando coleta:  → De %s até %s (checkpoint: pág %d do dia %s)",
@@ -165,7 +154,7 @@ class Orchestrator:
     # ------------------------------------------------------------------ #
 
     def _save(self, **state) -> dict:
-        """Persiste o checkpoint e devolve o estado salvo."""
+        """Persiste o estado da coleta e devolve o estado salvo."""
         self.checkpoint_store.save(state)
         return state
 
@@ -176,15 +165,13 @@ class Orchestrator:
         return datetime.strptime(value, "%Y-%m-%d").date()
 
     @staticmethod
-    def _resolve_current_date(state: dict, start_date: date) -> date:
-        raw = state.get("current_date")
-        if not raw:
-            return start_date
-        current = datetime.strptime(raw, "%Y-%m-%d").date()
-        return current if current >= start_date else start_date
+    def _resolve_next_page(state: dict, start_date: date) -> int:
+        """Reusa o next_page salvo só se o estado for do mesmo dia (start_date).
 
-    @staticmethod
-    def _resolve_next_page(state: dict, start_date: date, current_date: date) -> int:
-        if state.get("current_date") and current_date >= start_date:
+        O dia de retomada vem sempre do banco (start_date = get_last_collected_date),
+        então nunca há drift; o next_page do JSONB é apenas um refinamento para não
+        re-buscar páginas já coletadas do último dia.
+        """
+        if state.get("current_date") == start_date.isoformat():
             return int(state.get("next_page", 0))
         return 0

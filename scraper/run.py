@@ -5,7 +5,6 @@ Uso:
     uv run python scraper/run.py
     uv run python scraper/run.py --from 2024-01-01
     uv run python scraper/run.py --from 2024-01-01 --to 2024-06-30
-    uv run python scraper/run.py --checkpoint caminho/checkpoint.json
 """
 import argparse
 import logging
@@ -23,7 +22,7 @@ load_dotenv(ROOT / ".env")
 from scraper.web_scraper import WebScraper
 from scraper.orchestrator import Orchestrator
 from scraper.db_writer import PostgresWriter
-from scraper.delta import CheckpointStore, resolve_collection_window
+from scraper.delta import DbStateStore, resolve_collection_window
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +37,6 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres@localhost:5432/jurisight",
 )
-CHECKPOINT_PATH = ROOT / "scraper" / "checkpoint.json"
 
 
 def resolve_dates(from_date: date | None, to_date: date | None, writer: PostgresWriter) -> tuple[date, date]:
@@ -69,16 +67,9 @@ def main() -> None:
         help="Coleção a coletar. Padrão: acordaos.",
     )
     parser.add_argument(
-        "--checkpoint",
-        dest="checkpoint",
-        type=Path,
-        default=CHECKPOINT_PATH,
-        help=f"Caminho do arquivo de checkpoint. Padrão: {CHECKPOINT_PATH}",
-    )
-    parser.add_argument(
         "--reset",
         action="store_true",
-        help="Dropa a tabela e zera o checkpoint antes de coletar (re-scrape do zero).",
+        help="Dropa a tabela e zera o estado antes de coletar (re-scrape do zero).",
     )
     args = parser.parse_args()
 
@@ -91,8 +82,7 @@ def main() -> None:
 
     if args.reset:
         writer.reset()
-        args.checkpoint.unlink(missing_ok=True)
-        print("Reset: tabela recriada e checkpoint apagado.")
+        print("Reset: tabela documentos recriada e estado zerado.")
 
     try:
         start, end = resolve_dates(args.from_date, args.to_date, writer)
@@ -106,14 +96,19 @@ def main() -> None:
         writer.close()
         return
 
+    gaps = writer.find_all_gaps(start.isoformat(), end.isoformat())
+    if gaps:
+        print("\nDias sem coleta no histórico (use --from/--to para preencher):")
+        print(gaps)
+
     print(f"\nColetando de {start} até {end}.")
 
-    checkpoint = CheckpointStore(args.checkpoint)
+    state_store = DbStateStore(writer, args.colecao)
     api = WebScraper()
     orchestrator = Orchestrator(
         api_client=api,
         writer=writer,
-        checkpoint_store=checkpoint,
+        checkpoint_store=state_store,
         colecao=args.colecao,
     )
 

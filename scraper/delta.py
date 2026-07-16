@@ -2,16 +2,14 @@
 Delta Control.
 
 Evita reprocessamento: resolve a janela de coleta a partir do que já foi
-coletado e mantém o checkpoint retomável (dia/página corrente) em disco.
+coletado e mantém o estado retomável (dia/página corrente) NO BANCO.
 A deduplicação fina de documentos é garantida pelo upsert do DB Writer
 (`ON CONFLICT (id_documento)`).
 """
 from __future__ import annotations
 
-import json
 import logging
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -19,25 +17,23 @@ logger = logging.getLogger(__name__)
 COLLECTION_START = date(2023, 1, 1)
 
 
-class CheckpointStore:
-    """Salva o progresso em arquivo para permitir retomada após interrupção."""
+class DbStateStore:
+    """Estado retomável da coleta no banco (scraper_state, JSONB), por coleção.
 
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    Substitui o checkpoint em arquivo: a fonte de verdade passa a ser o banco, que
+    não dessincroniza do que foi realmente coletado. Mesma interface load()/save()
+    esperada pelo Orchestrator.
+    """
+
+    def __init__(self, writer, colecao: str):
+        self._writer = writer
+        self._colecao = colecao
 
     def load(self) -> dict | None:
-        if not self.path.exists():
-            return None
-        return json.loads(self.path.read_text(encoding="utf-8"))
+        return self._writer.load_state(self._colecao)
 
     def save(self, state: dict) -> None:
-        payload = dict(state)
-        payload["updated_at"] = datetime.utcnow().isoformat() + "Z"
-        self.path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        self._writer.save_state(self._colecao, state)
 
 
 def resolve_collection_window(
