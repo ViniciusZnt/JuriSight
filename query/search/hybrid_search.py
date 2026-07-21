@@ -8,12 +8,8 @@ Três canais de recuperação:
   - Chroma COMPLETO (por chunk)  → casa a passagem semanticamente;
   - Chroma EMENTA   (por doc)    → casa a tese semanticamente;
   - BM25            (por chunk)  → casa termos exatos (NR-15, art. 193).
-Os hits de chunk são projetados para documento_id antes da fusão (a coleção da
-ementa já é por documento).
 """
 from __future__ import annotations
-
-from dataclasses import dataclass
 
 from indexing.lexical.bm25_builder import LoadedBM25
 from indexing.vector_store.chroma_store import (
@@ -32,14 +28,15 @@ CANDIDATOS_POR_CANAL = 5
 def _doc_id_do_chunk(chunk_id: str) -> str:
     """Extrai o documento_id de um chunk_id no formato 'documento_id:posicao'.
 
-    Input:  chunk_id — ex.: '8d755fc9-...-...:3'.
-    Returns: o documento_id (a parte antes do último ':').
+    Input:  chunk_id.
+    Returns: o documento_id.
     """
     return chunk_id.rsplit(":", 1)[0]
 
 
+
 def _dedup_ordenado(doc_ids: list[str]) -> list[str]:
-    """Remove duplicatas preservando a ordem (mantém a 1ª/melhor ocorrência).
+    """Remove duplicatas preservando a ordem.
 
     Input:  doc_ids — lista de documento_id, melhor primeiro.
     Returns: mesma lista sem repetições.
@@ -59,9 +56,13 @@ def reciprocal_rank_fusion(
 ) -> list[tuple[str, float]]:
     """Funde várias listas ranqueadas de documento_id via RRF.
 
-    RRF: para cada documento, score = Σ 1/(k + rank) somado sobre cada ranking em
-    que ele aparece (rank começa em 1). Combina rankings de canais diferentes sem
-    depender da escala de score de cada um — só das posições.
+    RRF: RRF(d) = Σ(r ∈ R) 1 / (k + r(d))
+
+        Where:
+        - d is a document
+        - R is the set of rankers (retrievers)
+        - k is a constant (typically 60)
+        - r(d) is the rank of document d in ranker r
 
     Input:  rankings — lista de rankings; cada ranking é uma lista de documento_id
             ordenada (melhor primeiro); k — constante de amortecimento.
@@ -74,13 +75,11 @@ def reciprocal_rank_fusion(
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
 
-@dataclass
 class HybridSearch:
-    """Orquestra os três canais de recuperação + RRF, no nível de documento."""
-
-    embedder: PolyVectorEmbedder
-    chroma: ChromaStore
-    bm25: LoadedBM25
+    def __init__(self, embedder: PolyVectorEmbedder, chroma: ChromaStore, bm25: LoadedBM25):
+        self.embedder = embedder
+        self.chroma = chroma
+        self.bm25 = bm25
 
     def search(
         self,
@@ -98,12 +97,12 @@ class HybridSearch:
         Se um filtro rígido for necessário, aplique-o depois (no Doc Retriever, sobre
         o DocumentoJuridico recuperado).
         """
-        n_cand = n_results * CANDIDATOS_POR_CANAL
+        n_candidates = n_results * CANDIDATOS_POR_CANAL
 
-        qv = self.embedder.embed_text(query)
-        hits_completo = self.chroma.query(qv, n_results=n_cand, where=where, collection=COLLECTION_COMPLETO)
-        hits_ementa = self.chroma.query(qv, n_results=n_cand, where=where, collection=COLLECTION_EMENTA)
-        hits_bm25 = self.bm25.search(query, n=n_cand)
+        query_vector = self.embedder.embed_text(query)
+        hits_completo = self.chroma.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_COMPLETO)
+        hits_ementa = self.chroma.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_EMENTA)
+        hits_bm25 = self.bm25.search(query, n=n_candidates)
 
         # Projeta cada canal para uma lista ranqueada de documento_id, sem duplicar.
         r_completo = _dedup_ordenado([h["documento_id"] for h in hits_completo])
