@@ -1,20 +1,11 @@
 """
-Doc Retriever (RFC §5.3 etapa 9 — M4).
+Doc Retriever .
 
 Busca os DocumentoJuridico COMPLETOS no PostgreSQL (source of truth) a partir dos
-documento_id (UUID) que a busca híbrida devolveu. O ChromaDB/BM25 guardam só
-chunks e ids; o conteúdo integral (ementa, acórdão, relator, link...) vem daqui.
-
-Reaproveitamento: a montagem de linha → DocumentoJuridico já existe em
-indexing/doc_source.py (DocumentSource._row_to_documento) sobre a MESMA ordem de
-colunas do _SELECT. Vale espelhar aquela lógica aqui (ou extrair para um helper
-compartilhado) para não divergir.
+documento_id (UUID) que a busca híbrida devolveu.
 """
-from __future__ import annotations
-
 import psycopg
-
-from scraper.schema import DocumentoJuridico
+from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
 # Mesmas colunas do _SELECT de indexing/doc_source.py, filtrando por id (UUID).
 _SELECT_BY_IDS = """
@@ -24,7 +15,7 @@ SELECT id, id_documento, tipo_documento, hierarquia_categoria, data_filtro,
        cabecalho, ementa, relatorio, fundamentacao, acordao, votos,
        possui_ementa, referencia_legislativa, provimento, link_original
 FROM documentos
-WHERE id = ANY(%s)
+WHERE id = ANY(%s::uuid[])
 """
 
 
@@ -38,24 +29,27 @@ class DocRetriever:
         Returns: None.
         """
         self.database_url = database_url
+        self._conn = None
 
     def fetch(self, documento_ids: list[str]) -> dict[str, DocumentoJuridico]:
         """Busca os documentos pelos UUIDs e devolve um mapa id -> documento.
 
-        Devolve um DICT (não lista) para o chamador reordenar conforme o ranking do
-        RRF — o SELECT ... WHERE id = ANY(...) não preserva a ordem dos ids.
 
-        Input:  documento_ids — lista de UUIDs (os do top-N do HybridSearch).
-        Returns: {documento_id: DocumentoJuridico} apenas dos ids encontrados.
-
-        TODO:
-          - if not documento_ids: return {}
-          - conectar (psycopg.connect), cur.execute(_SELECT_BY_IDS, (documento_ids,));
-          - para cada row: doc_uuid = str(row[0]); doc = _row_para_documento(row);
-            acumular {doc_uuid: doc};
-          - fechar a conexão e devolver o dict.
+        Input:  documento_ids — lista de UUIDs.
+        Returns: {documento_id: DocumentoJuridico} apenas dos ids encontrados (não vem ordenado).
         """
-        raise NotImplementedError
+        if not documento_ids:
+            return {}
+
+        self._conn = psycopg.connect(self.database_url)
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(_SELECT_BY_IDS, (documento_ids,))
+                rows = cur.fetchall()
+        finally:
+            self._conn.close()
+
+        return {str(row[0]): _row_para_documento(row) for row in rows}
 
 
 def _row_para_documento(row) -> DocumentoJuridico:
@@ -66,9 +60,30 @@ def _row_para_documento(row) -> DocumentoJuridico:
 
     Input:  row — tupla da query.
     Returns: DocumentoJuridico validado.
-
-    TODO: espelhar indexing/doc_source.py::DocumentSource._row_to_documento
-          (mesma ordem de colunas). Converter tipo_documento/provimento para os
-          enums (TipoDocumento(...), Provimento(...)); TEXT nulo -> "".
     """
-    raise NotImplementedError
+    return DocumentoJuridico(
+        # row[0] = id (UUID) — devolvido à parte, não entra no schema
+        id_documento           = row[1],
+        tipo_documento         = TipoDocumento(row[2]),
+        hierarquia_categoria   = row[3],
+        data_filtro            = row[4],
+        numero_processo        = row[5]  or "",
+        tribunal               = row[6]  or "",
+        classe_processo        = row[7]  or "",
+        sigla_classe           = row[8]  or "",
+        relator                = row[9]  or "",
+        turma                  = row[10] or "",
+        gabinete               = row[11] or "",
+        data_julgamento        = row[12],
+        data_juntada           = row[13],
+        cabecalho              = row[14] or "",
+        ementa                 = row[15] or "",
+        relatorio              = row[16] or "",
+        fundamentacao          = row[17] or "",
+        acordao                = row[18] or "",
+        votos                  = row[19] or "",
+        possui_ementa          = row[20] or False,
+        referencia_legislativa = row[21] or [],
+        provimento             = Provimento(row[22]),
+        link_original          = row[23],
+    )
