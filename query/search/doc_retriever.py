@@ -1,5 +1,5 @@
 """
-Doc Retriever .
+Doc Retriever.
 
 Busca os DocumentoJuridico COMPLETOS no PostgreSQL (source of truth) a partir dos
 documento_id (UUID) que a busca híbrida devolveu.

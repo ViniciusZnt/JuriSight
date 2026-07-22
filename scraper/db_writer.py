@@ -1,5 +1,5 @@
 """
-DB Writer (componente C4 — Pipeline de Ingestão).
+DB Writer.
 
 Persiste o `DocumentoJuridico` validado no PostgreSQL (source of truth, RFC §5.2).
 Recebe o documento bruto da API, delega a montagem/validação ao Doc Builder e
