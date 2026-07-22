@@ -64,7 +64,8 @@ class ChromaStore:
         Input:  persist_dir — diretório de persistência do ChromaDB.
         Returns: None.
         """
-        self._client = chromadb.PersistentClient(path=persist_dir)
+        # expanduser: permite ~ no CHROMA_PERSIST_DIR (índice mora no FS Linux, não em /mnt/d).
+        self._client = chromadb.PersistentClient(path=os.path.expanduser(persist_dir))
         self._col_completo = self._abrir_colecao(COLLECTION_COMPLETO)
         self._col_ementa = self._abrir_colecao(COLLECTION_EMENTA)
 

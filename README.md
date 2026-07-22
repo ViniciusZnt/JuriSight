@@ -29,7 +29,7 @@ Portal TST (Falcão)
     → [scraper/run.py]          ← coleta via requests + delay adaptativo
     → [PostgreSQL]              ← source of truth
     → [SAC Chunking]
-    → [Poly-Vector Embeddings]
+    → [Poly-Vector Embeddings]  ← OpenAI text-embedding-3-small (1536d)
     → [ChromaDB]                ← busca semântica
     → [BM25 Index]              ← busca lexical
     → [FastAPI + RRF]           ← fusão dos rankings
@@ -37,7 +37,9 @@ Portal TST (Falcão)
     → [Streamlit]
 ```
 
-Custo operacional: **R$ 0 — 100% local via Ollama.**
+Custo: o LLM e o enriquecimento de query rodam **100% locais** (Ollama). Só os
+**embeddings** usam a OpenAI (`text-embedding-3-small`) — **~US$ 8 uma única vez**
+para indexar todo o corpus; por consulta, o custo é desprezível.
 
 ---
 
@@ -49,7 +51,7 @@ jurisight/
 │   ├── run.py              ← ponto de entrada da coleta
 │   ├── api.py              ← cliente HTTP (requests.Session)
 │   ├── core.py             ← loop de coleta com delay adaptativo
-│   ├── db.py               ← PostgresStore + CheckpointStore
+│   ├── db_writer.py        ← PostgresStore + estado da coleta (scraper_state)
 │   ├── html_parser.py      ← extração de seções do HTML dos acórdãos
 │   ├── items/
 │   ├── pipelines/
@@ -93,7 +95,8 @@ jurisight/
 | Python     | 3.13          | Gerenciado pelo uv      |
 | uv         | qualquer      | Gerenciador de pacotes  |
 | Docker     | 24+           | Para o PostgreSQL       |
-| Ollama     | qualquer      | Modelos LLM locais      |
+| Ollama     | qualquer      | LLM local (enriquecimento de query) |
+| Chave OpenAI | —           | Embeddings (`text-embedding-3-small`) — exige crédito pré-pago |
 | WSL2       | —             | Obrigatório no Windows  |
 
 ---
@@ -113,24 +116,24 @@ uv --version
 uv sync
 ```
 
-### 3 — Ollama (modelos locais)
+### 3 — Ollama (LLM local para enriquecimento de query)
 
-Há duas formas de rodar o Ollama — escolha **uma** (ambas usam a porta 11434):
+O Ollama roda só o LLM de enriquecimento de query (`llama3.2:3b`). **Os embeddings
+não usam Ollama** — são gerados pela OpenAI (passo 4). Há duas formas de rodar —
+escolha **uma** (ambas usam a porta 11434):
 
 **Opção A — nativo (instala na máquina, sobe sozinho como serviço):**
 
 ```bash
 ollama pull llama3.2:3b
-ollama pull nomic-embed-text
 ```
 
-**Opção B — via Docker (junto do Postgres, no passo 5):** os modelos são baixados
-dentro do container e persistem no volume `ollama_models`:
+**Opção B — via Docker (junto do Postgres, no passo 5):** o modelo é baixado
+dentro do container e persiste no volume `ollama_models`:
 
 ```bash
 docker compose up -d ollama
 docker compose exec ollama ollama pull llama3.2:3b
-docker compose exec ollama ollama pull nomic-embed-text
 ```
 
 De qualquer forma, o servidor deve responder em `http://localhost:11434`:
@@ -156,9 +159,13 @@ cp .env.example .env
 | Variável            | Padrão                                              | Descrição                        |
 |---------------------|-----------------------------------------------------|----------------------------------|
 | `DATABASE_URL`      | `postgresql://postgres:postgres@localhost:5432/jurisight` | Conexão com o PostgreSQL   |
-| `OLLAMA_BASE_URL`   | `http://localhost:11434`                            | URL do servidor Ollama           |
-| `OLLAMA_EMBED_MODEL`| `nomic-embed-text`                                  | Modelo de embeddings (768d)      |
-| `CHROMA_PERSIST_DIR`| `./data/index`                                      | Diretório do índice ChromaDB     |
+| `OPENAI_API_KEY`    | —                                                   | Chave da OpenAI (embeddings) — **obrigatória**, exige crédito pré-pago |
+| `OPENAI_EMBED_MODEL`| `text-embedding-3-small`                            | Modelo de embeddings (1536d)     |
+| `CHROMA_PERSIST_DIR`| `~/.local/share/jurisight/chroma`                   | Índice ChromaDB — **no FS Linux, não em `/mnt/d`** (ver passo 7) |
+| `BM25_INDEX_PATH`   | `./data/index/bm25.pkl`                             | Índice lexical BM25 (pickle)     |
+
+> A chave da OpenAI vai só no `.env` (gitignored) — **nunca** commitada. Sem crédito
+> pré-pago na conta, a API responde `429 insufficient_quota`.
 
 ### 5 — Subir a infraestrutura (Docker)
 
@@ -172,8 +179,8 @@ Para subir só o Postgres (usando o Ollama nativo): `docker compose up -d postgr
 A tabela `documentos` é criada automaticamente na primeira execução do scraper.
 
 > **ChromaDB não é um serviço.** Ele roda embedded (biblioteca Python) e persiste
-> em disco no diretório `CHROMA_PERSIST_DIR` (`./data/index`), criado
-> automaticamente na primeira indexação — não há container nem porta para ele.
+> em disco no diretório `CHROMA_PERSIST_DIR`, criado automaticamente na primeira
+> indexação — não há container nem porta para ele.
 
 Para parar sem apagar dados:
 
@@ -204,25 +211,34 @@ uv run python scraper/run.py --colecao sumulas
 uv run python scraper/run.py --colecao ojs
 uv run python scraper/run.py --colecao precedentes
 
-# Interrompido? Só rodar de novo — checkpoint retoma de onde parou
+# Interrompido? Só rodar de novo — o estado no banco retoma de onde parou
 uv run python scraper/run.py
 ```
 
 **Coleções disponíveis:** `acordaos` · `sumulas` · `ojs` · `precedentes`
 
-O progresso é salvo em `scraper/checkpoint.json` a cada página coletada.
+O progresso é salvo no PostgreSQL (tabela `scraper_state`, por coleção) a cada página coletada.
 
 ### 7 — Indexar documentos (SAC Chunking + Poly-Vector + BM25)
 
-Lê os documentos do PostgreSQL, gera os chunks e embeddings e popula o ChromaDB
-e o índice BM25. Roda **depois** da coleta. Requer o Ollama no ar (passo 3).
+Lê os documentos do PostgreSQL, gera os chunks e embeddings (OpenAI) e popula o
+ChromaDB e o índice BM25. Roda **depois** da coleta. Requer a `OPENAI_API_KEY`
+(passo 4). A carga completa leva ~4-5h e é resumível — o delta pula o que já está
+no Chroma.
 
 ```bash
-uv run python indexing/run.py
+# Teste rápido (100 docs)
+uv run python indexing/run.py --reset --limit 100
 
-# Reindexar do zero (limpa Chroma e BM25 antes)
-uv run python indexing/run.py --reset
+# Carga completa em background
+nohup uv run python indexing/run.py --reset > indexing.log 2>&1 &
+
+# Retomar após queda ou falhas (sem --reset, o delta continua)
+uv run python indexing/run.py
 ```
+
+> No WSL2, mantenha o `CHROMA_PERSIST_DIR` no FS Linux (`~/…`), não em `/mnt/d`:
+> gravar no HD/drive Windows deixa o Chroma ~30x mais lento (fsync).
 
 ### 8 — Rodar interface
 
@@ -252,7 +268,7 @@ uv run streamlit run interface/app.py
 | PostgreSQL         | Source of truth — documentos completos      |
 | ChromaDB           | Banco vetorial — busca semântica            |
 | Ollama / Llama 3.2 3B | Query enrichment local                 |
-| nomic-embed-text   | Embeddings (768d)                           |
+| OpenAI text-embedding-3-small | Embeddings (1536d)              |
 | rank-bm25          | Busca lexical — índice BM25                 |
 | FastAPI            | Backend — fusão RRF dos rankings            |
 | Streamlit          | Interface do usuário                        |
