@@ -9,7 +9,7 @@ Uso:
     uv run python indexing/run.py
     uv run python indexing/run.py --reset        # reindexa do zero (limpa Chroma/BM25)
     uv run python indexing/run.py --limit 50     # indexa só 50 documentos (teste)
-    uv run python indexing/run.py --workers 12   # nº de embeddings concorrentes (default 12)
+    uv run python indexing/run.py --workers 6    # nº de embeddings concorrentes (default 6)
 """
 from __future__ import annotations
 
@@ -38,13 +38,13 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-# Silencia o ruído das libs HTTP (uma linha por chamada à OpenAI).
-for _noisy in ("httpx", "httpcore", "urllib3"):
+# Silencia o ruído das libs HTTP e os avisos de retry do cliente OpenAI (uma linha
+# por chamada / por backoff de 429). Os erros de verdade continuam sendo logados.
+for _noisy in ("httpx", "httpcore", "urllib3", "openai"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/jurisight",
 )
 
 
@@ -70,8 +70,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Indexa documentos do PostgreSQL no ChromaDB + BM25.")
     parser.add_argument("--reset", action="store_true", help="Limpa Chroma antes de indexar (força reindexação total).")
     parser.add_argument("--limit", type=int, default=None, help="Indexa no máximo N documentos (teste).")
-    parser.add_argument("--workers", type=int, default=12,
-                        help="Nº de embeddings concorrentes (default 12). O teto real é o limite de tokens/min da OpenAI.")
+    parser.add_argument("--workers", type=int, default=6,
+                        help="Nº de embeddings concorrentes (default 6). O teto real é o limite de tokens/min da OpenAI (1M TPM no Tier 1 ≈ 6 workers); mais que isso só gera 429.")
     parser.add_argument("--flush-docs", type=int, default=100,
                         help="Grava no Chroma a cada N docs (default 100). Em disco lento (HD) reduz fsyncs; em SSD pode baixar.")
     args = parser.parse_args()
