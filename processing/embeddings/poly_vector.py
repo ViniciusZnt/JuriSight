@@ -37,7 +37,8 @@ class PolyVectorEmbedder:
         self.model = model
         # max_retries alto: sob concorrência, bursts encostam no limite de 1M TPM (Tier 1)
         # e a API responde 429; o SDK respeita o retry-after e espera a janela reabrir.
-        self._client = client or OpenAI(max_retries=8)  # lê OPENAI_API_KEY do ambiente
+        # Os picos são curtos, então mais tentativas praticamente zeram as falhas.
+        self._client = client or OpenAI(max_retries=16)  # lê OPENAI_API_KEY do ambiente
 
     def embed_text(self, text: str) -> Vector:
         """Embedda um único texto.
