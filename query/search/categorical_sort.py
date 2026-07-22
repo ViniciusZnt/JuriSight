@@ -1,5 +1,5 @@
 """
-Categorical Sort / Hierarchical Ranker (RFC §5.3 etapa 9 — M4, RN02).
+Categorical Sort / Hierarchical Ranker.
 
 Ordena os documentos recuperados para exibição. Regras (RN02):
   - a hierarquia jurídica é o critério PRIMÁRIO (súmula → OJ → precedente →
