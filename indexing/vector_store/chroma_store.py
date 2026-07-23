@@ -24,6 +24,12 @@ CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/index")
 COLLECTION_COMPLETO = "chunks_completo"
 COLLECTION_EMENTA = "chunks_ementa"
 
+# Em disco lento (HD/WSL2), o Chroma sincronizar o índice a cada 1.000 vetores (default)
+# reescreve arquivos de vários GB no HD o tempo todo e trava a indexação quando o índice
+# passa do tamanho da RAM. Elevamos o limiar: ~50x menos escrita no disco.
+_SYNC_THRESHOLD = 50000
+_BATCH_SIZE = 10000
+
 Vector = list[float]
 
 
@@ -75,9 +81,20 @@ class ChromaStore:
         Input:  nome — nome da coleção.
         Returns: o objeto Collection do ChromaDB.
         """
-        return self._client.get_or_create_collection(
+        col = self._client.get_or_create_collection(
             name=nome, metadata={"hnsw:space": "cosine"}
         )
+        # Afrouxa a frequência de sincronização com o disco (ver _SYNC_THRESHOLD). Os
+        # vetores não sincronizados ficam no SQLite (fonte de verdade) e são reconciliados
+        # no próximo load, então uma queda não causa perda nem re-embedding.
+        try:
+            hnsw = col._model.configuration_json.get("hnsw", {})
+            if hnsw.get("sync_threshold") != _SYNC_THRESHOLD:
+                col.modify(configuration={"hnsw": {"sync_threshold": _SYNC_THRESHOLD,
+                                                   "batch_size": _BATCH_SIZE}})
+        except Exception:
+            pass  # API interna do Chroma pode variar; a indexação funciona sem o ajuste
+        return col
 
     def add_chunks(
         self,
