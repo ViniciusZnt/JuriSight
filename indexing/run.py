@@ -3,7 +3,7 @@ Ponto de entrada da Indexação.
 
 Orquestra a metade inferior do C4 "Pipeline de Ingestão": lê os DocumentoJuridico
 do PostgreSQL → SAC Chunker → Poly-Vector Embedder → ChromaDB + BM25 Builder.
-Roda DEPOIS do scraper/run.py (que já populou o PostgreSQL).
+Roda DEPOIS do scraper/run.py.
 
 Uso:
     uv run python indexing/run.py
@@ -19,6 +19,7 @@ import os
 import sys
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
+import chromadb
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -38,79 +39,72 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-# Silencia o ruído das libs HTTP e os avisos de retry do cliente OpenAI (uma linha
-# por chamada / por backoff de 429). Os erros de verdade continuam sendo logados.
+# Silencia o ruído das libs HTTP e os retries da OpenAI (os erros reais seguem logados).
 for _noisy in ("httpx", "httpcore", "urllib3", "openai"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR")
 
 
 def _embed_doc(chunks, embedder) -> tuple[list, list]:
-    """Embeda os chunks de UM documento — a parte cara (chamadas à OpenAI).
+    """Embeda os chunks de UM documento (a parte cara: chamadas à OpenAI).
 
-    Roda em thread worker; NÃO toca no Chroma/BM25 (a escrita fica na thread
-    principal). embedding_completo: um por chunk (batch numa chamada). embedding do
-    resumo: o sac_summary é o mesmo em todos os chunks do doc, então embeda UMA vez e
-    replica (súmula com sac vazio reusa o vetor do texto — zero chamada extra).
+    Roda em thread worker, sem tocar no Chroma/BM25. O sac_summary é igual em todos os
+    chunks do doc: embeda uma vez e replica (sac vazio reusa o vetor do próprio texto).
 
-    Input:  chunks (todos de um mesmo documento); embedder.
+    Input:  chunks (de um mesmo documento); embedder.
     Returns: (emb_completo, emb_ementa) — vetores alinhados aos chunks.
     """
     emb_completo = embedder.embed_batch([c.texto for c in chunks])
     sac_summary = chunks[0].sac_summary
     resumo_vec = embedder.embed_text(sac_summary) if sac_summary else emb_completo[0]
-    emb_ementa = [resumo_vec] * len(chunks)
-    return emb_completo, emb_ementa
+    return emb_completo, [resumo_vec] * len(chunks)
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Indexa documentos do PostgreSQL no ChromaDB + BM25.")
+    p.add_argument("--reset", action="store_true", help="Limpa Chroma antes de indexar (reindexação total).")
+    p.add_argument("--limit", type=int, default=None, help="Indexa no máximo N documentos (teste).")
+    p.add_argument("--workers", type=int, default=6,
+                   help="Embeddings concorrentes (default 6). Teto real = TPM da OpenAI; acima disso só gera 429.")
+    p.add_argument("--flush-docs", type=int, default=100,
+                   help="Grava no Chroma a cada N docs (default 100). Reduz fsyncs em disco lento.")
+    p.add_argument("--no-bm25", action="store_true",
+                   help="Não constrói o BM25 (economiza ~5-7GB de RAM). Construa-o à parte depois.")
+    return p.parse_args()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Indexa documentos do PostgreSQL no ChromaDB + BM25.")
-    parser.add_argument("--reset", action="store_true", help="Limpa Chroma antes de indexar (força reindexação total).")
-    parser.add_argument("--limit", type=int, default=None, help="Indexa no máximo N documentos (teste).")
-    parser.add_argument("--workers", type=int, default=6,
-                        help="Nº de embeddings concorrentes (default 6). O teto real é o limite de tokens/min da OpenAI (1M TPM no Tier 1 ≈ 6 workers); mais que isso só gera 429.")
-    parser.add_argument("--flush-docs", type=int, default=100,
-                        help="Grava no Chroma a cada N docs (default 100). Em disco lento (HD) reduz fsyncs; em SSD pode baixar.")
-    args = parser.parse_args()
+    args = _parse_args()
 
+    client = chromadb.PersistentClient(path=os.path.expanduser(CHROMA_PERSIST_DIR))
     source = DocumentSource(DATABASE_URL)
     chunker = SACChunker()
     embedder = PolyVectorEmbedder()
-    chroma = ChromaStore()
+    chroma = ChromaStore(client)
     bm25 = BM25Builder()
 
     if args.reset:
         logger.info("Reset: limpando coleções do ChromaDB.")
         chroma.reset()
 
-    # Delta: documentos já no Chroma pulam o embedding (o caro). O BM25 NÃO é
-    # incremental, então todo chunk ainda é re-tokenizado (barato) para reconstruir
-    # o corpus — só o embedding + upsert dos já-indexados é que são evitados.
+    # Delta: docs já no Chroma pulam o embedding (a parte cara). Com --no-bm25 são pulados
+    # antes de chunkar; sem, ainda são re-tokenizados para reconstruir o corpus do BM25.
     ja_indexados = chroma.documento_ids_indexados()
     if ja_indexados:
         logger.info("Delta: %d documentos já indexados — só os novos serão embedados.", len(ja_indexados))
 
     total_docs = total_chunks = total_novos = total_falhas = 0
 
-    # Pool limitado: o embedding (I/O na OpenAI) roda em `workers` threads; a escrita
-    # no Chroma fica só nesta thread (serializada, sem race). Mantemos no máx.
-    # `workers * 3` futures em voo para não bufferizar os 69k docs na memória.
+    # Embedding (I/O na OpenAI) roda em `workers` threads; a escrita no Chroma fica só nesta
+    # thread. Buffer acumula flush_docs docs por gravação para cortar fsyncs em disco lento.
     workers = max(1, args.workers)
-    # Fila em voo folgada (workers * 5): mantém os workers alimentados enquanto a thread
-    # principal está ocupada num _flush() (escrita em lote), evitando que fiquem ociosos.
     max_inflight = workers * 5
     futures: dict = {}   # future -> (documento_id, chunks)
-
-    # Buffer de escrita: no WSL2 sobre HD, cada add_chunks faz fsync (seek do disco) e
-    # custa ~1,5s/doc. Acumulando ~flush_docs documentos por gravação, o write cai para
-    # ~47ms/doc (33x). Custo: um crash perde no máx. `flush_docs` docs (o delta refaz).
     buf: dict = {"chunks": [], "ec": [], "ee": [], "docs": 0}
 
     def _flush() -> None:
-        """Grava o buffer acumulado no Chroma numa única chamada (poucos fsyncs)."""
         if not buf["chunks"]:
             return
         chroma.add_chunks(buf["chunks"], buf["ec"], buf["ee"])
@@ -118,13 +112,11 @@ def main() -> None:
         buf["docs"] = 0
 
     def _colher(fut) -> None:
-        """Colhe um embedding pronto e o acumula no buffer de escrita (thread principal)."""
         nonlocal total_novos, total_falhas
         documento_id, chunks = futures.pop(fut)
         try:
             emb_completo, emb_ementa = fut.result()
         except Exception:
-            # Uma falha de embedding não deve abortar uma indexação de 69k.
             total_falhas += 1
             logger.exception("Falha ao embedar documento %s — pulando.", documento_id)
             return
@@ -142,6 +134,11 @@ def main() -> None:
         for i, (documento_id, doc) in enumerate(source.iter_documents()):
             if args.limit is not None and i >= args.limit:
                 break
+
+            ja_feito = documento_id in ja_indexados
+            if ja_feito and args.no_bm25:         # já indexado e sem BM25: nada a fazer
+                continue
+
             try:
                 chunks = chunker.chunk_document(doc, documento_id)
             except Exception:
@@ -150,27 +147,28 @@ def main() -> None:
                 continue
             if not chunks:
                 continue
-            bm25.add(chunks)                      # sempre: BM25 precisa do corpus completo
+
+            if not args.no_bm25:
+                bm25.add(chunks)
             total_docs += 1
             total_chunks += len(chunks)
 
-            if documento_id in ja_indexados:
+            if ja_feito:
                 continue                          # delta: já no Chroma, pula o embedding
 
             futures[executor.submit(_embed_doc, chunks, embedder)] = (documento_id, chunks)
-            # Buffer cheio: drena os que já terminaram antes de submeter mais.
-            if len(futures) >= max_inflight:
+            if len(futures) >= max_inflight:      # fila cheia: drena os prontos antes de submeter
                 done, _ = wait(futures, return_when=FIRST_COMPLETED)
                 for fut in done:
                     _colher(fut)
 
-        # Drena o restante em voo e grava o que sobrou no buffer.
-        for fut in list(futures):
+        for fut in list(futures):                 # drena o restante em voo
             _colher(fut)
         _flush()
 
-    # BM25 é reconstruído do corpus inteiro (não incremental); só salva se há chunks.
-    if total_chunks:
+    if args.no_bm25:
+        logger.info("BM25 pulado (--no-bm25). Construa-o à parte depois.")
+    elif total_chunks:
         bm25.build_and_save()
         logger.info("Índice BM25 salvo em %s", bm25.index_path)
     else:

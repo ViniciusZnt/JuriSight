@@ -7,6 +7,9 @@ venv/
 dist/
 build/
 
+#Indexing Log
+indexing.log
+
 # Dados locais (não versionar — muito grandes)
 data/raw/
 data/processed/

@@ -1,43 +1,42 @@
 """
-Vector Indexer / ChromaDB.
+Vector Indexer.
 
-Persiste os chunks e seus dois embeddings Poly-Vector no ChromaDB local, junto com
-os metadados mínimos de filtragem. O ChromaDB guarda APENAS chunks/embeddings/metadados
-de filtro — o documento integral fica no PostgreSQL (source of truth).
+Persiste os chunks e seus dois embeddings Poly-Vector no ChromaDB, com os metadados
+de filtragem. O Chroma guarda um embedding por registro, então usamos DUAS coleções:
 
-Poly-Vector: o Chroma armazena um embedding por registro/coleção. Modelamos DUAS
-coleções, em granularidades diferentes:
-  - COLLECTION_COMPLETO → embedding_completo (chunk + SAC): um registro por CHUNK
-    (id = chunk_id);
-  - COLLECTION_EMENTA   → embedding_ementa (ementa/tese): um registro por DOCUMENTO
-    (id = documento_id). A ementa é a mesma em todos os chunks do doc, então
-    guardá-la por chunk seria redundante prejudicaria o ranking.
+  - COLLECTION_COMPLETO → um registro por CHUNK  (id = chunk_id);
+  - COLLECTION_EMENTA   → um registro por DOCUMENTO (id = documento_id).
+    Como a ementa já está sendo abordada pelo SAC em todos os chunks do doc, então
+    guardá-la novamente aqui seria redundante, por isso guardamos apenas o documento_id.
 
 Metadados de filtragem: documento_id, tipo_documento, provimento, data_julgamento,
-numero_processo, hierarquia_categoria (+ posicao só na coleção por chunk).
+numero_processo, hierarquia_categoria.
 """
-import os
-import chromadb
+import logging
+from chromadb import Collection
+from chromadb.api import ClientAPI
 from processing.chunking.sac_chunker import Chunk
 
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/index")
+logger = logging.getLogger(__name__)
+
 COLLECTION_COMPLETO = "chunks_completo"
 COLLECTION_EMENTA = "chunks_ementa"
 
-# Em disco lento (HD/WSL2), o Chroma sincronizar o índice a cada 1.000 vetores (default)
-# reescreve arquivos de vários GB no HD o tempo todo e trava a indexação quando o índice
-# passa do tamanho da RAM. Elevamos o limiar: ~50x menos escrita no disco.
-_SYNC_THRESHOLD = 50000
-_BATCH_SIZE = 10000
+# Parâmetros do HNSW (grafo de busca vetorial):
+# - sync_threshold: a cada N vetores, grava o grafo no disco. Controla a frequência de
+#   escrita (o grafo fica todo em RAM de qualquer forma); mais alto = menos fsyncs.
+# - batch_size: buffer em memória mesclado no grafo ao encher. Deve ser <= sync_threshold.
+_SYNC_THRESHOLD = 10000
+_BATCH_SIZE = 3000
 
 Vector = list[float]
 
 
 def _to_metadata(chunk: Chunk) -> dict:
-    """Monta os metadados de filtragem por-CHUNK para o ChromaDB.
+    """Monta os metadados de filtragem por-CHUNK para COLLECTION_COMPLETO.
 
     Input:  chunk.
-    Returns: dict só com escalares (Chroma não aceita None/listas); data_julgamento None vira "".
+    Returns: dict só com escalares (Chroma não aceita None/listas).
     """
     return {
         "documento_id":         chunk.documento_id,
@@ -51,10 +50,10 @@ def _to_metadata(chunk: Chunk) -> dict:
 
 
 def _to_metadata_documento(chunk: Chunk) -> dict:
-    """Metadados por-DOCUMENTO para a coleção da ementa.
+    """Metadados por-DOCUMENTO para a COLLECTION_EMENTA.
 
-    Input:  chunk — um representante do documento.
-    Returns: mesmo dict de _to_metadata, sem a chave 'posicao'.
+    Input:  chunk.
+    Returns: dict, sem a chave 'posicao'.
     """
     meta = _to_metadata(chunk)
     meta.pop("posicao", None)
@@ -64,19 +63,18 @@ def _to_metadata_documento(chunk: Chunk) -> dict:
 class ChromaStore:
     """Wrapper do ChromaDB persistente com as duas coleções Poly-Vector."""
 
-    def __init__(self, persist_dir: str = CHROMA_PERSIST_DIR) -> None:
-        """Abre o cliente persistente e as duas coleções.
+    def __init__(self, client: ClientAPI) -> None:
+        """Recebe o cliente Chroma (injetado) e abre as duas coleções.
 
-        Input:  persist_dir — diretório de persistência do ChromaDB.
+        Input:  client — cliente Chroma síncrono (PersistentClient ou HttpClient).
         Returns: None.
         """
-        # expanduser: permite ~ no CHROMA_PERSIST_DIR (índice mora no FS Linux, não em /mnt/d).
-        self._client = chromadb.PersistentClient(path=os.path.expanduser(persist_dir))
+        self._client = client
         self._col_completo = self._abrir_colecao(COLLECTION_COMPLETO)
         self._col_ementa = self._abrir_colecao(COLLECTION_EMENTA)
 
-    def _abrir_colecao(self, nome: str):
-        """Cria (ou reabre) uma coleção com distância de cosseno como métrica de definição dos vetores.
+    def _abrir_colecao(self, nome: str) -> Collection:
+        """Cria ou reabre uma coleção com distância de cosseno como métrica de definição dos vetores.
 
         Input:  nome — nome da coleção.
         Returns: o objeto Collection do ChromaDB.
@@ -84,16 +82,22 @@ class ChromaStore:
         col = self._client.get_or_create_collection(
             name=nome, metadata={"hnsw:space": "cosine"}
         )
-        # Afrouxa a frequência de sincronização com o disco (ver _SYNC_THRESHOLD). Os
-        # vetores não sincronizados ficam no SQLite (fonte de verdade) e são reconciliados
-        # no próximo load, então uma queda não causa perda nem re-embedding.
+        # Ajusta os parâmetros do HNSW.
         try:
             hnsw = col._model.configuration_json.get("hnsw", {})
             if hnsw.get("sync_threshold") != _SYNC_THRESHOLD:
-                col.modify(configuration={"hnsw": {"sync_threshold": _SYNC_THRESHOLD,
-                                                   "batch_size": _BATCH_SIZE}})
+                col.modify(
+                    configuration={
+                        "hnsw": {
+                            "sync_threshold": _SYNC_THRESHOLD,
+                            "batch_size": _BATCH_SIZE}
+                    }
+                )
         except Exception:
-            pass  # API interna do Chroma pode variar; a indexação funciona sem o ajuste
+            logger.warning(
+                "Não foi possível ajustar o HNSW da coleção '%s' (API interna do "
+                "Chroma pode ter mudado); seguindo com os defaults.", nome, exc_info=True
+            )
         return col
 
     def add_chunks(
@@ -104,10 +108,10 @@ class ChromaStore:
     ) -> None:
         """Indexa (upsert) um lote nas duas coleções.
 
-        COMPLETO é por chunk (id = chunk_id); EMENTA é por documento (id =
-        documento_id) - (a ementa é a mesma em todos os chunks do doc).
+        emb_completo é por chunk (id = chunk_id);
+        emb_ementa é por documento (id = documento_id).
 
-        Input:  chunks; (emb_completo, emb_ementa) — vetores na mesma ordem dos chunks.
+        Input:  chunks, (emb_completo, emb_ementa) — vetores na mesma ordem dos chunks.
         Returns: None.
         """
         if not chunks:
@@ -118,7 +122,7 @@ class ChromaStore:
                 f"{len(emb_completo)} emb_completo, {len(emb_ementa)} emb_ementa."
             )
 
-        # COMPLETO: um registro por chunk. upsert → chunk_id sobrescreve em vez de duplicar
+        # COMPLETO: Upsert de UM registro POR chunk.
         self._col_completo.upsert(
             ids=[c.chunk_id for c in chunks],
             embeddings=emb_completo,
@@ -126,9 +130,8 @@ class ChromaStore:
             metadatas=[_to_metadata(c) for c in chunks],
         )
 
-        # EMENTA: um registro por documento. Como o vetor de ementa é o mesmo em
-        # todos os chunks de um doc, percorremos os chunks e guardamos só o 1º de
-        # cada documento_id (o `set` lembra quais já entraram).
+        # EMENTA: Upsert de UM registro POR documento.
+        # Percorremos os chunks e guardamos só o 1º de cada documento_id.
         vistos: set[str] = set()
         ids, embeddings, documents, metadatas = [], [], [], []
         for c, emb in zip(chunks, emb_ementa):
@@ -157,11 +160,9 @@ class ChromaStore:
         """Busca vetorial numa coleção, com filtro opcional de metadados.
 
         Input:  embedding — vetor da query; n_results; where — filtro Chroma
-                (ex.: {"provimento": "APROVADO"} ou {"data_julgamento": {"$gte": "2020-01-01"}});
-                collection — COLLECTION_COMPLETO (id = chunk_id) ou COLLECTION_EMENTA
-                (id = documento_id).
-        Returns: lista de {id, documento_id, distance, metadata}, mais próximos primeiro.
-                 Em COMPLETO o id é o chunk_id; em EMENTA o id é o próprio documento_id.
+                (ex.: {"provimento": "APROVADO"}); collection — qual coleção usar.
+        Returns: lista de {id, documento_id, distance, metadata}, mais próximos primeiro
+                 (id = chunk_id em COMPLETO, documento_id em EMENTA).
         """
         col = self._col_completo if collection == COLLECTION_COMPLETO else self._col_ementa
         res = col.query(
@@ -187,10 +188,10 @@ class ChromaStore:
         return resultados
 
     def documento_ids_indexados(self) -> set[str]:
-        """Retorna os documento_id já presentes na coleção da ementa (1 por doc).
-
+        """Retorna os documento_id já presentes na coleção da ementa.
         Usado pela indexação delta para pular o embedding de quem já foi indexado.
-        Input:  nenhum.
+        
+        Input:  None.
         Returns: set de documento_id (vazio após reset ou base nova).
         """
         return set(self._col_ementa.get(include=[])["ids"])
@@ -198,13 +199,13 @@ class ChromaStore:
     def reset(self) -> None:
         """Apaga e recria as duas coleções (re-indexação do zero).
 
-        Input:  nenhum.
+        Input:  None.
         Returns: None.
         """
         for nome in (COLLECTION_COMPLETO, COLLECTION_EMENTA):
             try:
                 self._client.delete_collection(nome)
             except Exception:
-                pass  # coleção pode não existir ainda — tudo bem
+                pass
         self._col_completo = self._abrir_colecao(COLLECTION_COMPLETO)
         self._col_ementa = self._abrir_colecao(COLLECTION_EMENTA)
