@@ -275,6 +275,21 @@ uv run streamlit run interface/app.py
 
 ---
 
+## Escalabilidade
+
+O ChromaDB é RAM-bound: o HNSW carrega o índice inteiro em memória, então o tamanho
+da coleção é limitado pela RAM. Passou da RAM, entra em swap e trava
+([docs](https://docs.trychroma.com/guides/deploy/performance)).
+
+Escala atual: ~69k acórdãos (~400k chunks, ~3 GB de vetores) em 11 GB de RAM.
+
+Migração planejada para **Qdrant** (índice em disco com mmap) quando o acervo
+crescer além da RAM. Troca localizada: só o `ChromaStore` muda — o Postgres é a
+fonte de verdade e a busca fica atrás do `HybridSearch`.
+https://qdrant.tech/documentation/migrate-to-qdrant/from-chroma/
+
+---
+
 ## Conformidade
 
 - Dados 100% públicos do portal TST
