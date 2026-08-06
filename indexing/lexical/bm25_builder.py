@@ -59,6 +59,26 @@ def _tokenize(text: str) -> list[str]:
     return [t for t in tokens if t not in STOPWORDS]
 
 
+def _validar_indice(path: Path, esperado: int) -> None:
+    """Reabre um índice recém-escrito e confere que carrega íntegro.
+
+    Input:  path — arquivo a validar; esperado — nº de chunk_ids esperado.
+    Returns: None. Levanta RuntimeError se o pickle não carrega ou vem incompleto.
+    """
+    try:
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+    except Exception as e:
+        raise RuntimeError(
+            f"Índice BM25 em {path} corrompido/truncado (não carregou): {e}"
+        ) from e
+    n = len(data.get("chunk_ids", []))
+    if n != esperado:
+        raise RuntimeError(
+            f"Índice BM25 em {path} incompleto: {n} chunk_ids, esperava {esperado}."
+        )
+
+
 class BM25Builder:
     """Constrói e persiste o índice lexical dos chunks."""
 
@@ -86,17 +106,37 @@ class BM25Builder:
         """Constrói o BM25Okapi sobre o corpus e serializa para self.index_path.
 
         Input:  nenhum (usa o corpus acumulado por add()).
-        Returns: None. Grava um pickle com {bm25, chunk_ids}.
+        Returns: None. Grava (de forma atômica e validada) um pickle {bm25, chunk_ids}.
         """
         # TODO (delta): o BM25Okapi não é incremental — reconstrói do corpus inteiro.
         #   Para indexação delta sem re-chunkar tudo, persistir também o corpus
         #   tokenizado e, no delta, carregar + adicionar/remover só o que mudou.
         if not self._corpus_tokens:
             raise ValueError("Corpus vazio: chame add() antes de build_and_save().")
+        esperado = len(self._chunk_ids)
         bm25 = BM25Okapi(self._corpus_tokens)
+        # O BM25Okapi já derivou doc_freqs/idf/doc_len e NÃO guarda o corpus cru.
+        # Liberamos os ~vários GB de tokens ANTES do dump (o momento de pico de RAM),
+        # não depois — foi aqui que estourava a memória na base de ~400k chunks.
+        self._corpus_tokens = []
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.index_path, "wb") as f:
-            pickle.dump({"bm25": bm25, "chunk_ids": self._chunk_ids}, f)
+
+        # Escrita atômica: grava num .tmp, valida que recarrega e só então troca pelo
+        # arquivo final (os.replace é atômico no mesmo filesystem). Um crash/OOM no
+        # meio do dump deixa o índice anterior intacto, em vez de sobrescrevê-lo com
+        # um pickle truncado (que só falha na hora de carregar, lá na frente).
+        tmp = self.index_path.with_name(self.index_path.name + ".tmp")
+        try:
+            with open(tmp, "wb") as f:
+                pickle.dump({"bm25": bm25, "chunk_ids": self._chunk_ids}, f)
+                f.flush()
+                os.fsync(f.fileno())      # garante que os bytes chegaram ao disco
+            del bm25                       # libera antes do reload de validação
+            _validar_indice(tmp, esperado)
+            os.replace(tmp, self.index_path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)    # não deixa .tmp truncado pra trás
+            raise
 
     @staticmethod
     def load(index_path: Path = BM25_INDEX_PATH) -> "LoadedBM25":
