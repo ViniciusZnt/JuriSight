@@ -388,16 +388,6 @@ wheels = [
 ]
 
 [[package]]
-name = "evaluation"
-version = "0.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "glog" },
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/ce/668eaf88963552515918c2327f3bde1e4bfeb0612f52946895c884c629bb/evaluation-0.0.2.tar.gz", hash = "sha256:89a327798175aad5bf61a8e86da76fd1ea9b2f0092f2b994c302c500b6c83cad", size = 2070, upload-time = "2020-03-27T02:31:07.118Z" }
-
-[[package]]
 name = "filelock"
 version = "3.29.5"
 source = { registry = "https://pypi.org/simple" }
@@ -494,19 +484,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/10/a1/ae4e3e5003468d6391d2c77b6fa1cd73bd5d13511d81c642d7b28ac90ed4/fsspec-2026.6.0.tar.gz", hash = "sha256:f5bac145310fe30e16e1471bd6840b2d990d609e872251d7e674241822abf01a", size = 313646, upload-time = "2026-06-16T01:57:28.105Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/22/4222d7ddf3da30f363edaa98e329c2bce6c65497c9cb2810931c8b2c0fbc/fsspec-2026.6.0-py3-none-any.whl", hash = "sha256:02e0b71817df9b2169dc30a16832045764def1191b43dcff5bb85bdee212d2a1", size = 203949, upload-time = "2026-06-16T01:57:26.358Z" },
-]
-
-[[package]]
-name = "glog"
-version = "0.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "python-gflags" },
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d7/7f/082e2a23f8dff00bd98a7ff7db1b27a3cc66012f2db952a5fc00d8f66b13/glog-0.3.1.tar.gz", hash = "sha256:b721edef6009eabc0b4d9f2619e153d2627a7b71a3657c8ed69f02ef7c78be97", size = 5305, upload-time = "2016-12-14T01:52:18.216Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/42/d2502683e9d9086cba5fb741c9b66c72ab1a852d046e1d54d2b80221b69f/glog-0.3.1-py2.py3-none-any.whl", hash = "sha256:88cee83dea8bddf73db7edbf5bd697237628389ef476c0a0ecad639c606189e5", size = 7767, upload-time = "2016-12-14T01:52:16.671Z" },
 ]
 
 [[package]]
@@ -838,7 +815,6 @@ source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "chromadb" },
-    { name = "evaluation" },
     { name = "ollama" },
     { name = "openai" },
     { name = "playwright" },
@@ -859,7 +835,6 @@ dev = [
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.14.3" },
     { name = "chromadb", specifier = ">=1.5.9" },
-    { name = "evaluation", specifier = ">=0.0.2" },
     { name = "ollama", specifier = ">=0.6.2" },
     { name = "openai", specifier = ">=2.46.0" },
     { name = "playwright", specifier = ">=1.60.0" },
@@ -1728,12 +1703,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
 ]
-
-[[package]]
-name = "python-gflags"
-version = "3.1.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/df/ec/e31302d355bcb9d207d9b858adc1ecc4a6d8c855730c8ba4ddbdd3f8eb8d/python-gflags-3.1.2.tar.gz", hash = "sha256:40ae131e899ef68e9e14aa53ca063839c34f6a168afe622217b5b875492a1ee2", size = 52093, upload-time = "2017-10-27T13:04:08.546Z" }
 
 [[package]]
 name = "pyyaml"
