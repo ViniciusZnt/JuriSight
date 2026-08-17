@@ -30,3 +30,6 @@ dumps/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Fonte de design do front (export do Figma — só referência p/ portar)
+Legal AI Research Platform.zip
