@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JuriSight — Frontend
 
-## Getting Started
+Interface web do JuriSight (RFC §4). Next.js + React consumindo a API de busca híbrida.
 
-First, run the development server:
+## Stack
+
+Next 16 (App Router), React 19, TypeScript, Tailwind 4, pnpm. Design system portado do export do Figma.
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev      # http://localhost:3000
+pnpm build    # build de produção
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Scaffold original:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm create next-app@latest frontend --ts --eslint --tailwind \
+  --src-dir --app --no-turbopack --import-alias "@/*" --use-pnpm
+pnpm add lucide-react clsx tailwind-merge class-variance-authority tw-animate-css
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Estrutura
 
-## Learn More
+- `src/app/(app)/` — telas **com** a sidebar fixa: home, `revisao`, `resultados`, `decisao/[id]`.
+- `src/app/(auth)/` — `login`, **sem** a sidebar fixa.
+- `src/components/` — `Sidebar`, `AppShell`.
+- `src/lib/utils.ts` — `cn()`.
 
-To learn more about Next.js, take a look at the following resources:
+`(app)` e `(auth)` só agrupam as telas que compartilham (ou não) a sidebar; os parênteses não aparecem na URL (`/`, `/login`).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Branches
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Uma feature branch por tela, a partir de `frontend` (`feat/home`, `feat/login`, …). Telas atuais são placeholders.
