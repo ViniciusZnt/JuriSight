@@ -8,8 +8,9 @@ interface UploadedFile {
   size: string;
 }
 
-/** Campo de consulta: textarea auto-expansível + anexar PDF + enviar. */
-export function SearchInput({ onSubmit }: { onSubmit?: () => void }) {
+/** Campo de consulta: textarea auto-expansível + anexar PDF + enviar.
+ *  onSubmit recebe o título da consulta (o texto, ou o nome do PDF). */
+export function SearchInput({ onSubmit }: { onSubmit?: (query: string) => void }) {
   const [query, setQuery] = useState("");
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [isFocused, setIsFocused] = useState(false);
@@ -40,6 +41,9 @@ export function SearchInput({ onSubmit }: { onSubmit?: () => void }) {
   };
 
   const canSubmit = query.trim().length > 0 || uploadedFile !== null;
+  const submit = () => {
+    if (canSubmit) onSubmit?.(query.trim() || uploadedFile?.name || "");
+  };
 
   return (
     <div className="w-full max-w-[720px] mx-auto">
@@ -81,7 +85,7 @@ export function SearchInput({ onSubmit }: { onSubmit?: () => void }) {
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (canSubmit) onSubmit?.();
+                submit();
               }
             }}
           />
@@ -115,7 +119,7 @@ export function SearchInput({ onSubmit }: { onSubmit?: () => void }) {
             )}
             <button
               disabled={!canSubmit}
-              onClick={() => canSubmit && onSubmit?.()}
+              onClick={submit}
               className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all ${
                 canSubmit
                   ? "bg-[#1A3A5C] hover:bg-[#1E4570] text-white shadow-sm active:scale-95"

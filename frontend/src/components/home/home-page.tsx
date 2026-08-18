@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { BookOpen, FileSearch, Gavel, Star, Zap } from "lucide-react";
 import { SearchInput } from "@/components/home/search-input";
+import { useConversations } from "@/lib/conversations";
 
 const features = [
   {
@@ -28,10 +29,15 @@ const features = [
   },
 ];
 
-/** Home: entrada de consulta (RFC Figura 2). Ao enviar, vai para a revisão. */
+/** Home: entrada de consulta (RFC Figura 2). Enviar cria a conversa e vai à revisão. */
 export function HomePage() {
   const router = useRouter();
-  const handleSubmit = () => router.push("/revisao");
+  const { create } = useConversations();
+
+  const handleSubmit = (query: string) => {
+    create(query || "Nova pesquisa");
+    router.push("/revisao");
+  };
 
   return (
     <div className="flex flex-col min-h-full bg-[#F7F7F9]">

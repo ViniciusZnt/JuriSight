@@ -1,6 +1,11 @@
 import { AppShell } from "@/components/app-shell";
+import { ConversationsProvider } from "@/lib/conversations";
 
-/** Layout das telas autenticadas: envolve tudo na casca com a sidebar. */
+/** Layout das telas autenticadas: provê as conversas e a casca com a sidebar. */
 export default function AppGroupLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <ConversationsProvider>
+      <AppShell>{children}</AppShell>
+    </ConversationsProvider>
+  );
 }
