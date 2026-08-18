@@ -10,7 +10,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F7F7F9]">
+    <div className="flex h-screen w-full overflow-hidden bg-[#F7F7F9] dark:bg-[#0E0E11]">
       {/* Overlay no mobile */}
       {mobileOpen && (
         <div
@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             if (window.innerWidth < 768) setMobileOpen((v) => !v);
             else setCollapsed((c) => !c);
           }}
-          className="absolute top-4 left-4 z-20 flex items-center justify-center w-8 h-8 rounded-lg text-[#9090A0] hover:bg-white hover:text-[#1A3A5C] hover:shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-all"
+          className="absolute top-4 left-4 z-20 flex items-center justify-center w-8 h-8 rounded-lg text-[#9090A0] dark:text-[#7C7C88] hover:bg-white hover:text-[#1A3A5C] hover:shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-all"
           title={collapsed ? "Expandir menu" : "Recolher menu"}
         >
           {collapsed ? (

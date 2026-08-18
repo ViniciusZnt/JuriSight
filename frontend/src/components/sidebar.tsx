@@ -49,9 +49,9 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex flex-col h-full w-[260px] bg-white border-r border-[#EBEBEF]">
+    <aside className="flex flex-col h-full w-[260px] bg-white dark:bg-[#17171B] border-r border-[#EBEBEF] dark:border-[#26262C]">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[#EBEBEF]">
+      <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[#EBEBEF] dark:border-[#26262C]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
@@ -59,7 +59,7 @@ export function Sidebar() {
           className="w-10 h-10 object-contain flex-shrink-0 select-none"
           draggable={false}
         />
-        <span className="text-[#0F1117] tracking-[-0.01em]" style={{ fontSize: "18.4px", fontWeight: 600 }}>
+        <span className="text-[#0F1117] dark:text-[#ECECEF] tracking-[-0.01em]" style={{ fontSize: "18.4px", fontWeight: 600 }}>
           JuriSight
         </span>
       </div>
@@ -77,14 +77,14 @@ export function Sidebar() {
 
       {/* Buscar consultas */}
       <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#F6F6F9] border border-[#EBEBEF]">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#F6F6F9] dark:bg-[#1C1C21] border border-[#EBEBEF] dark:border-[#26262C]">
           <Search className="w-3.5 h-3.5 text-[#9B9BAD] flex-shrink-0" strokeWidth={2} />
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             type="text"
             placeholder="Buscar consultas..."
-            className="bg-transparent outline-none w-full text-[#6B6B80] placeholder:text-[#AEAEBF]"
+            className="bg-transparent outline-none w-full text-[#6B6B80] dark:text-[#A6A6B4] placeholder:text-[#AEAEBF]"
             style={{ fontSize: "14.4px" }}
           />
         </div>
@@ -93,7 +93,7 @@ export function Sidebar() {
       {/* Histórico */}
       <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
         {groups.length === 0 ? (
-          <p className="px-3 py-6 text-center text-[#AEAEBF]" style={{ fontSize: "13.8px" }}>
+          <p className="px-3 py-6 text-center text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "13.8px" }}>
             {conversations.length === 0
               ? "Nenhuma pesquisa ainda. Comece uma nova."
               : "Nada encontrado."}
@@ -102,7 +102,7 @@ export function Sidebar() {
           groups.map((group) => (
             <div key={group.label} className="mb-1">
               <p
-                className="px-2 py-1.5 text-[#AEAEBF] uppercase tracking-[0.06em]"
+                className="px-2 py-1.5 text-[#AEAEBF] dark:text-[#6E6E7C] uppercase tracking-[0.06em]"
                 style={{ fontSize: "12.1px", fontWeight: 600 }}
               >
                 {group.label}
@@ -119,13 +119,13 @@ export function Sidebar() {
                         if (e.key === "Enter") commitRename();
                         if (e.key === "Escape") setEditingId(null);
                       }}
-                      className="w-full px-2 py-2 rounded-lg bg-[#F6F6F9] border border-[#1A3A5C] outline-none text-[#1A3A5C]"
+                      className="w-full px-2 py-2 rounded-lg bg-[#F6F6F9] dark:bg-[#1C1C21] border border-[#1A3A5C] outline-none text-[#1A3A5C] dark:text-[#8AB0DC]"
                       style={{ fontSize: "14.4px" }}
                     />
                   ) : (
                     <div
                       className={`group flex items-center rounded-lg transition-all ${
-                        activeId === c.id ? "bg-[#EFF4FA]" : "hover:bg-[#F6F6F9]"
+                        activeId === c.id ? "bg-[#EFF4FA] dark:bg-[#1A2A3C]" : "hover:bg-[#F6F6F9]"
                       }`}
                     >
                       <button
@@ -134,12 +134,12 @@ export function Sidebar() {
                       >
                         <MessageSquare
                           className={`w-3.5 h-3.5 flex-shrink-0 ${
-                            activeId === c.id ? "text-[#1A3A5C]" : "text-[#AEAEBF]"
+                            activeId === c.id ? "text-[#1A3A5C] dark:text-[#8AB0DC]" : "text-[#AEAEBF] dark:text-[#6E6E7C]"
                           }`}
                           strokeWidth={1.8}
                         />
                         <span
-                          className={`flex-1 truncate ${activeId === c.id ? "text-[#1A3A5C]" : "text-[#4A4A5A]"}`}
+                          className={`flex-1 truncate ${activeId === c.id ? "text-[#1A3A5C] dark:text-[#8AB0DC]" : "text-[#4A4A5A] dark:text-[#C4C4CE]"}`}
                           style={{ fontSize: "14.4px", fontWeight: activeId === c.id ? 500 : 400 }}
                         >
                           {c.title}
@@ -147,7 +147,7 @@ export function Sidebar() {
                       </button>
                       <button
                         onClick={() => setMenuId(menuId === c.id ? null : c.id)}
-                        className="px-1.5 py-2 text-[#AEAEBF] opacity-0 group-hover:opacity-100 hover:text-[#1A3A5C]"
+                        className="px-1.5 py-2 text-[#AEAEBF] dark:text-[#6E6E7C] opacity-0 group-hover:opacity-100 hover:text-[#1A3A5C]"
                         title="Opções"
                       >
                         <MoreHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
@@ -158,10 +158,10 @@ export function Sidebar() {
                   {menuId === c.id && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setMenuId(null)} />
-                      <div className="absolute right-2 top-9 z-50 w-36 rounded-lg border border-[#EAEAEF] bg-white py-1 shadow-lg">
+                      <div className="absolute right-2 top-9 z-50 w-36 rounded-lg border border-[#EAEAEF] bg-white dark:bg-[#17171B] py-1 shadow-lg">
                         <button
                           onClick={() => startRename(c.id, c.title)}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#4A4A5A] hover:bg-[#F6F6F9]"
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#4A4A5A] dark:text-[#C4C4CE] hover:bg-[#F6F6F9]"
                           style={{ fontSize: "14.4px" }}
                         >
                           <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Renomear
@@ -187,7 +187,7 @@ export function Sidebar() {
       </div>
 
       {/* Rodapé */}
-      <div className="border-t border-[#EBEBEF] px-3 py-3 space-y-1">
+      <div className="border-t border-[#EBEBEF] dark:border-[#26262C] px-3 py-3 space-y-1">
         <NavButton icon={Bookmark} label="Salvos" active={pathname === "/salvos"} onClick={() => router.push("/salvos")} />
         <NavButton
           icon={Settings}
@@ -197,16 +197,16 @@ export function Sidebar() {
         />
 
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[#F6F6F9] cursor-pointer transition-all mt-1">
-          <div className="w-7 h-7 rounded-full bg-[#E8EDF4] flex items-center justify-center flex-shrink-0">
-            <span className="text-[#1A3A5C]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
+          <div className="w-7 h-7 rounded-full bg-[#E8EDF4] dark:bg-[#1E2A38] flex items-center justify-center flex-shrink-0">
+            <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
               MA
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[#0F1117] truncate" style={{ fontSize: "14.4px", fontWeight: 500 }}>
+            <p className="text-[#0F1117] dark:text-[#ECECEF] truncate" style={{ fontSize: "14.4px", fontWeight: 500 }}>
               Marcos Almeida
             </p>
-            <p className="text-[#AEAEBF] truncate" style={{ fontSize: "12.6px" }}>
+            <p className="text-[#AEAEBF] dark:text-[#6E6E7C] truncate" style={{ fontSize: "12.6px" }}>
               Plano Pro
             </p>
           </div>
@@ -231,7 +231,7 @@ function NavButton({
     <button
       onClick={onClick}
       className={`flex items-center gap-2.5 w-full px-2 py-2 rounded-lg transition-all ${
-        active ? "bg-[#EFF4FA] text-[#1A3A5C]" : "text-[#6B6B80] hover:bg-[#F6F6F9]"
+        active ? "bg-[#EFF4FA] dark:bg-[#1A2A3C] text-[#1A3A5C] dark:text-[#8AB0DC]" : "text-[#6B6B80] dark:text-[#A6A6B4] hover:bg-[#F6F6F9]"
       }`}
     >
       <Icon className="w-3.5 h-3.5" strokeWidth={1.8} />
