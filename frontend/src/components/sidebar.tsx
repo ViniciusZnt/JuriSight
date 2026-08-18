@@ -59,7 +59,7 @@ export function Sidebar() {
           className="w-10 h-10 object-contain flex-shrink-0 select-none"
           draggable={false}
         />
-        <span className="text-[#0F1117] tracking-[-0.01em]" style={{ fontSize: "16px", fontWeight: 600 }}>
+        <span className="text-[#0F1117] tracking-[-0.01em]" style={{ fontSize: "18.4px", fontWeight: 600 }}>
           JuriSight
         </span>
       </div>
@@ -71,7 +71,7 @@ export function Sidebar() {
           className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2.5 bg-[#1A3A5C] text-white transition-all hover:bg-[#1E4570] active:scale-[0.98]"
         >
           <Plus className="w-4 h-4 flex-shrink-0" strokeWidth={2} />
-          <span style={{ fontSize: "13.5px", fontWeight: 500 }}>Nova pesquisa</span>
+          <span style={{ fontSize: "15.5px", fontWeight: 500 }}>Nova pesquisa</span>
         </button>
       </div>
 
@@ -85,7 +85,7 @@ export function Sidebar() {
             type="text"
             placeholder="Buscar consultas..."
             className="bg-transparent outline-none w-full text-[#6B6B80] placeholder:text-[#AEAEBF]"
-            style={{ fontSize: "12.5px" }}
+            style={{ fontSize: "14.4px" }}
           />
         </div>
       </div>
@@ -93,7 +93,7 @@ export function Sidebar() {
       {/* Histórico */}
       <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
         {groups.length === 0 ? (
-          <p className="px-3 py-6 text-center text-[#AEAEBF]" style={{ fontSize: "12px" }}>
+          <p className="px-3 py-6 text-center text-[#AEAEBF]" style={{ fontSize: "13.8px" }}>
             {conversations.length === 0
               ? "Nenhuma pesquisa ainda. Comece uma nova."
               : "Nada encontrado."}
@@ -103,7 +103,7 @@ export function Sidebar() {
             <div key={group.label} className="mb-1">
               <p
                 className="px-2 py-1.5 text-[#AEAEBF] uppercase tracking-[0.06em]"
-                style={{ fontSize: "10.5px", fontWeight: 600 }}
+                style={{ fontSize: "12.1px", fontWeight: 600 }}
               >
                 {group.label}
               </p>
@@ -120,7 +120,7 @@ export function Sidebar() {
                         if (e.key === "Escape") setEditingId(null);
                       }}
                       className="w-full px-2 py-2 rounded-lg bg-[#F6F6F9] border border-[#1A3A5C] outline-none text-[#1A3A5C]"
-                      style={{ fontSize: "12.5px" }}
+                      style={{ fontSize: "14.4px" }}
                     />
                   ) : (
                     <div
@@ -140,7 +140,7 @@ export function Sidebar() {
                         />
                         <span
                           className={`flex-1 truncate ${activeId === c.id ? "text-[#1A3A5C]" : "text-[#4A4A5A]"}`}
-                          style={{ fontSize: "12.5px", fontWeight: activeId === c.id ? 500 : 400 }}
+                          style={{ fontSize: "14.4px", fontWeight: activeId === c.id ? 500 : 400 }}
                         >
                           {c.title}
                         </span>
@@ -162,7 +162,7 @@ export function Sidebar() {
                         <button
                           onClick={() => startRename(c.id, c.title)}
                           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#4A4A5A] hover:bg-[#F6F6F9]"
-                          style={{ fontSize: "12.5px" }}
+                          style={{ fontSize: "14.4px" }}
                         >
                           <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Renomear
                         </button>
@@ -172,7 +172,7 @@ export function Sidebar() {
                             setMenuId(null);
                           }}
                           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#D4183D] hover:bg-[#FDF2F4]"
-                          style={{ fontSize: "12.5px" }}
+                          style={{ fontSize: "14.4px" }}
                         >
                           <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} /> Apagar
                         </button>
@@ -198,15 +198,15 @@ export function Sidebar() {
 
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[#F6F6F9] cursor-pointer transition-all mt-1">
           <div className="w-7 h-7 rounded-full bg-[#E8EDF4] flex items-center justify-center flex-shrink-0">
-            <span className="text-[#1A3A5C]" style={{ fontSize: "11px", fontWeight: 600 }}>
+            <span className="text-[#1A3A5C]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
               MA
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[#0F1117] truncate" style={{ fontSize: "12.5px", fontWeight: 500 }}>
+            <p className="text-[#0F1117] truncate" style={{ fontSize: "14.4px", fontWeight: 500 }}>
               Marcos Almeida
             </p>
-            <p className="text-[#AEAEBF] truncate" style={{ fontSize: "11px" }}>
+            <p className="text-[#AEAEBF] truncate" style={{ fontSize: "12.6px" }}>
               Plano Pro
             </p>
           </div>
@@ -235,7 +235,7 @@ function NavButton({
       }`}
     >
       <Icon className="w-3.5 h-3.5" strokeWidth={1.8} />
-      <span style={{ fontSize: "12.5px" }}>{label}</span>
+      <span style={{ fontSize: "14.4px" }}>{label}</span>
     </button>
   );
 }

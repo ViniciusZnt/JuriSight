@@ -33,10 +33,10 @@ export function ThemeToggle() {
           )}
         </div>
         <div>
-          <p className="text-[#0F1117]" style={{ fontSize: "13.5px", fontWeight: 600 }}>
+          <p className="text-[#0F1117]" style={{ fontSize: "15.5px", fontWeight: 600 }}>
             Tema escuro
           </p>
-          <p className="text-[#8A8A9A]" style={{ fontSize: "12px" }}>
+          <p className="text-[#8A8A9A]" style={{ fontSize: "13.8px" }}>
             {dark ? "Ativado" : "Desativado"}
           </p>
         </div>
@@ -52,7 +52,7 @@ export function ThemeToggle() {
       >
         <span
           className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-            dark ? "translate-x-[22px]" : "translate-x-0.5"
+            dark ? "translate-x-0.5" : "translate-x-[22px]"
           }`}
         />
       </button>
