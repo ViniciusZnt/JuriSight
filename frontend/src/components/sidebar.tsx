@@ -51,18 +51,25 @@ export function Sidebar() {
   return (
     <aside className="flex flex-col h-full w-[260px] bg-white dark:bg-[#17171B] border-r border-[#EBEBEF] dark:border-[#26262C]">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 py-4 border-b border-[#EBEBEF] dark:border-[#26262C]">
+      <button
+        onClick={() => {
+          setActive(null);
+          router.push("/");
+        }}
+        className="flex items-center gap-2.5 px-4 py-4 border-b border-[#EBEBEF] dark:border-[#26262C] text-left hover:bg-[#F6F6F9] dark:hover:bg-[#1C1C21] transition-colors"
+        title="Ir para o início"
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
           alt="JuriSight"
-          className="w-10 h-10 object-contain flex-shrink-0 select-none"
+          className="w-10 h-10 object-contain flex-shrink-0 select-none dark:brightness-0 dark:invert dark:drop-shadow-[0_0_10px_rgba(138,176,220,0.55)]"
           draggable={false}
         />
         <span className="text-[#0F1117] dark:text-[#ECECEF] tracking-[-0.01em]" style={{ fontSize: "18.4px", fontWeight: 600 }}>
           JuriSight
         </span>
-      </div>
+      </button>
 
       {/* Nova pesquisa */}
       <div className="px-3 pt-4 pb-2">

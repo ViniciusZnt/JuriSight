@@ -63,7 +63,12 @@ export function HomePage() {
       <div className="flex flex-col items-center justify-center px-4 sm:px-8 pt-8 sm:pt-12 pb-8">
         <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#EFF4FA] dark:bg-[#1A2A3C] border border-[#D0DEEE] dark:border-[#2A3A4C] mb-6 sm:mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="JuriSight" className="w-4 h-4 object-contain select-none" draggable={false} />
+          <img
+            src="/logo.png"
+            alt="JuriSight"
+            className="w-4 h-4 object-contain select-none dark:brightness-0 dark:invert"
+            draggable={false}
+          />
           <span className="text-[#1A3A5C] dark:text-[#8AB0DC] tracking-[0.02em]" style={{ fontSize: "13.2px", fontWeight: 600 }}>
             IA Jurídica Trabalhista
           </span>
