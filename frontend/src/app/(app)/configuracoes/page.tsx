@@ -1,4 +1,5 @@
 import { ThemeToggle } from "@/components/settings/theme-toggle";
+import { LogoutButton } from "@/components/settings/logout-button";
 
 /** Configurações — aparência (tema) funcional; demais seções a preencher. */
 export default function ConfiguracoesPage() {
@@ -29,6 +30,7 @@ export default function ConfiguracoesPage() {
             <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
               Plano Pro • em breve
             </p>
+            <LogoutButton />
           </div>
         </section>
       </div>

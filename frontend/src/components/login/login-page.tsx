@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, Mail, ArrowRight } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
 /** Login — fora do escopo do RFC (que não define autenticação/contas). Fluxo mockado: qualquer
  *  e-mail + senha preenchidos entra, sem backend de auth real. */
 export function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -19,7 +21,10 @@ export function LoginPage() {
     e.preventDefault();
     if (!canSubmit) return;
     setLoading(true);
-    setTimeout(() => router.push("/"), 500);
+    setTimeout(() => {
+      login();
+      router.push("/");
+    }, 500);
   };
 
   return (
@@ -70,6 +75,7 @@ export function LoginPage() {
               </label>
               <button
                 type="button"
+                onClick={() => router.push("/esqueci-senha")}
                 className="text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
                 style={{ fontSize: "12.6px" }}
               >
@@ -120,9 +126,16 @@ export function LoginPage() {
         </form>
 
         <p className="text-center text-[#AEAEBF] dark:text-[#6E6E7C] mt-5" style={{ fontSize: "12.6px" }}>
-          Acesso restrito a advogados e assistentes jurídicos cadastrados.
+          Acesso restrito a advogados e assistentes jurídicos.
           <br />
-          Não tem conta? Fale com o administrador do escritório.
+          Não tem conta?{" "}
+          <button
+            type="button"
+            onClick={() => router.push("/registro")}
+            className="text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
+          >
+            Criar conta
+          </button>
         </p>
       </div>
     </div>

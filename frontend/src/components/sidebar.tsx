@@ -11,14 +11,17 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  LogOut,
   type LucideIcon,
 } from "lucide-react";
 import { useConversations, groupByRecency } from "@/lib/conversations";
+import { useAuth } from "@/lib/auth";
 
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { conversations, activeId, rename, remove, setActive } = useConversations();
+  const { logout } = useAuth();
 
   const [filter, setFilter] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -203,20 +206,35 @@ export function Sidebar() {
           onClick={() => router.push("/configuracoes")}
         />
 
-        <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[#F6F6F9] cursor-pointer transition-all mt-1">
-          <div className="w-7 h-7 rounded-full bg-[#E8EDF4] dark:bg-[#1E2A38] flex items-center justify-center flex-shrink-0">
-            <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-              MA
-            </span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[#0F1117] dark:text-[#ECECEF] truncate" style={{ fontSize: "14.4px", fontWeight: 500 }}>
-              Marcos Almeida
-            </p>
-            <p className="text-[#AEAEBF] dark:text-[#6E6E7C] truncate" style={{ fontSize: "12.6px" }}>
-              Plano Pro
-            </p>
-          </div>
+        <div className="flex items-center gap-1 mt-1">
+          <button
+            onClick={() => router.push("/configuracoes")}
+            className="flex flex-1 min-w-0 items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[#F6F6F9] dark:hover:bg-[#1C1C21] transition-all text-left"
+          >
+            <div className="w-7 h-7 rounded-full bg-[#E8EDF4] dark:bg-[#1E2A38] flex items-center justify-center flex-shrink-0">
+              <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
+                MA
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[#0F1117] dark:text-[#ECECEF] truncate" style={{ fontSize: "14.4px", fontWeight: 500 }}>
+                Marcos Almeida
+              </p>
+              <p className="text-[#AEAEBF] dark:text-[#6E6E7C] truncate" style={{ fontSize: "12.6px" }}>
+                Plano Pro
+              </p>
+            </div>
+          </button>
+          <button
+            onClick={() => {
+              logout();
+              router.push("/login");
+            }}
+            title="Sair"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-[#AEAEBF] dark:text-[#6E6E7C] hover:bg-[#FBF0F0] hover:text-[#C44040] dark:hover:bg-[#2A1517] dark:hover:text-[#D96B6B] transition-colors flex-shrink-0"
+          >
+            <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />
+          </button>
         </div>
       </div>
     </aside>
