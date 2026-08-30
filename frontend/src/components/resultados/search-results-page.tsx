@@ -1,17 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Filter,
   TrendingUp,
-  ArrowUpDown,
   Bookmark,
   AlertCircle,
   Scale,
   Calendar,
   FileText,
   Search,
+  ChevronDown,
+  Check,
+  SlidersHorizontal,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
@@ -20,117 +24,110 @@ import { ActionButton } from "@/components/ui/action-button";
 import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import type { Outcome } from "@/lib/outcome";
+import { mockResults } from "@/lib/mock-decisions";
+import { useSaved } from "@/lib/saved";
 
-interface Decision {
-  id: string;
-  title: string;
-  court: string;
-  chamber: string;
-  date: string;
-  outcome: Outcome;
-  relevance: number;
-  rapporteur: string;
-  processNumber: string;
-  summary: string;
-  tags: string[];
-  matchedEntities: string[];
+/** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
+function DropdownPill({
+  label,
+  active,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  children: (close: () => void) => React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all ${
+          active
+            ? "bg-[#EFF4FA] dark:bg-[#1A2A3C] border-[#C8D9EF] dark:border-[#2A3A4C] text-[#1A3A5C] dark:text-[#8AB0DC]"
+            : "bg-white dark:bg-[#17171B] border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30"
+        }`}
+        style={{ fontSize: "13.8px", fontWeight: active ? 600 : 400 }}
+      >
+        {label}
+        <ChevronDown className="w-3 h-3" strokeWidth={2} />
+      </button>
+      {open && (
+        <div className="absolute left-0 sm:right-0 sm:left-auto top-[calc(100%+6px)] z-30 min-w-[220px] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] bg-white dark:bg-[#17171B] shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-2">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
 }
 
-const mockResults: Decision[] = [
-  {
-    id: "1",
-    title: "Adicional de insalubridade — exposição a agentes químicos cancerígenos",
-    court: "TST",
-    chamber: "3ª Turma",
-    date: "2025-04-28",
-    outcome: "favorable",
-    relevance: 98,
-    rapporteur: "Min. Alberto Bresciani",
-    processNumber: "TST-RR-100-44.2021.5.01.0019",
-    summary:
-      "Mantida condenação ao pagamento de adicional de insalubridade em grau máximo ante a comprovação de exposição habitual e permanente a benzeno. Empresa tinha ciência do risco e não forneceu EPI eficaz. Laudo pericial confirmou a presença do agente nocivo acima dos limites de tolerância.",
-    tags: ["NR-15", "CLT 192", "Benzeno", "Insalubridade grau máximo"],
-    matchedEntities: ["Benzeno", "NR-15", "Ausência de EPI eficaz"],
-  },
-  {
-    id: "2",
-    title: "Responsabilidade patronal por exposição a agente insalubre sem monitoramento",
-    court: "TRT-2",
-    chamber: "14ª Turma",
-    date: "2025-04-15",
-    outcome: "favorable",
-    relevance: 95,
-    rapporteur: "Des. Carlos Roberto Barbosa",
-    processNumber: "TRT2-ROT-1000523-31.2024.5.02.0066",
-    summary:
-      "Reconhecida a responsabilidade da empregadora pelo não fornecimento de proteção adequada e pela ausência de monitoramento de saúde ocupacional. Aplicação da Súmula 448 do TST. Trabalhador exposto a hidrocarbonetos aromáticos sem controle médico.",
-    tags: ["Súmula 448 TST", "Monitoramento", "Hidrocarbonetos"],
-    matchedEntities: ["Hidrocarbonetos aromáticos", "Exposição contínua sem monitoramento"],
-  },
-  {
-    id: "3",
-    title: "Uso de EPI como fator excludente do adicional de insalubridade",
-    court: "TRT-15",
-    chamber: "5ª Turma",
-    date: "2025-03-22",
-    outcome: "unfavorable",
-    relevance: 82,
-    rapporteur: "Des. Lorival Ferreira dos Santos",
-    processNumber: "TRT15-ROT-0010234-19.2024.5.15.0089",
-    summary:
-      "Afastado o adicional de insalubridade ante a comprovação do fornecimento e uso efetivo de EPI adequado, capaz de neutralizar o agente nocivo. Perícia constatou o uso correto e a eficácia dos equipamentos fornecidos pela empresa.",
-    tags: ["EPI", "Súmula 289 TST", "Neutralização"],
-    matchedEntities: ["Ausência de EPI eficaz"],
-  },
-  {
-    id: "4",
-    title: "Insalubridade — necessidade de laudo técnico contemporâneo aos fatos",
-    court: "TST",
-    chamber: "8ª Turma",
-    date: "2025-03-10",
-    outcome: "neutral",
-    relevance: 78,
-    rapporteur: "Min. Dora Maria da Costa",
-    processNumber: "TST-AIRR-20700-73.2023.5.04.0303",
-    summary:
-      "Indeferido pedido de adicional de insalubridade por ausência de prova técnica contemporânea aos fatos. Laudo pericial realizado após a rescisão contratual não se presta a demonstrar as condições de trabalho durante o período laborado.",
-    tags: ["Laudo pericial", "Prova técnica", "CLT 195"],
-    matchedEntities: ["NR-15"],
-  },
-  {
-    id: "5",
-    title: "Ciência patronal do risco e responsabilidade civil objetiva",
-    court: "TRT-1",
-    chamber: "7ª Turma",
-    date: "2025-02-18",
-    outcome: "favorable",
-    relevance: 91,
-    rapporteur: "Des. Ana Paula Tauceda Branco",
-    processNumber: "TRT1-RO-0101234-56.2024.5.01.0048",
-    summary:
-      "Empresa tinha pleno conhecimento dos riscos à saúde do trabalhador, conforme documentação interna apresentada (PPP, PPRA, PCMSO). Caracterizada negligência no fornecimento de proteção adequada. Condenação em adicional de insalubridade e danos morais.",
-    tags: ["Ciência patronal", "Dano moral", "Responsabilidade objetiva"],
-    matchedEntities: ["Empresa ciente", "Falta de treinamento"],
-  },
-];
+function DropdownOption({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-between w-full px-2.5 py-2 rounded-lg text-left hover:bg-[#F6F6F9] dark:hover:bg-[#1C1C21] transition-colors"
+      style={{ fontSize: "13.8px", fontWeight: active ? 600 : 400 }}
+    >
+      <span className={active ? "text-[#1A3A5C] dark:text-[#8AB0DC]" : "text-[#4A4A5A] dark:text-[#C4C4CE]"}>{label}</span>
+      {active && <Check className="w-3.5 h-3.5 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={2.5} />}
+    </button>
+  );
+}
 
 /** Resultados da busca (Figuras 4-5 da RFC). Dados mockados até a API existir. */
 export function SearchResultsPage() {
   const router = useRouter();
+  const { isSaved, toggle } = useSaved();
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
-  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [dateFrom, setDateFrom] = useState<string>(""); // yyyy-mm-dd
+  const [dateTo, setDateTo] = useState<string>("");
 
+  const formatDateShort = (isoDate: string) =>
+    new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  const periodLabel =
+    dateFrom || dateTo
+      ? `${dateFrom ? formatDateShort(dateFrom) : "…"} – ${dateTo ? formatDateShort(dateTo) : "…"}`
+      : "Em qualquer data";
+
+  const inPeriod = (dateStr: string) => {
+    if (dateFrom && dateStr < dateFrom) return false;
+    if (dateTo && dateStr > dateTo) return false;
+    return true;
+  };
+
+  const sortDirFactor = sortDir === "asc" ? 1 : -1;
   const filteredResults = mockResults
     .filter((d) => filter === "all" || d.outcome === filter)
-    .sort((a, b) => (sortBy === "relevance" ? b.relevance - a.relevance : new Date(b.date).getTime() - new Date(a.date).getTime()));
+    .filter((d) => inPeriod(d.date))
+    .sort((a, b) =>
+      sortDirFactor * (sortBy === "relevance" ? a.relevance - b.relevance : new Date(a.date).getTime() - new Date(b.date).getTime())
+    );
 
-  const toggleSave = (id: string) => {
-    setSavedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const toggleSave = (d: (typeof mockResults)[number]) => {
+    toggle({
+      id: d.id,
+      title: d.title,
+      court: d.court,
+      chamber: d.chamber,
+      date: d.date,
+      outcome: d.outcome,
+      relevance: d.relevance,
+      rapporteur: d.rapporteur,
+      processNumber: d.processNumber,
     });
   };
 
@@ -186,6 +183,18 @@ export function SearchResultsPage() {
           </div>
         </div>
 
+        {/* Refine query */}
+        <div className="w-full max-w-[800px] flex justify-end mb-3">
+          <button
+            onClick={() => router.push("/revisao")}
+            className="flex items-center gap-1.5 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
+            style={{ fontSize: "13.8px", fontWeight: 500 }}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
+            Refinar consulta
+          </button>
+        </div>
+
         {/* Filters and sort */}
         <div className="w-full max-w-[800px] flex flex-wrap items-center justify-between gap-3 mb-5">
           <div className="flex items-center gap-2 flex-wrap">
@@ -225,14 +234,95 @@ export function SearchResultsPage() {
             </button>
           </div>
 
-          <button
-            onClick={() => setSortBy(sortBy === "relevance" ? "date" : "relevance")}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 transition-all"
-            style={{ fontSize: "13.8px" }}
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" strokeWidth={1.8} />
-            {sortBy === "relevance" ? "Relevância" : "Data"}
-          </button>
+          <div className="flex items-center gap-2">
+            <DropdownPill label={periodLabel} active={dateFrom !== "" || dateTo !== ""}>
+              {(close) => (
+                <div className="p-1">
+                  <p className="px-2 pb-1.5 text-[#9090A8] dark:text-[#7C7C88] uppercase tracking-[0.06em]" style={{ fontSize: "11.5px", fontWeight: 600 }}>
+                    Período de julgamento
+                  </p>
+                  <div className="flex flex-col gap-2 px-2 pb-2" style={{ width: "220px" }}>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[#9090A8] dark:text-[#7C7C88]" style={{ fontSize: "12.1px" }}>De</span>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        max={dateTo || undefined}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] bg-white dark:bg-[#1C1C21] text-[#4A4A5A] dark:text-[#C4C4CE] px-2 py-1.5 outline-none"
+                        style={{ fontSize: "13.2px", colorScheme: "light dark" }}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[#9090A8] dark:text-[#7C7C88]" style={{ fontSize: "12.1px" }}>Até</span>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        min={dateFrom || undefined}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] bg-white dark:bg-[#1C1C21] text-[#4A4A5A] dark:text-[#C4C4CE] px-2 py-1.5 outline-none"
+                        style={{ fontSize: "13.2px", colorScheme: "light dark" }}
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between px-2 pt-1 border-t border-[#F0F0F6] dark:border-[#26262C]">
+                    <button
+                      onClick={() => {
+                        setDateFrom("");
+                        setDateTo("");
+                      }}
+                      className="text-[#9090A8] dark:text-[#7C7C88] hover:text-[#4A4A5A] dark:hover:text-[#C4C4CE] py-1.5"
+                      style={{ fontSize: "12.6px" }}
+                    >
+                      Limpar
+                    </button>
+                    <button
+                      onClick={close}
+                      className="rounded-lg bg-[#1A3A5C] text-white px-3 py-1.5 hover:bg-[#1E4570] transition-colors"
+                      style={{ fontSize: "12.6px", fontWeight: 600 }}
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </DropdownPill>
+
+            <DropdownPill label={sortBy === "relevance" ? "Relevância" : "Data"} active={false}>
+              {(close) => (
+                <div className="p-1">
+                  <DropdownOption
+                    label="Relevância"
+                    active={sortBy === "relevance"}
+                    onClick={() => {
+                      setSortBy("relevance");
+                      close();
+                    }}
+                  />
+                  <DropdownOption
+                    label="Data"
+                    active={sortBy === "date"}
+                    onClick={() => {
+                      setSortBy("date");
+                      close();
+                    }}
+                  />
+                </div>
+              )}
+            </DropdownPill>
+
+            <button
+              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              className="flex items-center justify-center w-[34px] h-[34px] rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] bg-white dark:bg-[#17171B] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 transition-all"
+              title={sortDir === "asc" ? "Ordem crescente — clique para inverter" : "Ordem decrescente — clique para inverter"}
+            >
+              {sortDir === "asc" ? (
+                <ArrowUp className="w-3.5 h-3.5" strokeWidth={2} />
+              ) : (
+                <ArrowDown className="w-3.5 h-3.5" strokeWidth={2} />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Results list */}
@@ -251,7 +341,7 @@ export function SearchResultsPage() {
         ) : (
           <div className="w-full max-w-[800px] space-y-4">
             {filteredResults.map((decision) => {
-              const isSaved = savedItems.has(decision.id);
+              const saved = isSaved(decision.id);
 
               return (
                 <div
@@ -325,13 +415,13 @@ export function SearchResultsPage() {
                     </span>
                     <ActionButton
                       icon={Bookmark}
-                      label={isSaved ? "Salvo" : "Salvar"}
-                      tone={isSaved ? "accent" : "neutral"}
+                      label={saved ? "Salvo" : "Salvar"}
+                      tone={saved ? "accent" : "neutral"}
                       size="sm"
-                      iconFill={isSaved}
+                      iconFill={saved}
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleSave(decision.id);
+                        toggleSave(decision);
                       }}
                     />
                   </div>

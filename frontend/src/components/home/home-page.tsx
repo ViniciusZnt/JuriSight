@@ -34,9 +34,9 @@ export function HomePage() {
   const router = useRouter();
   const { create } = useConversations();
 
-  const handleSubmit = (query: string) => {
+  const handleSubmit = (query: string, hasFile: boolean) => {
     create(query || "Nova pesquisa");
-    router.push("/revisao");
+    router.push(hasFile ? "/revisao" : "/revisao?modo=manual");
   };
 
   return (

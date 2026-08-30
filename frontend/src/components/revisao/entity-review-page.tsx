@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
 import {
@@ -14,6 +14,7 @@ import {
   Pencil,
   AlertTriangle,
   HelpCircle,
+  PencilLine,
 } from "lucide-react";
 
 interface EntitySchema {
@@ -41,6 +42,18 @@ const initialData: EntitySchema = {
   cargo: "Operador de caldeira",
   tese_central:
     "A empresa tinha ciência do risco e não forneceu proteção adequada, expondo o trabalhador a agentes cancerígenos de forma contínua e sem qualquer monitoramento de saúde ocupacional.",
+};
+
+/** UC02 — sem PDF: nenhum campo é extraído por IA, o usuário preenche manualmente (RN06). */
+const emptyData: EntitySchema = {
+  pedido_principal: "",
+  agente_nocivo: [],
+  violacoes: [],
+  normas: [],
+  empresa_ciente: null,
+  setor: null,
+  cargo: null,
+  tese_central: "",
 };
 
 interface ColorScheme {
@@ -369,7 +382,9 @@ function FieldLabel({ label, description }: { label: string; description?: strin
 /** Revisão de entidades extraídas (Figura 3 da RFC). Dados mockados até a extração real existir. */
 export function EntityReviewPage() {
   const router = useRouter();
-  const [data, setData] = useState<EntitySchema>(initialData);
+  const searchParams = useSearchParams();
+  const manual = searchParams.get("modo") === "manual";
+  const [data, setData] = useState<EntitySchema>(manual ? emptyData : initialData);
   const [teseFocused, setTeseFocused] = useState(false);
   const wordCount = data.tese_central.trim().split(/\s+/).filter(Boolean).length;
 
@@ -386,7 +401,7 @@ export function EntityReviewPage() {
 
       {/* Body */}
       <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-4 pb-10">
-        <StepIndicator current={1} />
+        <StepIndicator current={1} manual={manual} />
 
         {/* Main card */}
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-2xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_4px_32px_rgba(0,0,0,0.07)] dark:shadow-none overflow-hidden">
@@ -397,31 +412,53 @@ export function EntityReviewPage() {
               </div>
               <div>
                 <h2 className="text-[#0F1117] dark:text-[#ECECEF] tracking-[-0.015em]" style={{ fontSize: "17.8px", fontWeight: 600 }}>
-                  Contexto jurídico identificado
+                  {manual ? "Complete o contexto jurídico" : "Contexto jurídico identificado"}
                 </h2>
                 <p className="text-[#8A8A9A] dark:text-[#9494A2] mt-0.5" style={{ fontSize: "14.4px" }}>
-                  Revise cada campo antes de prosseguir. Duplo clique em qualquer tag para editar.
+                  {manual
+                    ? "Preencha os campos abaixo com base no seu caso. Duplo clique em qualquer tag para editar."
+                    : "Revise cada campo antes de prosseguir. Duplo clique em qualquer tag para editar."}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EDF7F2] dark:bg-[#122A1E] border border-[#BDE0CF] dark:border-[#1E4A34]">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#2D8A5F] dark:bg-[#3DA372]" />
-                <span className="text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "12.1px", fontWeight: 600 }}>
-                  Confiança: Alta
-                </span>
-              </div>
+              {manual ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F5F5F8] dark:bg-[#1C1C21] border border-[#DCDCE8] dark:border-[#2A2A32]">
+                  <PencilLine className="w-3 h-3 text-[#6A6A7A] dark:text-[#9494A2]" strokeWidth={1.8} />
+                  <span className="text-[#6A6A7A] dark:text-[#9494A2]" style={{ fontSize: "12.1px", fontWeight: 600 }}>
+                    Preenchimento manual
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EDF7F2] dark:bg-[#122A1E] border border-[#BDE0CF] dark:border-[#1E4A34]">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#2D8A5F] dark:bg-[#3DA372]" />
+                  <span className="text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "12.1px", fontWeight: 600 }}>
+                    Confiança: Alta
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-2 px-5 sm:px-7 py-2.5 bg-[#FAFAFA] dark:bg-[#1C1C21] border-b border-[#F0F0F6] dark:border-[#26262C] overflow-hidden">
-            <FileText className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C]" strokeWidth={1.8} />
-            <span className="text-[#7A7A8E] dark:text-[#9E9EAC]" style={{ fontSize: "13.8px" }}>
-              Extraído de:
-            </span>
-            <span className="text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.8px", fontWeight: 500 }}>
-              Petição_Insalubridade_Benzeno_v2.pdf
-            </span>
+            {manual ? (
+              <>
+                <AlertTriangle className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C]" strokeWidth={1.8} />
+                <span className="text-[#7A7A8E] dark:text-[#9E9EAC]" style={{ fontSize: "13.8px" }}>
+                  Busca sem contexto de documento — para resultados mais precisos, envie o PDF do caso.
+                </span>
+              </>
+            ) : (
+              <>
+                <FileText className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C]" strokeWidth={1.8} />
+                <span className="text-[#7A7A8E] dark:text-[#9E9EAC]" style={{ fontSize: "13.8px" }}>
+                  Extraído de:
+                </span>
+                <span className="text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.8px", fontWeight: 500 }}>
+                  Petição_Insalubridade_Benzeno_v2.pdf
+                </span>
+              </>
+            )}
           </div>
 
           <div className="px-5 sm:px-7 pt-6 pb-5 space-y-6">

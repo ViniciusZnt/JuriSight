@@ -20,6 +20,7 @@ import {
   BookOpen,
   Gavel,
   TrendingUp,
+  SlidersHorizontal,
 } from "lucide-react";
 import { PageTopbar } from "@/components/ui/page-topbar";
 import { MetaItem } from "@/components/ui/meta-item";
@@ -28,40 +29,43 @@ import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
-import type { Outcome } from "@/lib/outcome";
+import { findDecision } from "@/lib/mock-decisions";
+import { useSaved } from "@/lib/saved";
 
-/** Detalhe do acórdão (Figuras 6-7 da RFC). Dados mockados até a API existir. */
+/** Detalhe do acórdão (Figuras 6-7 da RFC). Dados mockados até a API existir; título, meta e
+ *  resumo vêm da mesma fonte da lista de resultados — o corpo (fundamentação, dispositivo,
+ *  citações) é ilustrativo até o backend existir. */
 export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   const router = useRouter();
-  const [isSaved, setIsSaved] = useState(false);
+  const { isSaved: isSavedCtx, toggle } = useSaved();
   const [copied, setCopied] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["summary", "grounds", "decision"])
   );
 
-  const decision = {
-    id: decisionId,
-    title: "Adicional de insalubridade — exposição a agentes químicos cancerígenos",
-    court: "TST",
-    chamber: "3ª Turma",
-    date: "2025-04-28",
-    processNumber: "TST-RR-100-44.2021.5.01.0019",
-    rapporteur: "Min. Alberto Bresciani",
-    origin: "TRT-1 (Rio de Janeiro)",
-    outcome: "favorable" as Outcome,
-    relevance: 98,
-    summary:
-      "Mantida condenação ao pagamento de adicional de insalubridade em grau máximo ante a comprovação de exposição habitual e permanente a benzeno. Empresa tinha ciência do risco e não forneceu EPI eficaz. Laudo pericial confirmou a presença do agente nocivo acima dos limites de tolerância estabelecidos na NR-15.",
-    matchedEntities: ["Benzeno", "NR-15", "Ausência de EPI eficaz", "Empresa ciente"],
-    tags: ["NR-15", "CLT 192", "Benzeno", "Insalubridade grau máximo", "Súmula 448 TST"],
-    keyPoints: [
-      "Exposição habitual e permanente a benzeno (agente cancerígeno)",
-      "Empresa tinha ciência dos riscos através de PPRA e PCMSO",
-      "EPI fornecido não foi considerado eficaz pela perícia",
-      "Aplicação do grau máximo (40%) por agente químico cancerígeno",
-      "Responsabilidade objetiva do empregador por risco ambiental",
-    ],
-    grounds: `A controvérsia consiste em definir se o reclamante faz jus ao pagamento de adicional de insalubridade em grau máximo, em face da alegada exposição a agente químico cancerígeno (benzeno).
+  const base = findDecision(decisionId);
+  const isSaved = isSavedCtx(base.id);
+
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+  // Caso 1 é o exemplo oficial das Figuras 6-7 da RFC — corpo integral e específico.
+  // Os demais usam um corpo ilustrativo derivado dos próprios dados do card, para nunca exibir
+  // fundamentação/dispositivo de um caso diferente do título mostrado (RF06 — fonte real, sem
+  // conteúdo inventado que não corresponda ao documento).
+  const decision =
+    base.id === "1"
+      ? {
+          ...base,
+          origin: "TRT-1 (Rio de Janeiro)",
+          keyPoints: [
+            "Exposição habitual e permanente a benzeno (agente cancerígeno)",
+            "Empresa tinha ciência dos riscos através de PPRA e PCMSO",
+            "EPI fornecido não foi considerado eficaz pela perícia",
+            "Aplicação do grau máximo (40%) por agente químico cancerígeno",
+            "Responsabilidade objetiva do empregador por risco ambiental",
+          ],
+          grounds: `A controvérsia consiste em definir se o reclamante faz jus ao pagamento de adicional de insalubridade em grau máximo, em face da alegada exposição a agente químico cancerígeno (benzeno).
 
 O laudo pericial acostado aos autos concluiu que o reclamante laborava exposto, de forma habitual e permanente, a hidrocarbonetos aromáticos, especificamente benzeno, em concentrações superiores aos limites de tolerância estabelecidos no Anexo 13-A da NR-15.
 
@@ -70,7 +74,7 @@ A prova documental demonstra que a reclamada tinha pleno conhecimento dos riscos
 No que tange ao fornecimento de Equipamentos de Proteção Individual (EPI), embora a reclamada tenha apresentado fichas de entrega, o perito judicial esclareceu que os equipamentos fornecidos não eram capazes de neutralizar ou reduzir a exposição do trabalhador ao agente nocivo a níveis toleráveis, caracterizando-se a ineficácia do EPI.
 
 Ressalte-se que, tratando-se de agente cancerígeno, a jurisprudência consolidada desta Corte é no sentido de que o adicional de insalubridade é devido mesmo com o fornecimento de EPI, ante a impossibilidade de neutralização do risco à saúde (Súmula 448 do TST).`,
-    decision: `Ante o exposto, NEGO PROVIMENTO ao recurso de revista patronal.
+          decision: `Ante o exposto, NEGO PROVIMENTO ao recurso de revista patronal.
 
 ISTO POSTO
 
@@ -82,24 +86,50 @@ Firmado por assinatura digital (Lei nº 11.419/2006)
 
 ALBERTO BRESCIANI
 Ministro Relator`,
-    citations: [
-      {
-        reference: "CLT, art. 192",
-        text: "O exercício de trabalho em condições insalubres, acima dos limites de tolerância estabelecidos pelo Ministério do Trabalho, assegura a percepção de adicional respectivamente de 40% (quarenta por cento), 20% (vinte por cento) e 10% (dez por cento) do salário-mínimo da região, segundo se classifiquem nos graus máximo, médio e mínimo.",
-      },
-      {
-        reference: "Súmula 448 TST",
-        text: "A exposição do empregado a agente nocivo cancerígeno ensejadora da aposentadoria especial de que trata o art. 57, § 8º, da Lei nº 8.213/91 é insuscetível de neutralização pela utilização de Equipamento de Proteção Individual - EPI.",
-      },
-      {
-        reference: "NR-15, Anexo 13-A",
-        text: "Operações com benzeno: valor de referência tecnológico de 1 ppm (valor teto). Grau máximo de insalubridade.",
-      },
-    ],
-  };
+          citations: [
+            {
+              reference: "CLT, art. 192",
+              text: "O exercício de trabalho em condições insalubres, acima dos limites de tolerância estabelecidos pelo Ministério do Trabalho, assegura a percepção de adicional respectivamente de 40% (quarenta por cento), 20% (vinte por cento) e 10% (dez por cento) do salário-mínimo da região, segundo se classifiquem nos graus máximo, médio e mínimo.",
+            },
+            {
+              reference: "Súmula 448 TST",
+              text: "A exposição do empregado a agente nocivo cancerígeno ensejadora da aposentadoria especial de que trata o art. 57, § 8º, da Lei nº 8.213/91 é insuscetível de neutralização pela utilização de Equipamento de Proteção Individual - EPI.",
+            },
+            {
+              reference: "NR-15, Anexo 13-A",
+              text: "Operações com benzeno: valor de referência tecnológico de 1 ppm (valor teto). Grau máximo de insalubridade.",
+            },
+          ],
+        }
+      : {
+          ...base,
+          origin: base.court,
+          keyPoints: [
+            ...base.matchedEntities.map((e) => `Elemento do contexto identificado na decisão: ${e}`),
+            `Fundamentos normativos citados: ${base.tags.join(", ")}`,
+          ],
+          grounds: `${base.summary}
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+A controvérsia foi analisada pela ${base.chamber} do ${base.court}, sob relatoria de ${base.rapporteur}, nos autos do processo ${base.processNumber}, julgado em ${formatDate(base.date)}.`,
+          decision: `Ante o exposto, ${
+            base.outcome === "favorable"
+              ? "NEGO PROVIMENTO ao recurso patronal, mantendo a decisão que reconheceu o pedido do reclamante."
+              : base.outcome === "unfavorable"
+                ? "DOU PROVIMENTO ao recurso patronal, reformando a decisão de origem e afastando o pedido do reclamante."
+                : "NEGO PROVIMENTO ao recurso, mantendo a decisão de origem quanto ao mérito."
+          }
+
+ACORDAM os membros da ${base.chamber} do ${base.court}, por unanimidade, nos termos do voto do(a) relator(a).
+
+${formatDate(base.date)}.
+
+${base.rapporteur}
+Relator(a)`,
+          citations: base.tags.map((tag) => ({
+            reference: tag,
+            text: "Dispositivo citado como fundamento normativo desta decisão.",
+          })),
+        };
 
   const buildFullDocument = () => {
     const lines: string[] = [];
@@ -229,7 +259,19 @@ Ministro Relator`,
                 label={isSaved ? "Salvo" : "Salvar"}
                 tone={isSaved ? "accent" : "neutral"}
                 iconFill={isSaved}
-                onClick={() => setIsSaved(!isSaved)}
+                onClick={() =>
+                  toggle({
+                    id: decision.id,
+                    title: decision.title,
+                    court: decision.court,
+                    chamber: decision.chamber,
+                    date: decision.date,
+                    outcome: decision.outcome,
+                    relevance: decision.relevance,
+                    rapporteur: decision.rapporteur,
+                    processNumber: decision.processNumber,
+                  })
+                }
               />
               <ActionButton icon={Share2} label="Compartilhar" />
               <ActionButton icon={Download} label="Baixar PDF" />
@@ -239,6 +281,11 @@ Ministro Relator`,
                 tone={copied ? "success" : "neutral"}
                 onClick={copyFullDocument}
                 title="Copiar documento completo para a área de transferência"
+              />
+              <ActionButton
+                icon={SlidersHorizontal}
+                label="Refinar consulta"
+                onClick={() => router.push("/revisao")}
               />
               <ActionButton icon={ExternalLink} label="Ver no site oficial" className="ml-auto" />
             </div>

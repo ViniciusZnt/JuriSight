@@ -34,7 +34,7 @@ Portal TST (Falcão)
     → [BM25 Index]              ← busca lexical
     → [FastAPI + RRF]           ← fusão dos rankings
     → [Sort Categórico]         ← hierarquia jurídica
-    → [Streamlit]
+    → [Next.js]
 ```
 
 Custo: o LLM e o enriquecimento de query rodam **100% locais** (Ollama). Só os
@@ -70,9 +70,12 @@ jurisight/
 │   ├── enrichment/
 │   └── search/
 │
-├── interface/
-│   ├── app.py
-│   └── components/
+├── frontend/                ← interface Next.js (App Router)
+│   ├── src/
+│   │   ├── app/              ← rotas (home, resultados, decisão, revisão, salvos, login)
+│   │   ├── components/
+│   │   └── lib/
+│   └── package.json
 │
 ├── data/
 │   ├── raw/
@@ -93,7 +96,9 @@ jurisight/
 | Ferramenta | Versão mínima | Observação              |
 |------------|---------------|-------------------------|
 | Python     | 3.13          | Gerenciado pelo uv      |
-| uv         | qualquer      | Gerenciador de pacotes  |
+| uv         | qualquer      | Gerenciador de pacotes Python |
+| Node.js    | 20+           | Para o frontend Next.js |
+| pnpm       | qualquer      | Gerenciador de pacotes do frontend |
 | Docker     | 24+           | Para o PostgreSQL       |
 | Ollama     | qualquer      | LLM local (enriquecimento de query) |
 | Chave OpenAI | —           | Embeddings (`text-embedding-3-small`) — exige crédito pré-pago |
@@ -243,8 +248,12 @@ uv run python indexing/run.py
 ### 8 — Rodar interface
 
 ```bash
-uv run streamlit run interface/app.py
+cd frontend
+pnpm install
+pnpm dev
 ```
+
+Abre em [http://localhost:3000](http://localhost:3000).
 
 ---
 
@@ -271,7 +280,7 @@ uv run streamlit run interface/app.py
 | OpenAI text-embedding-3-small | Embeddings (1536d)              |
 | rank-bm25          | Busca lexical — índice BM25                 |
 | FastAPI            | Backend — fusão RRF dos rankings            |
-| Streamlit          | Interface do usuário                        |
+| Next.js / React    | Interface do usuário                        |
 
 ---
 

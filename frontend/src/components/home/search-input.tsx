@@ -9,8 +9,9 @@ interface UploadedFile {
 }
 
 /** Campo de consulta: textarea auto-expansível + anexar PDF + enviar.
- *  onSubmit recebe o título da consulta (o texto, ou o nome do PDF). */
-export function SearchInput({ onSubmit }: { onSubmit?: (query: string) => void }) {
+ *  onSubmit recebe o título da consulta (o texto, ou o nome do PDF) e se há PDF anexado —
+ *  UC01 (com PDF) vs UC02 (sem PDF, apenas intenção argumentativa). */
+export function SearchInput({ onSubmit }: { onSubmit?: (query: string, hasFile: boolean) => void }) {
   const [query, setQuery] = useState("");
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [isFocused, setIsFocused] = useState(false);
@@ -42,7 +43,7 @@ export function SearchInput({ onSubmit }: { onSubmit?: (query: string) => void }
 
   const canSubmit = query.trim().length > 0 || uploadedFile !== null;
   const submit = () => {
-    if (canSubmit) onSubmit?.(query.trim() || uploadedFile?.name || "");
+    if (canSubmit) onSubmit?.(query.trim() || uploadedFile?.name || "", uploadedFile !== null);
   };
 
   return (

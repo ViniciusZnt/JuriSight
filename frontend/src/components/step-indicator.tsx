@@ -1,4 +1,4 @@
-import { FileText, Sparkles, Scale, Check, type LucideIcon } from "lucide-react";
+import { FileText, MessageSquare, Sparkles, Scale, Check, type LucideIcon } from "lucide-react";
 
 interface Step {
   label: string;
@@ -11,11 +11,17 @@ const STEPS: Step[] = [
   { label: "Jurisprudências", icon: Scale },
 ];
 
-/** Trilha de progresso do fluxo de consulta (Home → Revisão → Resultados). `current` é 0-indexado. */
-export function StepIndicator({ current }: { current: number }) {
+/** UC02 — sem PDF: o primeiro passo não envolveu upload, então o rótulo reflete a intenção
+ *  argumentativa digitada em vez de um documento enviado. */
+const MANUAL_FIRST_STEP: Step = { label: "Consulta iniciada", icon: MessageSquare };
+
+/** Trilha de progresso do fluxo de consulta (Home → Revisão → Resultados). `current` é 0-indexado.
+ *  `manual` reflete o UC02 (busca sem PDF, ver FA01 na RFC). */
+export function StepIndicator({ current, manual = false }: { current: number; manual?: boolean }) {
+  const steps = manual ? [MANUAL_FIRST_STEP, ...STEPS.slice(1)] : STEPS;
   return (
     <div className="flex items-center gap-2 sm:gap-4 mb-8 overflow-x-auto max-w-full whitespace-nowrap pb-1">
-      {STEPS.map((step, idx) => {
+      {steps.map((step, idx) => {
         const Icon = step.icon;
         const done = idx < current;
         const active = idx === current;
@@ -35,7 +41,7 @@ export function StepIndicator({ current }: { current: number }) {
                   done
                     ? "bg-[#2D8A5F] dark:bg-[#3DA372] border-[#2D8A5F] dark:border-[#3DA372]"
                     : active
-                      ? "bg-[#1A3A5C] dark:bg-[#8AB0DC] border-[#1A3A5C] dark:border-[#8AB0DC] shadow-[0_0_0_4px_rgba(26,58,92,0.12)] dark:shadow-[0_0_0_4px_rgba(138,176,220,0.16)]"
+                      ? "bg-[#1A3A5C] dark:bg-[#8AB0DC] border-[#1A3A5C] dark:border-[#8AB0DC] shadow-[0_0_10px_3px_rgba(26,58,92,0.18)] dark:shadow-[0_0_10px_3px_rgba(138,176,220,0.22)]"
                       : "bg-white dark:bg-[#17171B] border-[#D0D0DA] dark:border-[#3A3A42]"
                 }`}
               >
