@@ -16,12 +16,14 @@ import {
 } from "lucide-react";
 import { useConversations, groupByRecency } from "@/lib/conversations";
 import { useAuth } from "@/lib/auth";
+import { useProfile, initialsOf } from "@/lib/profile";
 
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { conversations, activeId, rename, remove, setActive } = useConversations();
   const { logout } = useAuth();
+  const { profile } = useProfile();
 
   const [filter, setFilter] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -213,12 +215,12 @@ export function Sidebar() {
           >
             <div className="w-7 h-7 rounded-full bg-[#E8EDF4] dark:bg-[#1E2A38] flex items-center justify-center flex-shrink-0">
               <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                MA
+                {initialsOf(profile.name)}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[#0F1117] dark:text-[#ECECEF] truncate" style={{ fontSize: "14.4px", fontWeight: 500 }}>
-                Marcos Almeida
+                {profile.name}
               </p>
               <p className="text-[#AEAEBF] dark:text-[#6E6E7C] truncate" style={{ fontSize: "12.6px" }}>
                 Plano Pro
