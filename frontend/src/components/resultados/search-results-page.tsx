@@ -16,6 +16,8 @@ import {
   SlidersHorizontal,
   ArrowUp,
   ArrowDown,
+  AlertTriangle,
+  Download,
 } from "lucide-react";
 import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
@@ -133,9 +135,37 @@ export function SearchResultsPage() {
 
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+  const formatDateLong = (dateStr: string) =>
+    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 
   const favorableCount = mockResults.filter((d) => d.outcome === "favorable").length;
   const unfavorableCount = mockResults.filter((d) => d.outcome === "unfavorable").length;
+
+  // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
+  const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
+
+  // Exporta os resultados filtrados/ordenados como estão em tela — só formatação local, sem backend.
+  const exportResults = () => {
+    const lines = filteredResults.map((d, idx) =>
+      [
+        `${idx + 1}. ${d.title}`,
+        `   ${d.court} — ${d.chamber} · ${formatDateLong(d.date)}`,
+        `   Processo: ${d.processNumber} · Rel. ${d.rapporteur}`,
+        `   Provimento: ${d.outcome === "favorable" ? "Favorável" : d.outcome === "unfavorable" ? "Desfavorável" : "Neutro"} · Relevância: ${d.relevance}%`,
+        `   ${d.summary}`,
+      ].join("\n")
+    );
+    const header = `JuriSight — Jurisprudências (${filteredResults.length} de ${mockResults.length} resultados)\nExportado em ${new Date().toLocaleString("pt-BR")}\n`;
+    const blob = new Blob([header, "\n", lines.join("\n\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "jurisight-resultados.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
@@ -325,6 +355,21 @@ export function SearchResultsPage() {
           </div>
         </div>
 
+        {/* FA04 — filtro de provimento com poucos resultados */}
+        {lowProvimentoResults && (
+          <div className="w-full max-w-[800px] flex items-start gap-2.5 rounded-xl border border-[#EDD9BC] dark:border-[#4A3A22] bg-[#FBF4EC] dark:bg-[#2A2015] px-4 py-3 mb-4">
+            <AlertTriangle className="w-4 h-4 text-[#8A5A1E] dark:text-[#E0AC6C] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
+            <p className="text-[#6B3B0A] dark:text-[#E0AC6C]" style={{ fontSize: "13.8px" }}>
+              Apenas {filteredResults.length} resultado{filteredResults.length === 1 ? "" : "s"} encontrado
+              {filteredResults.length === 1 ? "" : "s"} com provimento {filter === "favorable" ? "favorável" : "desfavorável"}.{" "}
+              <button onClick={() => setFilter("all")} className="underline hover:no-underline" style={{ fontWeight: 600 }}>
+                Considere remover o filtro
+              </button>{" "}
+              para ver todas as decisões sobre o tema.
+            </p>
+          </div>
+        )}
+
         {/* Results list */}
         {filteredResults.length === 0 ? (
           <div className="w-full max-w-[800px] flex flex-col items-center justify-center py-20 text-center">
@@ -332,11 +377,35 @@ export function SearchResultsPage() {
               <Search className="w-5 h-5 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
             </div>
             <h2 className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "17.8px", fontWeight: 600 }}>
-              Nenhuma decisão neste filtro
+              Nenhum documento encontrado
             </h2>
             <p className="mt-2 max-w-sm text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "14.9px" }}>
-              Tente outro filtro de resultado para ver as demais decisões encontradas.
+              Nenhum documento encontrado para esta consulta. Tente ampliar a intenção argumentativa ou remover
+              filtros de provimento e período.
             </p>
+            <div className="flex items-center gap-3 mt-5">
+              {(filter !== "all" || dateFrom || dateTo) && (
+                <button
+                  onClick={() => {
+                    setFilter("all");
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                  className="px-3.5 py-2 rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 transition-all"
+                  style={{ fontSize: "13.8px" }}
+                >
+                  Remover filtros
+                </button>
+              )}
+              <button
+                onClick={() => router.push("/revisao")}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1A3A5C] text-white hover:bg-[#1E4570] transition-colors"
+                style={{ fontSize: "13.8px", fontWeight: 600 }}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Refinar consulta
+              </button>
+            </div>
           </div>
         ) : (
           <div className="w-full max-w-[800px] space-y-4">
@@ -428,6 +497,17 @@ export function SearchResultsPage() {
                 </div>
               );
             })}
+
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={exportResults}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E0E0EA] dark:border-[#2A2A32] bg-white dark:bg-[#17171B] text-[#4A4A5A] dark:text-[#C4C4CE] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 hover:text-[#1A3A5C] dark:hover:text-[#8AB0DC] transition-all"
+                style={{ fontSize: "13.8px", fontWeight: 500 }}
+              >
+                <Download className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Exportar resultados
+              </button>
+            </div>
           </div>
         )}
       </div>

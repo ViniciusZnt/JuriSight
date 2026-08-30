@@ -1,9 +1,21 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, FileSearch, Gavel, Star, Zap } from "lucide-react";
-import { SearchInput } from "@/components/home/search-input";
+import { SearchInput, type SearchInputHandle, type SearchSubmitPayload } from "@/components/home/search-input";
+import { Fa02Alert } from "@/components/home/fa02-alert";
+import { Fa05Processing } from "@/components/home/fa05-processing";
 import { useConversations } from "@/lib/conversations";
+
+// Sem extração real de PDF no frontend (isso é o pdfplumber do backend, RF02). Para demonstrar a
+// FA02 sem um parser de verdade, qualquer arquivo com "scan" no nome simula um PDF escaneado sem
+// texto extraível — troque por uma checagem real quando a API de /enrich existir.
+const looksScanned = (fileName: string) => /scan/i.test(fileName);
+
+// Proxy simples para "documento extenso" (RFC FA05/RNF05): acima de 8MB, mais provável ser uma
+// petição longa com muitas páginas do que um PDF de texto simples.
+const LARGE_FILE_BYTES = 8 * 1024 * 1024;
 
 const features = [
   {
@@ -29,14 +41,33 @@ const features = [
   },
 ];
 
-/** Home: entrada de consulta (RFC Figura 2). Enviar cria a conversa e vai à revisão. */
+/** Home: entrada de consulta (RFC Figura 2). Enviar cria a conversa e vai à revisão — ou, se o
+ *  PDF simular um documento escaneado ou extenso, mostra a FA02/FA05 antes de prosseguir. */
 export function HomePage() {
   const router = useRouter();
   const { create } = useConversations();
+  const searchInputRef = useRef<SearchInputHandle>(null);
+  const [fa02, setFa02] = useState<{ fileName: string; query: string } | null>(null);
+  const [fa05, setFa05] = useState<{ fileName: string } | null>(null);
 
-  const handleSubmit = (query: string, hasFile: boolean) => {
+  const goToRevisao = (query: string, hasFile: boolean) => {
     create(query || "Nova pesquisa");
     router.push(hasFile ? "/revisao" : "/revisao?modo=manual");
+  };
+
+  const handleSubmit = ({ query, hasFile, fileName, fileBytes }: SearchSubmitPayload) => {
+    if (hasFile && fileName && looksScanned(fileName)) {
+      setFa02({ fileName, query });
+      return;
+    }
+
+    if (hasFile && fileName && fileBytes && fileBytes > LARGE_FILE_BYTES) {
+      setFa05({ fileName });
+      setTimeout(() => goToRevisao(query, hasFile), 1800);
+      return;
+    }
+
+    goToRevisao(query, hasFile);
   };
 
   return (
@@ -92,9 +123,26 @@ export function HomePage() {
         </p>
 
         <div className="w-full max-w-[720px] mt-8 sm:mt-10">
-          <SearchInput onSubmit={handleSubmit} />
+          <SearchInput ref={searchInputRef} onSubmit={handleSubmit} />
+          {fa02 && (
+            <Fa02Alert
+              fileName={fa02.fileName}
+              onRetry={() => {
+                setFa02(null);
+                searchInputRef.current?.clearAndReopenFile();
+              }}
+              onContinueWithoutFile={() => {
+                const query = fa02.query;
+                setFa02(null);
+                goToRevisao(query, false);
+              }}
+              onDismiss={() => setFa02(null)}
+            />
+          )}
         </div>
       </div>
+
+      {fa05 && <Fa05Processing fileName={fa05.fileName} />}
 
       {/* Features */}
       <div className="px-4 sm:px-8 pb-6">
