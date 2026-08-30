@@ -440,21 +440,21 @@ export function EntityReviewPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 px-5 sm:px-7 py-2.5 bg-[#FAFAFA] dark:bg-[#1C1C21] border-b border-[#F0F0F6] dark:border-[#26262C] overflow-hidden">
+          <div className="flex items-center gap-2 px-5 sm:px-7 py-2.5 bg-[#FAFAFA] dark:bg-[#1C1C21] border-b border-[#F0F0F6] dark:border-[#26262C]">
             {manual ? (
               <>
-                <AlertTriangle className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C]" strokeWidth={1.8} />
-                <span className="text-[#7A7A8E] dark:text-[#9E9EAC]" style={{ fontSize: "13.8px" }}>
+                <AlertTriangle className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C] flex-shrink-0" strokeWidth={1.8} />
+                <span className="text-[#7A7A8E] dark:text-[#9E9EAC] min-w-0" style={{ fontSize: "13.8px" }}>
                   Busca sem contexto de documento — para resultados mais precisos, envie o PDF do caso.
                 </span>
               </>
             ) : (
               <>
-                <FileText className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C]" strokeWidth={1.8} />
-                <span className="text-[#7A7A8E] dark:text-[#9E9EAC]" style={{ fontSize: "13.8px" }}>
+                <FileText className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C] flex-shrink-0" strokeWidth={1.8} />
+                <span className="text-[#7A7A8E] dark:text-[#9E9EAC] flex-shrink-0" style={{ fontSize: "13.8px" }}>
                   Extraído de:
                 </span>
-                <span className="text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.8px", fontWeight: 500 }}>
+                <span className="text-[#4A4A5A] dark:text-[#C4C4CE] truncate min-w-0" style={{ fontSize: "13.8px", fontWeight: 500 }}>
                   Petição_Insalubridade_Benzeno_v2.pdf
                 </span>
               </>

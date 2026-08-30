@@ -62,16 +62,17 @@ export function PageTopbar({ crumbs, queriesLeft, bordered = false, hideFirstOnM
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
+        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
           <Star className="w-3 h-3 text-[#C19A2E]" strokeWidth={2} fill="currentColor" />
           <span className="text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px", fontWeight: 500 }}>
             Plano Pro
           </span>
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
-          <Zap className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={2} />
-          <span className="text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px", fontWeight: 500 }}>
-            {queriesLeft} consultas restantes
+        <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
+          <Zap className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC] flex-shrink-0" strokeWidth={2} />
+          <span className="text-[#4A4A5A] dark:text-[#C4C4CE] whitespace-nowrap" style={{ fontSize: "13.2px", fontWeight: 500 }}>
+            <span className="sm:hidden">{queriesLeft}</span>
+            <span className="hidden sm:inline">{queriesLeft} consultas restantes</span>
           </span>
         </div>
       </div>

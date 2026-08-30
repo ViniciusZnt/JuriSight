@@ -257,6 +257,33 @@ Abre em [http://localhost:3000](http://localhost:3000).
 
 ---
 
+## Testes (frontend)
+
+O frontend tem dois níveis de teste, ambos em `frontend/`:
+
+| Tipo                  | Ferramenta                          | O que cobre                                                        |
+|------------------------|--------------------------------------|---------------------------------------------------------------------|
+| Unitário / componente | Jest + React Testing Library         | Lógica pura (`initialsOf`, `groupByRecency`, `findDecision`, `OUTCOME_CONFIG`) e componentes (`OutcomeBadge`, `Chip`, `StepIndicator`, `ActionButton`), além do contexto `useSaved` (salvar, remover, persistir) |
+| End-to-end             | Cypress                              | Login/cadastro e proteção de rotas, fluxo de consulta (com e sem PDF → revisão → resultados), filtros/ordenação/exportar resultados, e os fluxos alternativos do RFC (FA02, FA03, FA04, FA05) |
+
+```bash
+cd frontend
+
+# Unitário/componente
+pnpm test              # roda uma vez
+pnpm test:watch        # modo watch
+
+# End-to-end (precisa do dev server rodando em localhost:3000)
+pnpm cypress:open      # interface interativa
+pnpm cypress:run       # headless
+pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e derruba o server no final
+```
+
+> Ainda não há testes de backend/integração — o pipeline de IA e a API ainda não existem
+> (ver [Pipeline](#pipeline)). O frontend inteiro roda sobre dados mockados até lá.
+
+---
+
 ## Hierarquia Categórica dos Documentos
 
 | Categoria | Tipo                        | Descrição                                          |
@@ -281,6 +308,8 @@ Abre em [http://localhost:3000](http://localhost:3000).
 | rank-bm25          | Busca lexical — índice BM25                 |
 | FastAPI            | Backend — fusão RRF dos rankings            |
 | Next.js / React    | Interface do usuário                        |
+| Jest + React Testing Library | Testes unitários e de componente (frontend) |
+| Cypress            | Testes end-to-end (frontend)                |
 
 ---
 

@@ -16,7 +16,7 @@ interface CollapsibleSectionProps {
 /** Seção com título recolhível (usada em Resumo, Fundamentação e Dispositivo do detalhe da decisão). */
 export function CollapsibleSection({ icon, iconBg, iconColor, title, expanded, onToggle, children }: CollapsibleSectionProps) {
   return (
-    <section className="px-7 py-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
+    <section className="px-5 sm:px-7 py-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
       <button onClick={onToggle} className="flex items-center justify-between w-full mb-3 group">
         <SectionHeading icon={icon} iconBg={iconBg} iconColor={iconColor} title={title} />
         {expanded ? (

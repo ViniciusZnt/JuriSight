@@ -212,7 +212,7 @@ Relator(a)`,
 
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-2xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_4px_32px_rgba(0,0,0,0.07)] dark:shadow-none overflow-hidden">
           {/* Header */}
-          <div className="px-7 pt-6 pb-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
+          <div className="px-5 sm:px-7 pt-6 pb-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
             <div className="flex items-start justify-between gap-4 mb-4">
               <h1 className="text-[#0F1117] dark:text-[#ECECEF] leading-tight flex-1" style={{ fontSize: "20.7px", fontWeight: 600 }}>
                 {decision.title}
@@ -229,7 +229,7 @@ Relator(a)`,
             </div>
 
             {/* Meta grid */}
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mb-4">
               <MetaItem icon={Scale}>
                 <span className="font-medium text-[#4A4A5A] dark:text-[#C4C4CE]">{decision.court}</span>
                 <span>—</span>
@@ -293,7 +293,7 @@ Relator(a)`,
 
           {/* Matched entities */}
           {decision.matchedEntities.length > 0 && (
-            <div className="px-7 py-4 bg-[#FAFBFF] dark:bg-[#15191F] border-b border-[#F0F0F6] dark:border-[#26262C]">
+            <div className="px-5 sm:px-7 py-4 bg-[#FAFBFF] dark:bg-[#15191F] border-b border-[#F0F0F6] dark:border-[#26262C]">
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-3.5 h-3.5 text-[#1A3A5C] dark:text-[#8AB0DC] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
                 <div className="flex-1">
@@ -327,7 +327,7 @@ Relator(a)`,
           </CollapsibleSection>
 
           {/* Key points */}
-          <section className="px-7 py-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
+          <section className="px-5 sm:px-7 py-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
             <div className="mb-3">
               <SectionHeading icon={Gavel} iconBg="bg-[#EDF7F2] dark:bg-[#122A1E]" iconColor="text-[#1E6B4A] dark:text-[#6FCB9A]" title="Pontos-chave" />
             </div>
@@ -380,7 +380,7 @@ Relator(a)`,
           </CollapsibleSection>
 
           {/* Citations */}
-          <section className="px-7 py-5">
+          <section className="px-5 sm:px-7 py-5">
             <div className="mb-4">
               <SectionHeading icon={FileText} iconBg="bg-[#F5F5F8] dark:bg-[#1C1C21]" iconColor="text-[#6A6A7A] dark:text-[#9494A2]" title="Citações normativas" />
             </div>
@@ -401,7 +401,7 @@ Relator(a)`,
           </section>
 
           {/* Tags */}
-          <div className="px-7 py-4 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C]">
+          <div className="px-5 sm:px-7 py-4 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C]">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[#9090A8] dark:text-[#7C7C88]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
                 Tags:
