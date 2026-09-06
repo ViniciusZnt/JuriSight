@@ -41,6 +41,12 @@ function DropdownPill({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const close = (returnFocus = false) => {
+    setOpen(false);
+    if (returnFocus) triggerRef.current?.focus();
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -52,9 +58,18 @@ function DropdownPill({
   }, [open]);
 
   return (
-    <div className="relative" ref={ref}>
+    <div
+      className="relative"
+      ref={ref}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") close(true);
+      }}
+    >
       <button
+        ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="true"
+        aria-expanded={open}
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all ${
           active
             ? "bg-[#EFF4FA] dark:bg-[#1A2A3C] border-[#C8D9EF] dark:border-[#2A3A4C] text-[#1A3A5C] dark:text-[#8AB0DC]"
@@ -66,7 +81,10 @@ function DropdownPill({
         <ChevronDown className="w-3 h-3" strokeWidth={2} />
       </button>
       {open && (
-        <div className="absolute left-0 sm:right-0 sm:left-auto top-[calc(100%+6px)] z-30 min-w-[220px] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] bg-white dark:bg-[#17171B] shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-2">
+        <div
+          role="menu"
+          className="absolute left-0 sm:right-0 sm:left-auto top-[calc(100%+6px)] z-30 min-w-[220px] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] bg-white dark:bg-[#17171B] shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-2"
+        >
           {children(() => setOpen(false))}
         </div>
       )}
@@ -77,6 +95,8 @@ function DropdownPill({
 function DropdownOption({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
+      role="menuitemradio"
+      aria-checked={active}
       onClick={onClick}
       className="flex items-center justify-between w-full px-2.5 py-2 rounded-lg text-left hover:bg-[#F6F6F9] dark:hover:bg-[#1C1C21] transition-colors"
       style={{ fontSize: "13.8px", fontWeight: active ? 600 : 400 }}
@@ -87,15 +107,41 @@ function DropdownOption({ label, active, onClick }: { label: string; active: boo
   );
 }
 
+/** Skeleton exibido enquanto a busca "carrega" — hoje simula a latência que a API real terá. */
+function ResultsSkeleton() {
+  return (
+    <div className="w-full max-w-[800px] animate-pulse" role="status" aria-label="Carregando jurisprudências">
+      <div className="h-[76px] rounded-xl bg-[#EDEDF2] dark:bg-[#1C1C21] mb-6" />
+      <div className="flex items-center justify-between mb-5">
+        <div className="h-8 w-60 rounded-lg bg-[#EDEDF2] dark:bg-[#1C1C21]" />
+        <div className="h-8 w-40 rounded-lg bg-[#EDEDF2] dark:bg-[#1C1C21]" />
+      </div>
+      <div className="space-y-4">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-[168px] rounded-xl bg-[#EDEDF2] dark:bg-[#1C1C21]" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Resultados da busca (Figuras 4-5 da RFC). Dados mockados até a API existir. */
 export function SearchResultsPage() {
   const router = useRouter();
   const { isSaved, toggle } = useSaved();
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState<string>(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState<string>("");
+
+  // Simula a latência da busca real. Quando a API existir, troque por um fetch de verdade
+  // e mantenha o loading até a resposta chegar.
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 650);
+    return () => clearTimeout(timer);
+  }, []);
 
   const formatDateShort = (isoDate: string) =>
     new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -182,6 +228,10 @@ export function SearchResultsPage() {
       <div className="flex-1 flex flex-col items-center px-8 py-4 pb-10">
         <StepIndicator current={2} />
 
+        {loading ? (
+          <ResultsSkeleton />
+        ) : (
+          <>
         {/* Summary banner */}
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -345,6 +395,7 @@ export function SearchResultsPage() {
               onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
               className="flex items-center justify-center w-[34px] h-[34px] rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] bg-white dark:bg-[#17171B] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 transition-all"
               title={sortDir === "asc" ? "Ordem crescente — clique para inverter" : "Ordem decrescente — clique para inverter"}
+              aria-label={sortDir === "asc" ? "Ordem crescente — clique para inverter para decrescente" : "Ordem decrescente — clique para inverter para crescente"}
             >
               {sortDir === "asc" ? (
                 <ArrowUp className="w-3.5 h-3.5" strokeWidth={2} />
@@ -509,6 +560,8 @@ export function SearchResultsPage() {
               </button>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </main>

@@ -27,8 +27,14 @@ export function Sidebar() {
 
   const [filter, setFilter] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+
+  const closeMenu = () => {
+    setMenuId(null);
+    setConfirmDeleteId(null);
+  };
 
   const filtered = filter.trim()
     ? conversations.filter((c) => c.title.toLowerCase().includes(filter.trim().toLowerCase()))
@@ -63,6 +69,7 @@ export function Sidebar() {
         }}
         className="flex items-center gap-2.5 px-4 py-4 border-b border-[#EBEBEF] dark:border-[#26262C] text-left hover:bg-[#F6F6F9] dark:hover:bg-[#1C1C21] transition-colors"
         title="Ir para o início"
+        aria-label="Ir para o início"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -161,6 +168,9 @@ export function Sidebar() {
                         onClick={() => setMenuId(menuId === c.id ? null : c.id)}
                         className="px-1.5 py-2 text-[#AEAEBF] dark:text-[#6E6E7C] opacity-0 group-hover:opacity-100 hover:text-[#1A3A5C]"
                         title="Opções"
+                        aria-label={`Opções de "${c.title}"`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuId === c.id}
                       >
                         <MoreHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
                       </button>
@@ -169,25 +179,59 @@ export function Sidebar() {
 
                   {menuId === c.id && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={() => setMenuId(null)} />
-                      <div className="absolute right-2 top-9 z-50 w-36 rounded-lg border border-[#EAEAEF] bg-white dark:bg-[#17171B] py-1 shadow-lg">
-                        <button
-                          onClick={() => startRename(c.id, c.title)}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#4A4A5A] dark:text-[#C4C4CE] hover:bg-[#F6F6F9]"
-                          style={{ fontSize: "14.4px" }}
-                        >
-                          <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Renomear
-                        </button>
-                        <button
-                          onClick={() => {
-                            remove(c.id);
-                            setMenuId(null);
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#D4183D] hover:bg-[#FDF2F4]"
-                          style={{ fontSize: "14.4px" }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} /> Apagar
-                        </button>
+                      <div className="fixed inset-0 z-40" onClick={closeMenu} />
+                      <div
+                        role="menu"
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") closeMenu();
+                        }}
+                        className="absolute right-2 top-9 z-50 w-44 rounded-lg border border-[#EAEAEF] bg-white dark:bg-[#17171B] py-1 shadow-lg"
+                      >
+                        {confirmDeleteId === c.id ? (
+                          <div className="px-3 py-2">
+                            <p className="text-[#4A4A5A] dark:text-[#C4C4CE] mb-2" style={{ fontSize: "13.2px" }}>
+                              Apagar esta conversa?
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={closeMenu}
+                                className="flex-1 rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] px-2 py-1.5 text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30"
+                                style={{ fontSize: "13.2px" }}
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => {
+                                  remove(c.id);
+                                  closeMenu();
+                                }}
+                                className="flex-1 rounded-lg bg-[#D4183D] text-white px-2 py-1.5 hover:bg-[#B01230] transition-colors"
+                                style={{ fontSize: "13.2px", fontWeight: 600 }}
+                              >
+                                Apagar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              role="menuitem"
+                              onClick={() => startRename(c.id, c.title)}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#4A4A5A] dark:text-[#C4C4CE] hover:bg-[#F6F6F9]"
+                              style={{ fontSize: "14.4px" }}
+                            >
+                              <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Renomear
+                            </button>
+                            <button
+                              role="menuitem"
+                              onClick={() => setConfirmDeleteId(c.id)}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#D4183D] hover:bg-[#FDF2F4]"
+                              style={{ fontSize: "14.4px" }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} /> Apagar
+                            </button>
+                          </>
+                        )}
                       </div>
                     </>
                   )}
@@ -233,6 +277,7 @@ export function Sidebar() {
               router.push("/login");
             }}
             title="Sair"
+            aria-label="Sair"
             className="flex items-center justify-center w-8 h-8 rounded-lg text-[#AEAEBF] dark:text-[#6E6E7C] hover:bg-[#FBF0F0] hover:text-[#C44040] dark:hover:bg-[#2A1517] dark:hover:text-[#D96B6B] transition-colors flex-shrink-0"
           >
             <LogOut className="w-3.5 h-3.5" strokeWidth={1.8} />

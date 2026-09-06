@@ -72,6 +72,7 @@ export function SavedPage() {
                     toggle(d);
                   }}
                   title="Remover dos salvos"
+                  aria-label={`Remover "${d.title}" dos salvos`}
                   className="flex items-center justify-center w-7 h-7 rounded-lg text-[#AEAEBF] dark:text-[#6E6E7C] hover:bg-[#FBF0F0] hover:text-[#C44040] dark:hover:bg-[#2A1517] dark:hover:text-[#D96B6B] transition-colors flex-shrink-0"
                 >
                   <X className="w-3.5 h-3.5" strokeWidth={2} />

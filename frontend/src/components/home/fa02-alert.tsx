@@ -53,6 +53,7 @@ export function Fa02Alert({
           onClick={onDismiss}
           className="text-[#B08A5A] dark:text-[#8A6E4A] hover:text-[#6B3B0A] dark:hover:text-[#E0AC6C] transition-colors flex-shrink-0"
           title="Fechar"
+          aria-label="Fechar"
         >
           <X className="w-3.5 h-3.5" strokeWidth={2} />
         </button>

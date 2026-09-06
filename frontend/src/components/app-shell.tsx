@@ -39,6 +39,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }}
           className="absolute top-4 left-4 z-20 flex items-center justify-center w-8 h-8 rounded-lg text-[#9090A0] dark:text-[#7C7C88] hover:bg-white hover:text-[#1A3A5C] hover:shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-all"
           title={collapsed ? "Expandir menu" : "Recolher menu"}
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+          aria-expanded={!collapsed}
         >
           {collapsed ? (
             <PanelLeftOpen className="w-4 h-4" strokeWidth={1.8} />
