@@ -86,11 +86,17 @@ class HybridSearch:
         query: str,
         n_results: int = 20,
         where: dict | None = None,
+        *,
+        bm25_query: str | None = None,
     ) -> list[tuple[str, float]]:
         """Busca híbrida: vetorial (2 coleções) + lexical, fundidos por RRF.
 
-        Input:  query — texto da busca; n_results — top-N documentos; where — filtro
-                de metadados do Chroma (provimento/período — UC03/UC04), opcional.
+        Input:  query — texto embedado para a busca vetorial (ex.: a frase-tese
+                do Query Builder); n_results — top-N documentos; where — filtro
+                de metadados do Chroma (provimento/período — UC03/UC04), opcional;
+                bm25_query — string lexical para o BM25 (ex.: os termos exatos do
+                Query Builder), se diferente de `query`; default None usa `query`
+                nos dois canais (comportamento anterior, retrocompatível).
         Returns: lista [(documento_id, score_rrf)] top-N, melhor primeiro.
 
         Nota: o `where` filtra as buscas do Chroma; o BM25 não filtra por metadados.
@@ -102,7 +108,7 @@ class HybridSearch:
         query_vector = self.embedder.embed_text(query)
         hits_completo = self.chroma.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_COMPLETO)
         hits_ementa = self.chroma.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_EMENTA)
-        hits_bm25 = self.bm25.search(query, n=n_candidates)
+        hits_bm25 = self.bm25.search(bm25_query if bm25_query is not None else query, n=n_candidates)
 
         # Projeta cada canal para uma lista ranqueada de documento_id, sem duplicar.
         r_completo = _dedup_ordenado([h["documento_id"] for h in hits_completo])

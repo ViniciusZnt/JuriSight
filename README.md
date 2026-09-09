@@ -67,8 +67,9 @@ jurisight/
 │   └── graph/
 │
 ├── query/
-│   ├── enrichment/
-│   └── search/
+│   ├── enrichment/          ← PDF Extractor, Query Enrichment (LLM), Query Builder
+│   ├── search/              ← Hybrid Search (RRF), Doc Retriever, Categorical Sort, Result Formatter
+│   └── api/                 ← FastAPI: POST /enrich, POST /query, GET /document/{id}, GET /health
 │
 ├── frontend/                ← interface Next.js (App Router)
 │   ├── src/
@@ -168,6 +169,11 @@ cp .env.example .env
 | `OPENAI_EMBED_MODEL`| `text-embedding-3-small`                            | Modelo de embeddings (1536d)     |
 | `CHROMA_PERSIST_DIR`| `~/.local/share/jurisight/chroma`                   | Índice ChromaDB — **no FS Linux, não em `/mnt/d`** (ver passo 7) |
 | `BM25_INDEX_PATH`   | `./data/index/bm25.pkl`                             | Índice lexical BM25 (pickle)     |
+| `OLLAMA_HOST`       | `http://localhost:11434`                            | Endpoint do Ollama (Query Enrichment) |
+| `OLLAMA_MODEL`      | `llama3.2:3b`                                       | Modelo usado no enriquecimento de query e na sumarização de PDFs longos |
+| `API_HOST` / `API_PORT` | `0.0.0.0` / `8000`                              | Endereço do backend FastAPI      |
+| `API_RELOAD`        | `true`                                              | Reload automático do Uvicorn em dev |
+| `CORS_ORIGINS`      | `http://localhost:3000`                             | Origens permitidas (a interface web em dev) |
 
 > A chave da OpenAI vai só no `.env` (gitignored) — **nunca** commitada. Sem crédito
 > pré-pago na conta, a API responde `429 insufficient_quota`.
@@ -245,7 +251,22 @@ uv run python indexing/run.py
 > No WSL2, mantenha o `CHROMA_PERSIST_DIR` no FS Linux (`~/…`), não em `/mnt/d`:
 > gravar no HD/drive Windows deixa o Chroma ~30x mais lento (fsync).
 
-### 8 — Rodar interface
+### 8 — Rodar a API
+
+Requer Postgres no ar (passo 5), Ollama respondendo (passo 3) e o índice
+ChromaDB/BM25 já construído (passo 7) — sem eles, os endpoints sobem mas
+`/query`/`/enrich` falham ao tentar acessá-los.
+
+```bash
+uv run python main.py
+```
+
+Sobe em [http://localhost:8000](http://localhost:8000). Endpoints:
+`POST /enrich` (PDF e/ou intenção argumentativa → `EstruturaArgumentativa`),
+`POST /query` (busca híbrida → lista de resultados), `GET /document/{id}`
+(detalhe completo), `GET /health`.
+
+### 9 — Rodar interface
 
 ```bash
 cd frontend
@@ -279,8 +300,27 @@ pnpm cypress:run       # headless
 pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e derruba o server no final
 ```
 
-> Ainda não há testes de backend/integração — o pipeline de IA e a API ainda não existem
-> (ver [Pipeline](#pipeline)). O frontend inteiro roda sobre dados mockados até lá.
+> O frontend ainda roda sobre dados mockados — a integração com a API real
+> (ver [Testes (backend)](#testes-backend)) é um passo futuro separado.
+
+---
+
+## Testes (backend)
+
+```bash
+uv run pytest
+```
+
+| Módulo | O que cobre |
+|--------|-------------|
+| `scraper`/`processing`/`indexing` | Parsing HTML, chunking SAC, embeddings (OpenAI mockado), BM25 |
+| `query/enrichment` | PDF Extractor (pdfplumber mockado), Query Enrichment (Ollama mockado, RN05), Query Builder |
+| `query/search` | Hybrid Search/RRF (Chroma/BM25 mockados), Categorical Sort, Result Formatter |
+| `query/api` | Os 4 endpoints via `TestClient`, com `dependency_overrides` no lugar de Postgres/Chroma/Ollama reais |
+
+> Todos os testes rodam sem infraestrutura real (Postgres/ChromaDB/Ollama/OpenAI) —
+> clientes externos são substituídos por fakes injetados. Um smoke test manual de
+> ponta a ponta (com a infra de verdade no ar) é o passo 8 do Quick Start.
 
 ---
 
@@ -303,10 +343,11 @@ pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e de
 | requests           | Coleta do portal TST (Falcão)               |
 | PostgreSQL         | Source of truth — documentos completos      |
 | ChromaDB           | Banco vetorial — busca semântica            |
-| Ollama / Llama 3.2 3B | Query enrichment local                 |
+| Ollama / Llama 3.2 3B | Query enrichment local + sumarização de PDFs longos |
 | OpenAI text-embedding-3-small | Embeddings (1536d)              |
 | rank-bm25          | Busca lexical — índice BM25                 |
-| FastAPI            | Backend — fusão RRF dos rankings            |
+| pdfplumber         | Extração de texto do PDF do usuário         |
+| FastAPI / Uvicorn  | Backend — API REST, fusão RRF dos rankings  |
 | Next.js / React    | Interface do usuário                        |
 | Jest + React Testing Library | Testes unitários e de componente (frontend) |
 | Cypress            | Testes end-to-end (frontend)                |
