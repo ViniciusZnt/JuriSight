@@ -5,17 +5,11 @@ import { useRouter } from "next/navigation";
 import { BookOpen, FileSearch, Gavel, Star, Zap } from "lucide-react";
 import { SearchInput, type SearchInputHandle, type SearchSubmitPayload } from "@/components/home/search-input";
 import { Fa02Alert } from "@/components/home/fa02-alert";
-import { Fa05Processing } from "@/components/home/fa05-processing";
+import { AnalyzingOverlay } from "@/components/home/analyzing-overlay";
+import { ErrorBanner } from "@/components/ui/error-banner";
 import { useConversations } from "@/lib/conversations";
-
-// Sem extração real de PDF no frontend (isso é o pdfplumber do backend, RF02). Para demonstrar a
-// FA02 sem um parser de verdade, qualquer arquivo com "scan" no nome simula um PDF escaneado sem
-// texto extraível — troque por uma checagem real quando a API de /enrich existir.
-const looksScanned = (fileName: string) => /scan/i.test(fileName);
-
-// Proxy simples para "documento extenso" (RFC FA05/RNF05): acima de 8MB, mais provável ser uma
-// petição longa com muitas páginas do que um PDF de texto simples.
-const LARGE_FILE_BYTES = 8 * 1024 * 1024;
+import { useConsulta } from "@/lib/consulta";
+import { enrich, ApiError, type EstruturaArgumentativa } from "@/lib/api";
 
 const features = [
   {
@@ -41,33 +35,56 @@ const features = [
   },
 ];
 
-/** Home: entrada de consulta (RFC Figura 2). Enviar cria a conversa e vai à revisão — ou, se o
- *  PDF simular um documento escaneado ou extenso, mostra a FA02/FA05 antes de prosseguir. */
+/** Home: entrada de consulta (RFC Figura 2). Enviar chama POST /enrich (RF01/RF02/RF03) — o
+ *  PDF e/ou a intenção argumentativa viram a EstruturaArgumentativa revisada na próxima tela. */
 export function HomePage() {
   const router = useRouter();
   const { create } = useConversations();
+  const { setEnriched } = useConsulta();
   const searchInputRef = useRef<SearchInputHandle>(null);
-  const [fa02, setFa02] = useState<{ fileName: string; query: string } | null>(null);
-  const [fa05, setFa05] = useState<{ fileName: string } | null>(null);
+  const [loading, setLoading] = useState<{ fileName: string | null } | null>(null);
+  const [fa02, setFa02] = useState<{ fileName: string; estrutura: EstruturaArgumentativa; aviso: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastPayload, setLastPayload] = useState<SearchSubmitPayload | null>(null);
 
-  const goToRevisao = (query: string, hasFile: boolean) => {
-    create(query || "Nova pesquisa");
+  const goToRevisao = (fileName: string | null, estrutura: EstruturaArgumentativa, hasFile: boolean) => {
+    create(estrutura.tese_central || estrutura.pedido_principal || "Nova pesquisa");
+    setEnriched(fileName, estrutura);
     router.push(hasFile ? "/revisao" : "/revisao?modo=manual");
   };
 
-  const handleSubmit = ({ query, hasFile, fileName, fileBytes }: SearchSubmitPayload) => {
-    if (hasFile && fileName && looksScanned(fileName)) {
-      setFa02({ fileName, query });
-      return;
-    }
+  const handleSubmit = async (payload: SearchSubmitPayload) => {
+    setError(null);
+    setFa02(null);
+    setLastPayload(payload);
+    setLoading({ fileName: payload.fileName });
 
-    if (hasFile && fileName && fileBytes && fileBytes > LARGE_FILE_BYTES) {
-      setFa05({ fileName });
-      setTimeout(() => goToRevisao(query, hasFile), 1800);
-      return;
-    }
+    try {
+      const response = await enrich({
+        pdf: payload.file ?? undefined,
+        intencao: payload.query,
+      });
 
-    goToRevisao(query, hasFile);
+      if (response.pdf_extraido === false) {
+        // FA02: o backend já rodou o enriquecimento só com a intenção — não precisa rechamar /enrich.
+        setFa02({
+          fileName: payload.fileName ?? "",
+          estrutura: response.estrutura,
+          aviso: response.aviso ?? "Não foi possível extrair texto do PDF enviado.",
+        });
+        return;
+      }
+
+      goToRevisao(payload.fileName, response.estrutura, payload.hasFile);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente."
+      );
+    } finally {
+      setLoading(null);
+    }
   };
 
   return (
@@ -127,17 +144,23 @@ export function HomePage() {
 
         <div className="w-full max-w-[720px] mt-8 sm:mt-10">
           <SearchInput ref={searchInputRef} onSubmit={handleSubmit} />
+          {error && (
+            <div className="mt-3">
+              <ErrorBanner message={error} onRetry={lastPayload ? () => handleSubmit(lastPayload) : undefined} />
+            </div>
+          )}
           {fa02 && (
             <Fa02Alert
               fileName={fa02.fileName}
+              aviso={fa02.aviso}
               onRetry={() => {
                 setFa02(null);
                 searchInputRef.current?.clearAndReopenFile();
               }}
               onContinueWithoutFile={() => {
-                const query = fa02.query;
+                const { estrutura } = fa02;
                 setFa02(null);
-                goToRevisao(query, false);
+                goToRevisao(null, estrutura, false);
               }}
               onDismiss={() => setFa02(null)}
             />
@@ -145,7 +168,7 @@ export function HomePage() {
         </div>
       </div>
 
-      {fa05 && <Fa05Processing fileName={fa05.fileName} />}
+      {loading && <AnalyzingOverlay fileName={loading.fileName} />}
 
       {/* Features */}
       <div className="px-4 sm:px-8 pb-6">

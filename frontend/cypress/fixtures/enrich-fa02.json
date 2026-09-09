@@ -1,0 +1,14 @@
+{
+  "estrutura": {
+    "pedido_principal": "adicional de insalubridade grau máximo",
+    "agente_nocivo": [],
+    "violacoes": [],
+    "normas": [],
+    "empresa_ciente": null,
+    "setor": null,
+    "cargo": null,
+    "tese_central": "adicional de insalubridade grau máximo"
+  },
+  "pdf_extraido": false,
+  "aviso": "Não foi possível extrair texto do PDF (possível documento escaneado). Prosseguindo com a intenção argumentativa informada."
+}

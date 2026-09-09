@@ -4,6 +4,9 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
+import { ErrorBanner } from "@/components/ui/error-banner";
+import { useConsulta } from "@/lib/consulta";
+import { query, ApiError, type EstruturaArgumentativa } from "@/lib/api";
 import {
   X,
   Plus,
@@ -15,36 +18,14 @@ import {
   AlertTriangle,
   HelpCircle,
   PencilLine,
+  Loader2,
 } from "lucide-react";
 
-interface EntitySchema {
-  pedido_principal: string;
-  agente_nocivo: string[];
-  violacoes: string[];
-  normas: string[];
-  empresa_ciente: boolean | null;
-  setor: string | null;
-  cargo: string | null;
-  tese_central: string;
-}
+type EntitySchema = EstruturaArgumentativa;
 
-const initialData: EntitySchema = {
-  pedido_principal: "Adicional de insalubridade grau máximo",
-  agente_nocivo: ["Benzeno", "Hidrocarbonetos aromáticos"],
-  violacoes: [
-    "Ausência de EPI eficaz",
-    "Falta de treinamento",
-    "Exposição contínua sem monitoramento",
-  ],
-  normas: ["NR-15", "CLT art. 192", "Súmula 448 TST"],
-  empresa_ciente: true,
-  setor: "Indústria química",
-  cargo: "Operador de caldeira",
-  tese_central:
-    "A empresa tinha ciência do risco e não forneceu proteção adequada, expondo o trabalhador a agentes cancerígenos de forma contínua e sem qualquer monitoramento de saúde ocupacional.",
-};
-
-/** UC02 — sem PDF: nenhum campo é extraído por IA, o usuário preenche manualmente (RN06). */
+/** UC02 — sem PDF/estrutura em memória: nenhum campo foi extraído, o usuário preenche
+ *  manualmente (RN06). Também é o fallback se a página for aberta direto pela URL, sem
+ *  passar pela Home. */
 const emptyData: EntitySchema = {
   pedido_principal: "",
   agente_nocivo: [],
@@ -379,17 +360,38 @@ function FieldLabel({ label, description }: { label: string; description?: strin
   );
 }
 
-/** Revisão de entidades extraídas (Figura 3 da RFC). Dados mockados até a extração real existir. */
+/** Revisão da EstruturaArgumentativa extraída por POST /enrich (Figura 3 da RFC, RN05). */
 export function EntityReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { fileName, estrutura, setResultados } = useConsulta();
   const manual = searchParams.get("modo") === "manual";
-  const [data, setData] = useState<EntitySchema>(manual ? emptyData : initialData);
+  const [data, setData] = useState<EntitySchema>(estrutura ?? emptyData);
   const [teseFocused, setTeseFocused] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const wordCount = data.tese_central.trim().split(/\s+/).filter(Boolean).length;
 
   const set = <K extends keyof EntitySchema>(key: K) => (val: EntitySchema[K]) =>
     setData((prev) => ({ ...prev, [key]: val }));
+
+  const buscarJurisprudencias = async () => {
+    setError(null);
+    setSearching(true);
+    try {
+      const resultados = await query({ estrutura: data });
+      setResultados(resultados);
+      router.push("/resultados");
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente."
+      );
+    } finally {
+      setSearching(false);
+    }
+  };
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
@@ -455,7 +457,7 @@ export function EntityReviewPage() {
                   Extraído de:
                 </span>
                 <span className="text-[#4A4A5A] dark:text-[#C4C4CE] truncate min-w-0" style={{ fontSize: "13.8px", fontWeight: 500 }}>
-                  Petição_Insalubridade_Benzeno_v2.pdf
+                  {fileName ?? "documento enviado"}
                 </span>
               </>
             )}
@@ -544,15 +546,31 @@ export function EntityReviewPage() {
               {data.agente_nocivo.length + data.violacoes.length + data.normas.length} entidades confirmadas
             </span>
             <button
-              onClick={() => router.push("/resultados")}
-              className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-[#1A3A5C] text-white hover:bg-[#152E4A] active:scale-[0.98] transition-all shadow-[0_2px_14px_rgba(26,58,92,0.30)]"
+              onClick={buscarJurisprudencias}
+              disabled={searching}
+              className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-[#1A3A5C] text-white hover:bg-[#152E4A] active:scale-[0.98] transition-all shadow-[0_2px_14px_rgba(26,58,92,0.30)] disabled:opacity-70 disabled:active:scale-100"
               style={{ fontSize: "15.5px", fontWeight: 600 }}
             >
-              Buscar jurisprudências
-              <ArrowRight className="w-4 h-4" strokeWidth={2} />
+              {searching ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2} />
+                  Buscando…
+                </>
+              ) : (
+                <>
+                  Buscar jurisprudências
+                  <ArrowRight className="w-4 h-4" strokeWidth={2} />
+                </>
+              )}
             </button>
           </div>
         </div>
+
+        {error && (
+          <div className="w-full max-w-[800px] mt-3">
+            <ErrorBanner message={error} onRetry={buscarJurisprudencias} />
+          </div>
+        )}
 
         <p className="text-[#C8C8D4] dark:text-[#5E5E6A] mt-4" style={{ fontSize: "12.6px" }}>
           Duplo clique em uma tag para editar · Enter para confirmar · Esc para cancelar

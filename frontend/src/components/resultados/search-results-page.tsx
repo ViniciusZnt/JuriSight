@@ -4,9 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Filter,
-  TrendingUp,
   Bookmark,
-  AlertCircle,
   Scale,
   Calendar,
   FileText,
@@ -25,9 +23,17 @@ import { MetaItem } from "@/components/ui/meta-item";
 import { ActionButton } from "@/components/ui/action-button";
 import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
-import type { Outcome } from "@/lib/outcome";
-import { mockResults } from "@/lib/mock-decisions";
+import { provimentoToOutcome, type Outcome } from "@/lib/outcome";
+import { useConsulta } from "@/lib/consulta";
+import type { ResultCard, TipoDocumento } from "@/lib/api";
 import { useSaved } from "@/lib/saved";
+
+const TIPO_LABEL: Record<TipoDocumento, string> = {
+  ACORDAO: "Acórdão",
+  SUMULA: "Súmula",
+  OJ: "Orientação Jurisprudencial",
+  PRECEDENTE: "Precedente Normativo",
+};
 
 /** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
 function DropdownPill({
@@ -107,7 +113,7 @@ function DropdownOption({ label, active, onClick }: { label: string; active: boo
   );
 }
 
-/** Skeleton exibido enquanto a busca "carrega" — hoje simula a latência que a API real terá. */
+/** Skeleton exibido só se a página for aberta sem resultados em memória (ex. reload). */
 function ResultsSkeleton() {
   return (
     <div className="w-full max-w-[800px] animate-pulse" role="status" aria-label="Carregando jurisprudências">
@@ -125,23 +131,25 @@ function ResultsSkeleton() {
   );
 }
 
-/** Resultados da busca (Figuras 4-5 da RFC). Dados mockados até a API existir. */
+/** Resultados da busca (Figuras 4-5 da RFC). Dados de POST /query, já ordenados pelo backend
+ *  (hierarquia jurídica + relevância/data — RN02). Filtro por provimento/período e reordenação
+ *  aqui são locais, sobre a lista já carregada. */
 export function SearchResultsPage() {
   const router = useRouter();
   const { isSaved, toggle } = useSaved();
-  const [loading, setLoading] = useState(true);
+  const { resultados, estrutura } = useConsulta();
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState<string>(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState<string>("");
 
-  // Simula a latência da busca real. Quando a API existir, troque por um fetch de verdade
-  // e mantenha o loading até a resposta chegar.
+  // Sem resultados em memória (ex. reload direto na URL) — volta pro início.
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 650);
-    return () => clearTimeout(timer);
-  }, []);
+    if (resultados === null) router.replace("/");
+  }, [resultados, router]);
+
+  const mockResults: ResultCard[] = resultados ?? [];
 
   const formatDateShort = (isoDate: string) =>
     new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -151,7 +159,8 @@ export function SearchResultsPage() {
       ? `${dateFrom ? formatDateShort(dateFrom) : "…"} – ${dateTo ? formatDateShort(dateTo) : "…"}`
       : "Em qualquer data";
 
-  const inPeriod = (dateStr: string) => {
+  const inPeriod = (dateStr: string | null) => {
+    if (!dateStr) return !dateFrom && !dateTo; // sem data conhecida só entra se não há filtro de período
     if (dateFrom && dateStr < dateFrom) return false;
     if (dateTo && dateStr > dateTo) return false;
     return true;
@@ -159,33 +168,36 @@ export function SearchResultsPage() {
 
   const sortDirFactor = sortDir === "asc" ? 1 : -1;
   const filteredResults = mockResults
-    .filter((d) => filter === "all" || d.outcome === filter)
-    .filter((d) => inPeriod(d.date))
+    .filter((d) => filter === "all" || provimentoToOutcome(d.provimento) === filter)
+    .filter((d) => inPeriod(d.data_julgamento))
     .sort((a, b) =>
-      sortDirFactor * (sortBy === "relevance" ? a.relevance - b.relevance : new Date(a.date).getTime() - new Date(b.date).getTime())
+      sortDirFactor *
+      (sortBy === "relevance"
+        ? a.score_rrf - b.score_rrf
+        : new Date(a.data_julgamento ?? 0).getTime() - new Date(b.data_julgamento ?? 0).getTime())
     );
 
-  const toggleSave = (d: (typeof mockResults)[number]) => {
+  const toggleSave = (d: ResultCard) => {
     toggle({
       id: d.id,
-      title: d.title,
-      court: d.court,
-      chamber: d.chamber,
-      date: d.date,
-      outcome: d.outcome,
-      relevance: d.relevance,
-      rapporteur: d.rapporteur,
-      processNumber: d.processNumber,
+      title: `${TIPO_LABEL[d.tipo_documento]} — ${d.numero_processo}`,
+      court: d.tribunal,
+      chamber: d.turma,
+      date: d.data_julgamento ?? "",
+      outcome: provimentoToOutcome(d.provimento),
+      relevance: Math.round(d.score_rrf * 1000) / 10,
+      rapporteur: d.relator,
+      processNumber: d.numero_processo,
     });
   };
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
-  const formatDateLong = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const formatDate = (dateStr: string | null) =>
+    dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "Data não informada";
+  const formatDateLong = (dateStr: string | null) =>
+    dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não informada";
 
-  const favorableCount = mockResults.filter((d) => d.outcome === "favorable").length;
-  const unfavorableCount = mockResults.filter((d) => d.outcome === "unfavorable").length;
+  const favorableCount = mockResults.filter((d) => provimentoToOutcome(d.provimento) === "favorable").length;
+  const unfavorableCount = mockResults.filter((d) => provimentoToOutcome(d.provimento) === "unfavorable").length;
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
@@ -194,12 +206,15 @@ export function SearchResultsPage() {
   const exportResults = () => {
     const lines = filteredResults.map((d, idx) =>
       [
-        `${idx + 1}. ${d.title}`,
-        `   ${d.court} — ${d.chamber} · ${formatDateLong(d.date)}`,
-        `   Processo: ${d.processNumber} · Rel. ${d.rapporteur}`,
-        `   Provimento: ${d.outcome === "favorable" ? "Favorável" : d.outcome === "unfavorable" ? "Desfavorável" : "Neutro"} · Relevância: ${d.relevance}%`,
-        `   ${d.summary}`,
-      ].join("\n")
+        `${idx + 1}. ${TIPO_LABEL[d.tipo_documento]} — ${d.numero_processo}`,
+        `   ${d.tribunal} — ${d.turma} · ${formatDateLong(d.data_julgamento)}`,
+        `   Processo: ${d.numero_processo} · Rel. ${d.relator}`,
+        `   Provimento: ${d.provimento} · Score RRF: ${d.score_rrf.toFixed(4)}`,
+        `   ${d.ementa}`,
+        d.link_original ? `   Link: ${d.link_original}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n")
     );
     const header = `JuriSight — Jurisprudências (${filteredResults.length} de ${mockResults.length} resultados)\nExportado em ${new Date().toLocaleString("pt-BR")}\n`;
     const blob = new Blob([header, "\n", lines.join("\n\n")], { type: "text/plain;charset=utf-8" });
@@ -228,7 +243,7 @@ export function SearchResultsPage() {
       <div className="flex-1 flex flex-col items-center px-8 py-4 pb-10">
         <StepIndicator current={2} />
 
-        {loading ? (
+        {resultados === null ? (
           <ResultsSkeleton />
         ) : (
           <>
@@ -242,9 +257,11 @@ export function SearchResultsPage() {
               <h2 className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
                 {filteredResults.length} decisões encontradas
               </h2>
-              <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
-                Alinhadas à tese: &ldquo;Adicional de insalubridade grau máximo&rdquo;
-              </p>
+              {estrutura?.tese_central && (
+                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
+                  Alinhadas à tese: &ldquo;{estrutura.tese_central}&rdquo;
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -460,27 +477,27 @@ export function SearchResultsPage() {
           </div>
         ) : (
           <div className="w-full max-w-[800px] space-y-4">
-            {filteredResults.map((decision) => {
+            {filteredResults.map((decision, idx) => {
               const saved = isSaved(decision.id);
+              const outcome = provimentoToOutcome(decision.provimento);
 
               return (
                 <div
                   key={decision.id}
                   className="bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group cursor-pointer"
-                  onClick={() => router.push(`/decisao/${decision.id}`)}
+                  onClick={() => router.push(`/decisao/${decision.id}?rank=${idx + 1}`)}
                 >
                   {/* Header */}
                   <div className="px-6 pt-5 pb-4 border-b border-[#F0F0F6] dark:border-[#26262C]">
                     <div className="flex items-start justify-between gap-4 mb-3">
                       <h3 className="text-[#0F1117] dark:text-[#ECECEF] leading-snug group-hover:text-[#1A3A5C] dark:group-hover:text-[#8AB0DC] transition-colors flex-1" style={{ fontSize: "16.7px", fontWeight: 600 }}>
-                        {decision.title}
+                        {TIPO_LABEL[decision.tipo_documento]} — {decision.numero_processo}
                       </h3>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <OutcomeBadge outcome={decision.outcome} size="sm" />
+                        <OutcomeBadge outcome={outcome} size="sm" />
                         <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]">
-                          <TrendingUp className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
                           <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                            {decision.relevance}%
+                            {idx + 1}º resultado
                           </span>
                         </div>
                       </div>
@@ -488,13 +505,13 @@ export function SearchResultsPage() {
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.2px" }}>
                       <MetaItem icon={Scale} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span>{decision.court} — {decision.chamber}</span>
+                        <span>{decision.tribunal} — {decision.turma}</span>
                       </MetaItem>
                       <MetaItem icon={Calendar} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span>{formatDate(decision.date)}</span>
+                        <span>{formatDate(decision.data_julgamento)}</span>
                       </MetaItem>
                       <MetaItem icon={FileText} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span className="font-mono">{decision.processNumber}</span>
+                        <span className="font-mono">{decision.numero_processo}</span>
                       </MetaItem>
                     </div>
                   </div>
@@ -502,36 +519,20 @@ export function SearchResultsPage() {
                   {/* Summary */}
                   <div className="px-6 py-4">
                     <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3" style={{ fontSize: "14.4px" }}>
-                      {decision.summary}
+                      {decision.ementa}
                     </p>
 
-                    {decision.matchedEntities.length > 0 && (
-                      <div className="flex items-start gap-2 mb-3">
-                        <AlertCircle className="w-3 h-3 text-[#9090A8] dark:text-[#7C7C88] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
-                        <div className="flex flex-wrap gap-1.5 items-center">
-                          <span className="text-[#9090A8] dark:text-[#7C7C88]" style={{ fontSize: "12.6px" }}>Entidades correspondentes:</span>
-                          {decision.matchedEntities.map((entity, idx) => (
-                            <Chip key={idx} tone="amber" size="sm">
-                              {entity}
-                            </Chip>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     <div className="flex flex-wrap gap-1.5">
-                      {decision.tags.map((tag, idx) => (
-                        <Chip key={idx} tone="blue" size="sm">
-                          {tag}
-                        </Chip>
-                      ))}
+                      <Chip tone="blue" size="sm">
+                        {TIPO_LABEL[decision.tipo_documento]}
+                      </Chip>
                     </div>
                   </div>
 
                   {/* Footer actions */}
                   <div className="px-6 py-3 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C] flex items-center justify-between">
                     <span className="text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "12.6px" }}>
-                      Rel. {decision.rapporteur}
+                      Rel. {decision.relator}
                     </span>
                     <ActionButton
                       icon={Bookmark}

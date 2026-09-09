@@ -3,15 +3,18 @@
 import { AlertTriangle, RefreshCw, ArrowRight, X } from "lucide-react";
 
 /** FA02 — PDF sem texto extraível (RFC 3.2). Aparece dentro da caixa de consulta quando o
- *  sistema não consegue extrair texto do PDF enviado (documento escaneado/imagem). Deixa o
- *  usuário reenviar outro arquivo ou seguir sem PDF (mesmo fluxo da FA01). */
+ *  backend não consegue extrair texto do PDF enviado (documento escaneado/imagem) — a
+ *  mensagem (`aviso`) vem da resposta real de POST /enrich. Deixa o usuário reenviar outro
+ *  arquivo ou seguir com a EstruturaArgumentativa já extraída só da intenção (FA01). */
 export function Fa02Alert({
   fileName,
+  aviso,
   onRetry,
   onContinueWithoutFile,
   onDismiss,
 }: {
   fileName: string;
+  aviso: string;
   onRetry: () => void;
   onContinueWithoutFile: () => void;
   onDismiss: () => void;
@@ -27,8 +30,7 @@ export function Fa02Alert({
             Não foi possível extrair texto de &ldquo;{fileName}&rdquo;
           </p>
           <p className="text-[#8A5A1E] dark:text-[#C9A26E] mt-1 leading-relaxed" style={{ fontSize: "13.8px" }}>
-            Não foi possível extrair texto do PDF enviado (possível documento escaneado). Por favor, informe o
-            contexto manualmente ou envie uma versão com texto selecionável.
+            {aviso}
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button

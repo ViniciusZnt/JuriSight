@@ -7,13 +7,14 @@ interface UploadedFile {
   name: string;
   size: string;
   bytes: number;
+  file: File;
 }
 
 export interface SearchSubmitPayload {
   query: string;
   hasFile: boolean;
   fileName: string | null;
-  fileBytes: number | null;
+  file: File | null;
 }
 
 export interface SearchInputHandle {
@@ -39,7 +40,7 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
       if (file) {
         const sizeKb = Math.round(file.size / 1024);
         const sizeStr = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
-        setUploadedFile({ name: file.name, size: sizeStr, bytes: file.size });
+        setUploadedFile({ name: file.name, size: sizeStr, bytes: file.size, file });
       }
     };
 
@@ -69,7 +70,7 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
         query: query.trim() || uploadedFile?.name || "",
         hasFile: uploadedFile !== null,
         fileName: uploadedFile?.name ?? null,
-        fileBytes: uploadedFile?.bytes ?? null,
+        file: uploadedFile?.file ?? null,
       });
     };
 

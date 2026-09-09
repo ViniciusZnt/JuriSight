@@ -1,0 +1,72 @@
+[
+  {
+    "id": "acordao-1",
+    "tipo_documento": "ACORDAO",
+    "hierarquia_categoria": 4,
+    "numero_processo": "TST-RR-100-44.2021.5.01.0019",
+    "tribunal": "TST",
+    "turma": "3ª Turma",
+    "relator": "Min. Alberto Bresciani",
+    "data_julgamento": "2025-04-27",
+    "ementa": "Mantida condenação ao pagamento de adicional de insalubridade em grau máximo ante a comprovação de exposição habitual a benzeno.",
+    "provimento": "APROVADO",
+    "link_original": "https://jurisprudencia.tst.jus.br/acordao-1",
+    "score_rrf": 0.049
+  },
+  {
+    "id": "acordao-2",
+    "tipo_documento": "ACORDAO",
+    "hierarquia_categoria": 4,
+    "numero_processo": "TRT2-ROT-1000523-31.2024.5.02.0066",
+    "tribunal": "TRT-2",
+    "turma": "14ª Turma",
+    "relator": "Des. Carlos Roberto Barbosa",
+    "data_julgamento": "2025-04-15",
+    "ementa": "Reconhecida a responsabilidade da empregadora pelo não fornecimento de proteção adequada.",
+    "provimento": "APROVADO",
+    "link_original": "https://jurisprudencia.tst.jus.br/acordao-2",
+    "score_rrf": 0.041
+  },
+  {
+    "id": "acordao-3",
+    "tipo_documento": "ACORDAO",
+    "hierarquia_categoria": 4,
+    "numero_processo": "TRT1-RO-0101234-56.2024.5.01.0048",
+    "tribunal": "TRT-1",
+    "turma": "7ª Turma",
+    "relator": "Des. Ana Paula Tauceda Branco",
+    "data_julgamento": "2025-02-18",
+    "ementa": "Empresa tinha pleno conhecimento dos riscos à saúde do trabalhador.",
+    "provimento": "APROVADO",
+    "link_original": "https://jurisprudencia.tst.jus.br/acordao-3",
+    "score_rrf": 0.035
+  },
+  {
+    "id": "acordao-4",
+    "tipo_documento": "ACORDAO",
+    "hierarquia_categoria": 4,
+    "numero_processo": "TRT15-ROT-0010234-19.2024.5.15.0089",
+    "tribunal": "TRT-15",
+    "turma": "5ª Turma",
+    "relator": "Des. Lorival Ferreira dos Santos",
+    "data_julgamento": "2025-03-22",
+    "ementa": "Afastado o adicional de insalubridade ante o fornecimento de EPI eficaz.",
+    "provimento": "NEGADO",
+    "link_original": "https://jurisprudencia.tst.jus.br/acordao-4",
+    "score_rrf": 0.028
+  },
+  {
+    "id": "sumula-448",
+    "tipo_documento": "SUMULA",
+    "hierarquia_categoria": 1,
+    "numero_processo": "SUM-448",
+    "tribunal": "TST",
+    "turma": "Tribunal Pleno",
+    "relator": "Min. Relatora da Súmula",
+    "data_julgamento": "2020-05-10",
+    "ementa": "A exposição a agente nocivo cancerígeno é insuscetível de neutralização pela utilização de EPI.",
+    "provimento": "NAO_APLICAVEL",
+    "link_original": "https://jurisprudencia.tst.jus.br/sumula-448",
+    "score_rrf": 0.015
+  }
+]

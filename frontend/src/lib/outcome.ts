@@ -1,6 +1,22 @@
 import { ThumbsUp, ThumbsDown, Info, type LucideIcon } from "lucide-react";
+import type { Provimento } from "@/lib/api";
 
 export type Outcome = "favorable" | "unfavorable" | "neutral";
+
+/** Mapeia o provimento real (backend) para o Outcome visual (3 estados). PARCIAL
+ *  e NAO_APLICAVEL (súmulas/OJs, que não julgam um pedido) caem em "neutral" —
+ *  nem favorável nem desfavorável de forma inequívoca. */
+export function provimentoToOutcome(provimento: Provimento): Outcome {
+  switch (provimento) {
+    case "APROVADO":
+      return "favorable";
+    case "NEGADO":
+      return "unfavorable";
+    case "PARCIAL":
+    case "NAO_APLICAVEL":
+      return "neutral";
+  }
+}
 
 interface OutcomeConfig {
   label: string;

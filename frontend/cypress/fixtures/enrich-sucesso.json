@@ -1,0 +1,14 @@
+{
+  "estrutura": {
+    "pedido_principal": "adicional de insalubridade grau máximo",
+    "agente_nocivo": ["benzeno"],
+    "violacoes": ["ausência de EPI eficaz"],
+    "normas": ["NR-15", "CLT art. 192"],
+    "empresa_ciente": true,
+    "setor": "metalurgia",
+    "cargo": "operador de prensa",
+    "tese_central": "A empresa tinha ciência do risco e não forneceu proteção adequada."
+  },
+  "pdf_extraido": null,
+  "aviso": null
+}

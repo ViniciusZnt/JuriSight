@@ -1,7 +1,9 @@
 describe("Resultados — filtros, ordenação, FA03/FA04 e exportação", () => {
   beforeEach(() => {
     cy.login();
-    cy.visit("/resultados");
+    cy.mockEnrichSucesso();
+    cy.mockQueryResultados();
+    cy.completarConsulta();
   });
 
   it("filtra por provimento favorável/desfavorável", () => {
@@ -40,13 +42,25 @@ describe("Resultados — filtros, ordenação, FA03/FA04 e exportação", () => 
   });
 
   it("alterna a ordenação entre ascendente e descendente ao clicar na seta", () => {
-    cy.get("h3").first().should("contain.text", "Adicional de insalubridade"); // maior relevância primeiro
+    cy.get("h3").first().should("contain.text", "TST-RR-100-44.2021.5.01.0019"); // maior relevância primeiro
 
     cy.get('button[title*="Ordem"]').click();
-    cy.get("h3").first().should("contain.text", "Insalubridade — necessidade"); // menor relevância primeiro
+    cy.get("h3").first().should("contain.text", "SUM-448"); // menor relevância primeiro
 
     cy.get('button[title*="Ordem"]').click();
-    cy.get("h3").first().should("contain.text", "Adicional de insalubridade");
+    cy.get("h3").first().should("contain.text", "TST-RR-100-44.2021.5.01.0019");
+  });
+
+  it("mostra a posição no ranking (não uma porcentagem inventada)", () => {
+    cy.get("h3").first().closest(".group").within(() => {
+      cy.contains("1º resultado");
+    });
+  });
+
+  it("mostra um chip com o tipo do documento (RF06)", () => {
+    cy.contains("h3", "SUM-448").closest(".group").within(() => {
+      cy.contains("Súmula");
+    });
   });
 
   it("exporta os resultados filtrados como .txt", () => {

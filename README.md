@@ -271,10 +271,13 @@ Sobe em [http://localhost:8000](http://localhost:8000). Endpoints:
 ```bash
 cd frontend
 pnpm install
+cp .env.local.example .env.local   # NEXT_PUBLIC_API_URL, default http://localhost:8000
 pnpm dev
 ```
 
-Abre em [http://localhost:3000](http://localhost:3000).
+Abre em [http://localhost:3000](http://localhost:3000). Já chama a API real do
+passo 8 — sem ela no ar, as telas de consulta mostram o banner de erro de
+conexão em vez de travar silenciosamente.
 
 ---
 
@@ -284,8 +287,8 @@ O frontend tem dois níveis de teste, ambos em `frontend/`:
 
 | Tipo                  | Ferramenta                          | O que cobre                                                        |
 |------------------------|--------------------------------------|---------------------------------------------------------------------|
-| Unitário / componente | Jest + React Testing Library         | Lógica pura (`initialsOf`, `groupByRecency`, `findDecision`, `OUTCOME_CONFIG`) e componentes (`OutcomeBadge`, `Chip`, `StepIndicator`, `ActionButton`), além do contexto `useSaved` (salvar, remover, persistir) |
-| End-to-end             | Cypress                              | Login/cadastro e proteção de rotas, fluxo de consulta (com e sem PDF → revisão → resultados), filtros/ordenação/exportar resultados, e os fluxos alternativos do RFC (FA02, FA03, FA04, FA05) |
+| Unitário / componente | Jest + React Testing Library         | Lógica pura (`initialsOf`, `groupByRecency`, `findDecision`, `OUTCOME_CONFIG`, `provimentoToOutcome`) e componentes (`OutcomeBadge`, `Chip`, `StepIndicator`, `ActionButton`), o cliente `lib/api.ts` (fetch mockado) e o contexto `useSaved` (salvar, remover, persistir) |
+| End-to-end             | Cypress                              | Login/cadastro e proteção de rotas, fluxo de consulta (com e sem PDF → revisão → resultados) contra `POST /enrich`/`POST /query` interceptados (`cy.intercept`, fixtures em `cypress/fixtures/`), filtros/ordenação/exportar resultados, e os fluxos alternativos do RFC (FA02, FA03, FA04) |
 
 ```bash
 cd frontend
@@ -300,8 +303,11 @@ pnpm cypress:run       # headless
 pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e derruba o server no final
 ```
 
-> O frontend ainda roda sobre dados mockados — a integração com a API real
-> (ver [Testes (backend)](#testes-backend)) é um passo futuro separado.
+> Os testes acima (Jest e Cypress) rodam com a API mockada — não precisam do
+> backend real no ar. O frontend já está integrado de ponta a ponta com a API
+> (`frontend/src/lib/api.ts`); rodar os passos 8 e 9 do Quick Start com a
+> infra de verdade no ar é o único jeito de exercitar o fluxo completo contra
+> dados reais.
 
 ---
 
@@ -320,7 +326,8 @@ uv run pytest
 
 > Todos os testes rodam sem infraestrutura real (Postgres/ChromaDB/Ollama/OpenAI) —
 > clientes externos são substituídos por fakes injetados. Um smoke test manual de
-> ponta a ponta (com a infra de verdade no ar) é o passo 8 do Quick Start.
+> ponta a ponta (API + interface, com a infra de verdade no ar) são os passos
+> 8 e 9 do Quick Start.
 
 ---
 
