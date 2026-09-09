@@ -75,7 +75,8 @@ jurisight/
 │   ├── src/
 │   │   ├── app/              ← rotas (home, resultados, decisão, revisão, salvos, login)
 │   │   ├── components/
-│   │   └── lib/
+│   │   └── lib/              ← api.ts (cliente HTTP) e consulta.tsx (estado da sessão) integram
+│   │                            com o backend; auth/saved/profile/conversations são estado local
 │   └── package.json
 │
 ├── data/
@@ -271,9 +272,13 @@ Sobe em [http://localhost:8000](http://localhost:8000). Endpoints:
 ```bash
 cd frontend
 pnpm install
-cp .env.local.example .env.local   # NEXT_PUBLIC_API_URL, default http://localhost:8000
+cp .env.local.example .env.local
 pnpm dev
 ```
+
+| Variável              | Padrão                  | Descrição                          |
+|------------------------|--------------------------|-------------------------------------|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Base URL do backend FastAPI (passo 8), lida por `frontend/src/lib/api.ts` |
 
 Abre em [http://localhost:3000](http://localhost:3000). Já chama a API real do
 passo 8 — sem ela no ar, as telas de consulta mostram o banner de erro de
@@ -328,6 +333,42 @@ uv run pytest
 > clientes externos são substituídos por fakes injetados. Um smoke test manual de
 > ponta a ponta (API + interface, com a infra de verdade no ar) são os passos
 > 8 e 9 do Quick Start.
+
+---
+
+## Integração Frontend ↔ Backend
+
+O frontend chama a API real em toda tela de consulta (Home → Revisão →
+Resultados → Decisão) — nada é mockado no caminho principal.
+
+- **`frontend/src/lib/api.ts`** — cliente HTTP único (fetch puro, sem lib
+  externa), com os tipos espelhando os modelos Pydantic do backend
+  (`EstruturaArgumentativa`, `ResultCard`, `DocumentoDetalhe`). Erros HTTP
+  viram `ApiError` (status + mensagem do backend); falha de rede propaga
+  como `TypeError` — cada tela decide como exibir, via o componente
+  `ErrorBanner` (mensagem + "Tentar novamente").
+- **`frontend/src/lib/consulta.tsx`** — contexto React com o estado da
+  consulta em andamento (`EstruturaArgumentativa` extraída, resultados da
+  busca). **Sem persistência em localStorage, de propósito**: a
+  EstruturaArgumentativa é "memória de sessão" no próprio RFC (§6.1 LGPD) —
+  perder o estado num reload é o comportamento correto, não um bug.
+- **FA02 sem round-trip extra**: quando o backend não consegue extrair
+  texto do PDF, ele já roda o enriquecimento só com a intenção argumentativa
+  e devolve os dois resultados juntos (`pdf_extraido: false` + a
+  `EstruturaArgumentativa`) — "Continuar sem o PDF" só troca de tela, sem
+  chamar `/enrich` de novo.
+- **Sem dado inventado na tela de decisão**: `GET /document/{id}` não tem
+  "pontos-chave" nem citações com trecho entre aspas — esses campos não
+  existem no `DocumentoJuridico` real. A tela usa `ementa`/`fundamentacao`/
+  `acordao`/`referencia_legislativa` diretamente (RF05/RN03).
+- **Relevância como posição no ranking, não porcentagem**: o backend
+  devolve um `score_rrf` (Reciprocal Rank Fusion) — um número pequeno, não
+  uma probabilidade. Mostrar "98%" a partir dele seria inventar um dado.
+  Os cards mostram "1º resultado", "2º resultado" etc., na mesma ordem que
+  o usuário está vendo (a posição viaja na URL entre a lista e o detalhe,
+  pra não divergir se o usuário reordenar/filtrar antes de abrir um card).
+- **Filtro e ordenação em `/resultados` são locais**, sobre a lista já
+  devolvida por `POST /query` — não rechamam a API a cada troca de filtro.
 
 ---
 
