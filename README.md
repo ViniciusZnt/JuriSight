@@ -34,7 +34,7 @@ Portal TST (Falcão)
     → [BM25 Index]              ← busca lexical
     → [FastAPI + RRF]           ← fusão dos rankings
     → [Sort Categórico]         ← hierarquia jurídica
-    → [Streamlit]
+    → [Next.js]
 ```
 
 Custo: o LLM e o enriquecimento de query rodam **100% locais** (Ollama). Só os
@@ -71,9 +71,12 @@ jurisight/
 │   ├── search/              ← Hybrid Search (RRF), Doc Retriever, Categorical Sort, Result Formatter
 │   └── api/                 ← FastAPI: POST /enrich, POST /query, GET /document/{id}, GET /health
 │
-├── interface/
-│   ├── app.py
-│   └── components/
+├── frontend/                ← interface Next.js (App Router)
+│   ├── src/
+│   │   ├── app/              ← rotas (home, resultados, decisão, revisão, salvos, login)
+│   │   ├── components/
+│   │   └── lib/
+│   └── package.json
 │
 ├── data/
 │   ├── raw/
@@ -94,7 +97,9 @@ jurisight/
 | Ferramenta | Versão mínima | Observação              |
 |------------|---------------|-------------------------|
 | Python     | 3.13          | Gerenciado pelo uv      |
-| uv         | qualquer      | Gerenciador de pacotes  |
+| uv         | qualquer      | Gerenciador de pacotes Python |
+| Node.js    | 20+           | Para o frontend Next.js |
+| pnpm       | qualquer      | Gerenciador de pacotes do frontend |
 | Docker     | 24+           | Para o PostgreSQL       |
 | Ollama     | qualquer      | LLM local (enriquecimento de query) |
 | Chave OpenAI | —           | Embeddings (`text-embedding-3-small`) — exige crédito pré-pago |
@@ -264,8 +269,39 @@ Sobe em [http://localhost:8000](http://localhost:8000). Endpoints:
 ### 9 — Rodar interface
 
 ```bash
-uv run streamlit run interface/app.py
+cd frontend
+pnpm install
+pnpm dev
 ```
+
+Abre em [http://localhost:3000](http://localhost:3000).
+
+---
+
+## Testes (frontend)
+
+O frontend tem dois níveis de teste, ambos em `frontend/`:
+
+| Tipo                  | Ferramenta                          | O que cobre                                                        |
+|------------------------|--------------------------------------|---------------------------------------------------------------------|
+| Unitário / componente | Jest + React Testing Library         | Lógica pura (`initialsOf`, `groupByRecency`, `findDecision`, `OUTCOME_CONFIG`) e componentes (`OutcomeBadge`, `Chip`, `StepIndicator`, `ActionButton`), além do contexto `useSaved` (salvar, remover, persistir) |
+| End-to-end             | Cypress                              | Login/cadastro e proteção de rotas, fluxo de consulta (com e sem PDF → revisão → resultados), filtros/ordenação/exportar resultados, e os fluxos alternativos do RFC (FA02, FA03, FA04, FA05) |
+
+```bash
+cd frontend
+
+# Unitário/componente
+pnpm test              # roda uma vez
+pnpm test:watch        # modo watch
+
+# End-to-end (precisa do dev server rodando em localhost:3000)
+pnpm cypress:open      # interface interativa
+pnpm cypress:run       # headless
+pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e derruba o server no final
+```
+
+> Ainda não há testes de backend/integração — o pipeline de IA e a API ainda não existem
+> (ver [Pipeline](#pipeline)). O frontend inteiro roda sobre dados mockados até lá.
 
 ---
 
@@ -312,7 +348,9 @@ uv run pytest
 | rank-bm25          | Busca lexical — índice BM25                 |
 | pdfplumber         | Extração de texto do PDF do usuário         |
 | FastAPI / Uvicorn  | Backend — API REST, fusão RRF dos rankings  |
-| Streamlit          | Interface do usuário                        |
+| Next.js / React    | Interface do usuário                        |
+| Jest + React Testing Library | Testes unitários e de componente (frontend) |
+| Cypress            | Testes end-to-end (frontend)                |
 
 ---
 
