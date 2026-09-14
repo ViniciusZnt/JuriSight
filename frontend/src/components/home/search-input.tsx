@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
-import { Paperclip, ArrowUp, FileText, X, Sparkles } from "lucide-react";
+import { Paperclip, ArrowUp, FileText, X, Sparkles, Loader2 } from "lucide-react";
 
 interface UploadedFile {
+  file: File;
   name: string;
   size: string;
   bytes: number;
@@ -12,6 +13,7 @@ interface UploadedFile {
 export interface SearchSubmitPayload {
   query: string;
   hasFile: boolean;
+  file: File | null;
   fileName: string | null;
   fileBytes: number | null;
 }
@@ -22,10 +24,11 @@ export interface SearchInputHandle {
 }
 
 /** Campo de consulta: textarea auto-expansível + anexar PDF + enviar.
- *  onSubmit recebe a consulta, se há PDF anexado (UC01 vs UC02) e os dados do arquivo, usados
- *  pela Home para simular a FA02 (PDF sem texto extraível) e a FA05 (documento extenso). */
-export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: SearchSubmitPayload) => void }>(
-  function SearchInput({ onSubmit }, ref) {
+ *  onSubmit recebe a consulta e o PDF anexado (UC01 vs UC02), enviados à API via POST /enrich. */
+export const SearchInput = forwardRef<
+  SearchInputHandle,
+  { onSubmit?: (payload: SearchSubmitPayload) => void; disabled?: boolean }
+>(function SearchInput({ onSubmit, disabled = false }, ref) {
     const [query, setQuery] = useState("");
     const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
     const [isFocused, setIsFocused] = useState(false);
@@ -39,7 +42,7 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
       if (file) {
         const sizeKb = Math.round(file.size / 1024);
         const sizeStr = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
-        setUploadedFile({ name: file.name, size: sizeStr, bytes: file.size });
+        setUploadedFile({ file, name: file.name, size: sizeStr, bytes: file.size });
       }
     };
 
@@ -62,12 +65,13 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
       el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
     };
 
-    const canSubmit = query.trim().length > 0 || uploadedFile !== null;
+    const canSubmit = (query.trim().length > 0 || uploadedFile !== null) && !disabled;
     const submit = () => {
       if (!canSubmit) return;
       onSubmit?.({
         query: query.trim() || uploadedFile?.name || "",
         hasFile: uploadedFile !== null,
+        file: uploadedFile?.file ?? null,
         fileName: uploadedFile?.name ?? null,
         fileBytes: uploadedFile?.bytes ?? null,
       });
@@ -106,9 +110,10 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
               onChange={handleTextareaInput}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
+              disabled={disabled}
               placeholder="Descreva sua tese argumentativa ou envie os autos do processo…"
               rows={3}
-              className="w-full resize-none bg-transparent outline-none text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#B0B0C0] leading-relaxed"
+              className="w-full resize-none bg-transparent outline-none text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#B0B0C0] leading-relaxed disabled:opacity-60"
               style={{ fontSize: "16.7px", fontWeight: 400, minHeight: "72px", maxHeight: "240px" }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -124,8 +129,9 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
             <div className="flex items-center gap-1">
               <button
                 onClick={handleFileSelect}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#7A7A8E] dark:text-[#9E9EAC] hover:bg-[#F6F6F9] hover:text-[#1A3A5C] transition-all"
-                title="Enviar PDF ou documento"
+                disabled={disabled}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#7A7A8E] dark:text-[#9E9EAC] hover:bg-[#F6F6F9] hover:text-[#1A3A5C] transition-all disabled:opacity-50 disabled:pointer-events-none"
+                title="Enviar PDF"
               >
                 <Paperclip className="w-4 h-4" strokeWidth={1.8} />
                 <span style={{ fontSize: "13.8px" }}>Anexar PDF</span>
@@ -133,7 +139,10 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
 
               <div className="w-px h-4 bg-[#E8E8EC] mx-1" />
 
-              <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#7A7A8E] dark:text-[#9E9EAC] hover:bg-[#F6F6F9] hover:text-[#1A3A5C] transition-all">
+              <button
+                disabled={disabled}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#7A7A8E] dark:text-[#9E9EAC] hover:bg-[#F6F6F9] hover:text-[#1A3A5C] transition-all disabled:opacity-50 disabled:pointer-events-none"
+              >
                 <Sparkles className="w-3.5 h-3.5" strokeWidth={1.8} />
                 <span style={{ fontSize: "13.8px" }}>Contextual</span>
               </button>
@@ -154,7 +163,11 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
                     : "bg-[#F0F0F4] text-[#C0C0D0] cursor-not-allowed"
                 }`}
               >
-                <ArrowUp className="w-4 h-4" strokeWidth={2.2} />
+                {disabled ? (
+                  <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.2} />
+                ) : (
+                  <ArrowUp className="w-4 h-4" strokeWidth={2.2} />
+                )}
               </button>
             </div>
           </div>
@@ -162,7 +175,7 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.doc,.docx"
+            accept=".pdf"
             className="hidden"
             onChange={handleFileChange}
           />
@@ -173,7 +186,7 @@ export const SearchInput = forwardRef<SearchInputHandle, { onSubmit?: (payload: 
           <kbd className="px-1 py-0.5 rounded bg-[#EEEEF2] dark:bg-[#26262C] text-[#9090A0] dark:text-[#7C7C88] border border-[#DCDCE4] dark:border-[#2A2A32]" style={{ fontSize: "12.1px" }}>
             Enter
           </kbd>{" "}
-          para pesquisar • Suporte a PDF, Word e texto livre
+          para pesquisar • Suporte a PDF ou texto livre
         </p>
       </div>
     );

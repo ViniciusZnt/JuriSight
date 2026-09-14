@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Filter,
@@ -25,9 +25,17 @@ import { MetaItem } from "@/components/ui/meta-item";
 import { ActionButton } from "@/components/ui/action-button";
 import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
-import type { Outcome } from "@/lib/outcome";
-import { mockResults } from "@/lib/mock-decisions";
+import { provimentoToOutcome, type Outcome } from "@/lib/outcome";
+import {
+  compareResultCards,
+  matchedEntities,
+  relevancePercent,
+  titleFromEmenta,
+  truncate,
+  TIPO_DOCUMENTO_LABEL,
+} from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
+import { useSearchSession } from "@/lib/search-session";
 
 /** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
 function DropdownPill({
@@ -107,41 +115,27 @@ function DropdownOption({ label, active, onClick }: { label: string; active: boo
   );
 }
 
-/** Skeleton exibido enquanto a busca "carrega" — hoje simula a latência que a API real terá. */
-function ResultsSkeleton() {
-  return (
-    <div className="w-full max-w-[800px] animate-pulse" role="status" aria-label="Carregando jurisprudências">
-      <div className="h-[76px] rounded-xl bg-[#EDEDF2] dark:bg-[#1C1C21] mb-6" />
-      <div className="flex items-center justify-between mb-5">
-        <div className="h-8 w-60 rounded-lg bg-[#EDEDF2] dark:bg-[#1C1C21]" />
-        <div className="h-8 w-40 rounded-lg bg-[#EDEDF2] dark:bg-[#1C1C21]" />
-      </div>
-      <div className="space-y-4">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-[168px] rounded-xl bg-[#EDEDF2] dark:bg-[#1C1C21]" />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Resultados da busca (Figuras 4-5 da RFC). Dados mockados até a API existir. */
+/** Resultados da busca (Figuras 4-5 da RFC). Lê o ResultCard[] devolvido por POST /query (já
+ *  buscado na página de Revisão) do SearchSession — esta página não chama a API de novo; filtros
+ *  de provimento/data e ordenação operam sobre o mesmo lote já recebido. */
 export function SearchResultsPage() {
   const router = useRouter();
+  const { resultados, estrutura } = useSearchSession();
   const { isSaved, toggle } = useSaved();
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState<string>(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState<string>("");
 
-  // Simula a latência da busca real. Quando a API existir, troque por um fetch de verdade
-  // e mantenha o loading até a resposta chegar.
+  // Acesso direto à URL sem ter passado por Home/Revisão — não há busca em andamento.
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 650);
-    return () => clearTimeout(timer);
-  }, []);
+    if (resultados === null) router.replace("/");
+  }, [resultados, router]);
+
+  const results = useMemo(() => resultados ?? [], [resultados]);
+
+  const maxScore = useMemo(() => results.reduce((max, r) => Math.max(max, r.score_rrf), 0), [results]);
 
   const formatDateShort = (isoDate: string) =>
     new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -151,41 +145,44 @@ export function SearchResultsPage() {
       ? `${dateFrom ? formatDateShort(dateFrom) : "…"} – ${dateTo ? formatDateShort(dateTo) : "…"}`
       : "Em qualquer data";
 
-  const inPeriod = (dateStr: string) => {
+  const inPeriod = (dateStr: string | null) => {
+    if (!dateStr) return true; // documento sem data conhecida não é excluído pelo filtro de período
     if (dateFrom && dateStr < dateFrom) return false;
     if (dateTo && dateStr > dateTo) return false;
     return true;
   };
 
-  const sortDirFactor = sortDir === "asc" ? 1 : -1;
-  const filteredResults = mockResults
-    .filter((d) => filter === "all" || d.outcome === filter)
-    .filter((d) => inPeriod(d.date))
-    .sort((a, b) =>
-      sortDirFactor * (sortBy === "relevance" ? a.relevance - b.relevance : new Date(a.date).getTime() - new Date(b.date).getTime())
-    );
+  const sortedResults = useMemo(() => {
+    const por = sortBy === "date" ? "data" : "relevancia";
+    const ordered = [...results].sort((a, b) => compareResultCards(a, b, por));
+    return sortDir === "asc" ? ordered.reverse() : ordered;
+  }, [results, sortBy, sortDir]);
 
-  const toggleSave = (d: (typeof mockResults)[number]) => {
+  const filteredResults = sortedResults
+    .filter((d) => filter === "all" || provimentoToOutcome(d.provimento) === filter)
+    .filter((d) => inPeriod(d.data_julgamento));
+
+  const toggleSave = (d: (typeof results)[number]) => {
     toggle({
       id: d.id,
-      title: d.title,
-      court: d.court,
-      chamber: d.chamber,
-      date: d.date,
-      outcome: d.outcome,
-      relevance: d.relevance,
-      rapporteur: d.rapporteur,
-      processNumber: d.processNumber,
+      title: titleFromEmenta(d.ementa),
+      court: d.tribunal,
+      chamber: d.turma,
+      date: d.data_julgamento ?? "",
+      outcome: provimentoToOutcome(d.provimento),
+      relevance: relevancePercent(d.score_rrf, maxScore),
+      rapporteur: d.relator,
+      processNumber: d.numero_processo,
     });
   };
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
-  const formatDateLong = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+  const formatDate = (dateStr: string | null) =>
+    dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "Data não informada";
+  const formatDateLong = (dateStr: string | null) =>
+    dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não informada";
 
-  const favorableCount = mockResults.filter((d) => d.outcome === "favorable").length;
-  const unfavorableCount = mockResults.filter((d) => d.outcome === "unfavorable").length;
+  const favorableCount = results.filter((d) => provimentoToOutcome(d.provimento) === "favorable").length;
+  const unfavorableCount = results.filter((d) => provimentoToOutcome(d.provimento) === "unfavorable").length;
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
@@ -194,14 +191,14 @@ export function SearchResultsPage() {
   const exportResults = () => {
     const lines = filteredResults.map((d, idx) =>
       [
-        `${idx + 1}. ${d.title}`,
-        `   ${d.court} — ${d.chamber} · ${formatDateLong(d.date)}`,
-        `   Processo: ${d.processNumber} · Rel. ${d.rapporteur}`,
-        `   Provimento: ${d.outcome === "favorable" ? "Favorável" : d.outcome === "unfavorable" ? "Desfavorável" : "Neutro"} · Relevância: ${d.relevance}%`,
-        `   ${d.summary}`,
+        `${idx + 1}. ${titleFromEmenta(d.ementa)}`,
+        `   ${d.tribunal} — ${d.turma} · ${formatDateLong(d.data_julgamento)}`,
+        `   Processo: ${d.numero_processo} · Rel. ${d.relator}`,
+        `   Provimento: ${d.provimento} · Relevância: ${relevancePercent(d.score_rrf, maxScore)}%`,
+        `   ${truncate(d.ementa, 600)}`,
       ].join("\n")
     );
-    const header = `JuriSight — Jurisprudências (${filteredResults.length} de ${mockResults.length} resultados)\nExportado em ${new Date().toLocaleString("pt-BR")}\n`;
+    const header = `JuriSight — Jurisprudências (${filteredResults.length} de ${results.length} resultados)\nExportado em ${new Date().toLocaleString("pt-BR")}\n`;
     const blob = new Blob([header, "\n", lines.join("\n\n")], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -212,6 +209,8 @@ export function SearchResultsPage() {
     a.remove();
     URL.revokeObjectURL(url);
   };
+
+  if (resultados === null) return null; // redirecionando para "/" (ver efeito acima)
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
@@ -228,10 +227,6 @@ export function SearchResultsPage() {
       <div className="flex-1 flex flex-col items-center px-8 py-4 pb-10">
         <StepIndicator current={2} />
 
-        {loading ? (
-          <ResultsSkeleton />
-        ) : (
-          <>
         {/* Summary banner */}
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -242,9 +237,11 @@ export function SearchResultsPage() {
               <h2 className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
                 {filteredResults.length} decisões encontradas
               </h2>
-              <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
-                Alinhadas à tese: &ldquo;Adicional de insalubridade grau máximo&rdquo;
-              </p>
+              {estrutura?.tese_central && (
+                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
+                  Alinhadas à tese: &ldquo;{truncate(estrutura.tese_central, 90)}&rdquo;
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -288,7 +285,7 @@ export function SearchResultsPage() {
               }`}
               style={{ fontSize: "13.8px", fontWeight: filter === "all" ? 600 : 400 }}
             >
-              Todas ({mockResults.length})
+              Todas ({results.length})
             </button>
             <button
               onClick={() => setFilter("favorable")}
@@ -462,6 +459,10 @@ export function SearchResultsPage() {
           <div className="w-full max-w-[800px] space-y-4">
             {filteredResults.map((decision) => {
               const saved = isSaved(decision.id);
+              const title = titleFromEmenta(decision.ementa);
+              const outcome = provimentoToOutcome(decision.provimento);
+              const relevance = relevancePercent(decision.score_rrf, maxScore);
+              const entidades = matchedEntities(estrutura, decision.ementa);
 
               return (
                 <div
@@ -473,14 +474,14 @@ export function SearchResultsPage() {
                   <div className="px-6 pt-5 pb-4 border-b border-[#F0F0F6] dark:border-[#26262C]">
                     <div className="flex items-start justify-between gap-4 mb-3">
                       <h3 className="text-[#0F1117] dark:text-[#ECECEF] leading-snug group-hover:text-[#1A3A5C] dark:group-hover:text-[#8AB0DC] transition-colors flex-1" style={{ fontSize: "16.7px", fontWeight: 600 }}>
-                        {decision.title}
+                        {title}
                       </h3>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <OutcomeBadge outcome={decision.outcome} size="sm" />
+                        <OutcomeBadge outcome={outcome} size="sm" />
                         <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]">
                           <TrendingUp className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
                           <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                            {decision.relevance}%
+                            {relevance}%
                           </span>
                         </div>
                       </div>
@@ -488,13 +489,13 @@ export function SearchResultsPage() {
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.2px" }}>
                       <MetaItem icon={Scale} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span>{decision.court} — {decision.chamber}</span>
+                        <span>{decision.tribunal} — {decision.turma}</span>
                       </MetaItem>
                       <MetaItem icon={Calendar} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span>{formatDate(decision.date)}</span>
+                        <span>{formatDate(decision.data_julgamento)}</span>
                       </MetaItem>
                       <MetaItem icon={FileText} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span className="font-mono">{decision.processNumber}</span>
+                        <span className="font-mono">{decision.numero_processo}</span>
                       </MetaItem>
                     </div>
                   </div>
@@ -502,15 +503,15 @@ export function SearchResultsPage() {
                   {/* Summary */}
                   <div className="px-6 py-4">
                     <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3" style={{ fontSize: "14.4px" }}>
-                      {decision.summary}
+                      {truncate(decision.ementa, 400)}
                     </p>
 
-                    {decision.matchedEntities.length > 0 && (
+                    {entidades.length > 0 && (
                       <div className="flex items-start gap-2 mb-3">
                         <AlertCircle className="w-3 h-3 text-[#9090A8] dark:text-[#7C7C88] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
                         <div className="flex flex-wrap gap-1.5 items-center">
                           <span className="text-[#9090A8] dark:text-[#7C7C88]" style={{ fontSize: "12.6px" }}>Entidades correspondentes:</span>
-                          {decision.matchedEntities.map((entity, idx) => (
+                          {entidades.map((entity, idx) => (
                             <Chip key={idx} tone="amber" size="sm">
                               {entity}
                             </Chip>
@@ -520,18 +521,16 @@ export function SearchResultsPage() {
                     )}
 
                     <div className="flex flex-wrap gap-1.5">
-                      {decision.tags.map((tag, idx) => (
-                        <Chip key={idx} tone="blue" size="sm">
-                          {tag}
-                        </Chip>
-                      ))}
+                      <Chip tone="blue" size="sm">
+                        {TIPO_DOCUMENTO_LABEL[decision.tipo_documento]}
+                      </Chip>
                     </div>
                   </div>
 
                   {/* Footer actions */}
                   <div className="px-6 py-3 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C] flex items-center justify-between">
                     <span className="text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "12.6px" }}>
-                      Rel. {decision.rapporteur}
+                      Rel. {decision.relator}
                     </span>
                     <ActionButton
                       icon={Bookmark}
@@ -560,8 +559,6 @@ export function SearchResultsPage() {
               </button>
             </div>
           </div>
-        )}
-          </>
         )}
       </div>
     </main>

@@ -7,11 +7,14 @@ import { AlertTriangle, RefreshCw, ArrowRight, X } from "lucide-react";
  *  usuário reenviar outro arquivo ou seguir sem PDF (mesmo fluxo da FA01). */
 export function Fa02Alert({
   fileName,
+  message,
   onRetry,
   onContinueWithoutFile,
   onDismiss,
 }: {
   fileName: string;
+  /** Aviso real devolvido por POST /enrich (EnrichResponse.aviso) quando pdf_extraido === false. */
+  message: string;
   onRetry: () => void;
   onContinueWithoutFile: () => void;
   onDismiss: () => void;
@@ -27,8 +30,7 @@ export function Fa02Alert({
             Não foi possível extrair texto de &ldquo;{fileName}&rdquo;
           </p>
           <p className="text-[#8A5A1E] dark:text-[#C9A26E] mt-1 leading-relaxed" style={{ fontSize: "13.8px" }}>
-            Não foi possível extrair texto do PDF enviado (possível documento escaneado). Por favor, informe o
-            contexto manualmente ou envie uma versão com texto selecionável.
+            {message}
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button

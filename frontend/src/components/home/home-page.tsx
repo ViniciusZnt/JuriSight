@@ -1,20 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, FileSearch, Gavel, Star, Zap } from "lucide-react";
+import { BookOpen, FileSearch, Gavel, Star, Zap, AlertCircle, X } from "lucide-react";
 import { SearchInput, type SearchInputHandle, type SearchSubmitPayload } from "@/components/home/search-input";
 import { Fa02Alert } from "@/components/home/fa02-alert";
 import { Fa05Processing } from "@/components/home/fa05-processing";
 import { useConversations } from "@/lib/conversations";
-
-// Sem extração real de PDF no frontend (isso é o pdfplumber do backend, RF02). Para demonstrar a
-// FA02 sem um parser de verdade, qualquer arquivo com "scan" no nome simula um PDF escaneado sem
-// texto extraível — troque por uma checagem real quando a API de /enrich existir.
-const looksScanned = (fileName: string) => /scan/i.test(fileName);
+import { useSearchSession } from "@/lib/search-session";
+import { enrich, ApiError } from "@/lib/api";
 
 // Proxy simples para "documento extenso" (RFC FA05/RNF05): acima de 8MB, mais provável ser uma
-// petição longa com muitas páginas do que um PDF de texto simples.
+// petição longa com muitas páginas — mostra o modal de processamento enquanto aguarda o /enrich
+// real (que resume o PDF em blocos via LLM antes de extrair a EstruturaArgumentativa).
 const LARGE_FILE_BYTES = 8 * 1024 * 1024;
 
 const features = [
@@ -41,33 +39,70 @@ const features = [
   },
 ];
 
-/** Home: entrada de consulta (RFC Figura 2). Enviar cria a conversa e vai à revisão — ou, se o
- *  PDF simular um documento escaneado ou extenso, mostra a FA02/FA05 antes de prosseguir. */
+interface Fa02State {
+  fileName: string;
+  message: string;
+  query: string;
+}
+
+/** Home: entrada de consulta (RFC Figura 2). Enviar chama POST /enrich (RF02) — a IA extrai a
+ *  EstruturaArgumentativa do PDF e/ou da intenção digitada — e segue para a revisão. Um PDF sem
+ *  texto extraível dispara a FA02 (aviso real do backend); um arquivo grande mostra a FA05
+ *  enquanto o backend resume o documento em blocos. */
 export function HomePage() {
   const router = useRouter();
   const { create } = useConversations();
+  const { setEnrichResult } = useSearchSession();
   const searchInputRef = useRef<SearchInputHandle>(null);
-  const [fa02, setFa02] = useState<{ fileName: string; query: string } | null>(null);
-  const [fa05, setFa05] = useState<{ fileName: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [largeFileName, setLargeFileName] = useState<string | null>(null);
+  const [fa02, setFa02] = useState<Fa02State | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const goToRevisao = (query: string, hasFile: boolean) => {
     create(query || "Nova pesquisa");
     router.push(hasFile ? "/revisao" : "/revisao?modo=manual");
   };
 
-  const handleSubmit = ({ query, hasFile, fileName, fileBytes }: SearchSubmitPayload) => {
-    if (hasFile && fileName && looksScanned(fileName)) {
-      setFa02({ fileName, query });
-      return;
-    }
+  const handleSubmit = async ({ query, hasFile, file, fileName, fileBytes }: SearchSubmitPayload) => {
+    setError(null);
+    setFa02(null);
+    setLoading(true);
+    const isLarge = hasFile && (fileBytes ?? 0) > LARGE_FILE_BYTES;
+    if (isLarge) setLargeFileName(fileName);
 
-    if (hasFile && fileName && fileBytes && fileBytes > LARGE_FILE_BYTES) {
-      setFa05({ fileName });
-      setTimeout(() => goToRevisao(query, hasFile), 1800);
-      return;
-    }
+    try {
+      const res = await enrich({ pdf: file, intencao: query || null });
+      setEnrichResult({
+        estrutura: res.estrutura,
+        hasFile,
+        fileName,
+        pdfExtraido: res.pdf_extraido,
+        aviso: res.aviso,
+      });
 
-    goToRevisao(query, hasFile);
+      if (res.pdf_extraido === false) {
+        // FA02: o backend já seguiu como FA01 (a estrutura acima veio só da intenção digitada,
+        // se houver) — "Continuar sem o PDF" só precisa navegar, sem chamar /enrich de novo.
+        setFa02({
+          fileName: fileName ?? "arquivo enviado",
+          message: res.aviso ?? "Não foi possível extrair texto do PDF enviado.",
+          query,
+        });
+        return;
+      }
+
+      goToRevisao(query, hasFile);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível processar a consulta. Tente novamente em instantes."
+      );
+    } finally {
+      setLoading(false);
+      setLargeFileName(null);
+    }
   };
 
   return (
@@ -126,16 +161,34 @@ export function HomePage() {
         </p>
 
         <div className="w-full max-w-[720px] mt-8 sm:mt-10">
-          <SearchInput ref={searchInputRef} onSubmit={handleSubmit} />
+          <SearchInput ref={searchInputRef} onSubmit={handleSubmit} disabled={loading} />
+
+          {error && (
+            <div className="w-full max-w-[720px] mx-auto mt-3 flex items-start gap-2.5 rounded-xl border border-[#E8C2C2] dark:border-[#4A2529] bg-[#FBF0F0] dark:bg-[#2A1517] px-4 py-3">
+              <AlertCircle className="w-4 h-4 text-[#C44040] dark:text-[#D96B6B] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
+              <p className="flex-1 text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.8px" }}>
+                {error}
+              </p>
+              <button
+                onClick={() => setError(null)}
+                className="text-[#C48A8A] dark:text-[#8A5E62] hover:text-[#7A1A1A] dark:hover:text-[#E08A93] transition-colors flex-shrink-0"
+                aria-label="Fechar"
+              >
+                <X className="w-3.5 h-3.5" strokeWidth={2} />
+              </button>
+            </div>
+          )}
+
           {fa02 && (
             <Fa02Alert
               fileName={fa02.fileName}
+              message={fa02.message}
               onRetry={() => {
                 setFa02(null);
                 searchInputRef.current?.clearAndReopenFile();
               }}
               onContinueWithoutFile={() => {
-                const query = fa02.query;
+                const { query } = fa02;
                 setFa02(null);
                 goToRevisao(query, false);
               }}
@@ -145,7 +198,7 @@ export function HomePage() {
         </div>
       </div>
 
-      {fa05 && <Fa05Processing fileName={fa05.fileName} />}
+      {largeFileName && <Fa05Processing fileName={largeFileName} />}
 
       {/* Features */}
       <div className="px-4 sm:px-8 pb-6">

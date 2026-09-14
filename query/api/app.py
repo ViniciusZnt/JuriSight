@@ -12,7 +12,7 @@ Endpoints (Tabela 6 / Tabela 13):
 
 Os singletons com estado (conexões/índices) são construídos uma vez no lifespan e
 lidos via Depends(...) a partir de request.app.state — em teste, cada Depends é
-substituído via app.dependency_overrides, sem precisar de Postgres/Chroma/Ollama
+substituído via app.dependency_overrides, sem precisar de Postgres/Qdrant/Ollama
 reais.
 
 LGPD (RFC §6.1): nada do que o usuário envia (PDF, EstruturaArgumentativa) é
@@ -25,14 +25,14 @@ from contextlib import asynccontextmanager
 from datetime import date
 from typing import Literal
 
-import chromadb
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from qdrant_client import QdrantClient
 from starlette.concurrency import run_in_threadpool
 
 from indexing.lexical.bm25_builder import BM25Builder
-from indexing.vector_store.chroma_store import ChromaStore
+from indexing.vector_store.qdrant_store import QdrantStore
 from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
@@ -43,7 +43,7 @@ from query.search.hybrid_search import HybridSearch
 from query.search.result_formatter import DocumentoDetalhe, ResultCard, format_results
 from scraper.schema import Provimento
 
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "~/.local/share/jurisight/chroma")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 DATABASE_URL = os.getenv("DATABASE_URL")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
@@ -58,11 +58,11 @@ N_CANDIDATOS_COM_FILTRO = 80
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Constrói os singletons com estado uma única vez, na subida da aplicação."""
-    client = chromadb.PersistentClient(path=os.path.expanduser(CHROMA_PERSIST_DIR))
-    chroma = ChromaStore(client)
+    client = QdrantClient(url=QDRANT_URL, timeout=180)
+    store = QdrantStore(client)
     bm25 = BM25Builder.load()
     embedder = PolyVectorEmbedder()
-    app.state.hybrid = HybridSearch(embedder, chroma, bm25)
+    app.state.hybrid = HybridSearch(embedder, store, bm25)
     app.state.doc_retriever = DocRetriever(DATABASE_URL)
     app.state.enricher = QueryEnricher()
     yield
@@ -169,7 +169,7 @@ def _aplicar_filtros(
 ) -> list[tuple[str, object, float]]:
     """Filtra os triplos (documento_id, doc, score) por provimento/período.
 
-    Feito em Python pós-recuperação (não via `where` do Chroma): hybrid_search.py
+    Feito em Python pós-recuperação (não via `where` do Qdrant): hybrid_search.py
     já documenta que o BM25 não filtra por metadados e que um filtro rígido deve
     ser aplicado depois, sobre o DocumentoJuridico recuperado.
     """

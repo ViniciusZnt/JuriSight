@@ -1,21 +1,21 @@
 """
 Hybrid Search.
 
-Funde busca vetorial (ChromaDB) e lexical (BM25) via Reciprocal Rank Fusion (RRF),
+Funde busca vetorial (Qdrant) e lexical (BM25) via Reciprocal Rank Fusion (RRF),
 no nível de documento_id, e devolve os documentos mais relevantes para a query.
 
 Três canais de recuperação:
-  - Chroma COMPLETO (por chunk)  → casa a passagem semanticamente;
-  - Chroma EMENTA   (por doc)    → casa a tese semanticamente;
+  - Qdrant COMPLETO (por chunk)  → casa a passagem semanticamente;
+  - Qdrant EMENTA   (por doc)    → casa a tese semanticamente;
   - BM25            (por chunk)  → casa termos exatos (NR-15, art. 193).
 """
 from __future__ import annotations
 
 from indexing.lexical.bm25_builder import LoadedBM25
-from indexing.vector_store.chroma_store import (
+from indexing.vector_store.qdrant_store import (
     COLLECTION_COMPLETO,
     COLLECTION_EMENTA,
-    ChromaStore,
+    QdrantStore,
 )
 from processing.embeddings.poly_vector import PolyVectorEmbedder
 
@@ -76,9 +76,9 @@ def reciprocal_rank_fusion(
 
 
 class HybridSearch:
-    def __init__(self, embedder: PolyVectorEmbedder, chroma: ChromaStore, bm25: LoadedBM25):
+    def __init__(self, embedder: PolyVectorEmbedder, store: QdrantStore, bm25: LoadedBM25):
         self.embedder = embedder
-        self.chroma = chroma
+        self.store = store
         self.bm25 = bm25
 
     def search(
@@ -93,21 +93,21 @@ class HybridSearch:
 
         Input:  query — texto embedado para a busca vetorial (ex.: a frase-tese
                 do Query Builder); n_results — top-N documentos; where — filtro
-                de metadados do Chroma (provimento/período — UC03/UC04), opcional;
+                de metadados do Qdrant (provimento/período — UC03/UC04), opcional;
                 bm25_query — string lexical para o BM25 (ex.: os termos exatos do
                 Query Builder), se diferente de `query`; default None usa `query`
                 nos dois canais (comportamento anterior, retrocompatível).
         Returns: lista [(documento_id, score_rrf)] top-N, melhor primeiro.
 
-        Nota: o `where` filtra as buscas do Chroma; o BM25 não filtra por metadados.
+        Nota: o `where` filtra as buscas do Qdrant; o BM25 não filtra por metadados.
         Se um filtro rígido for necessário, aplique-o depois (no Doc Retriever, sobre
         o DocumentoJuridico recuperado).
         """
         n_candidates = n_results * CANDIDATOS_POR_CANAL
 
         query_vector = self.embedder.embed_text(query)
-        hits_completo = self.chroma.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_COMPLETO)
-        hits_ementa = self.chroma.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_EMENTA)
+        hits_completo = self.store.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_COMPLETO)
+        hits_ementa = self.store.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_EMENTA)
         hits_bm25 = self.bm25.search(bm25_query if bm25_query is not None else query, n=n_candidates)
 
         # Projeta cada canal para uma lista ranqueada de documento_id, sem duplicar.

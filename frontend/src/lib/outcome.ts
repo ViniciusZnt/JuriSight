@@ -1,6 +1,27 @@
 import { ThumbsUp, ThumbsDown, Info, type LucideIcon } from "lucide-react";
+import type { Provimento } from "@/lib/api";
 
 export type Outcome = "favorable" | "unfavorable" | "neutral";
+
+/** O schema do backend (scraper/schema.py::Provimento) guarda só se o RECURSO foi provido ou
+ *  negado — não de quem é o recurso, nem se o resultado favorece a tese pesquisada. Essa
+ *  informação não existe nos dados coletados (não há um campo "recorrente"). Heurística adotada
+ *  — a mesma simplificação de buscadores como o Jusbrasil: recurso NEGADO manteve a decisão
+ *  original (lida como favorável ao pedido buscado, já que o domínio indexado é jurisprudência
+ *  de reclamações trabalhistas); APROVADO reformou/afastou o pedido; PARCIAL/NAO_APLICAVEL
+ *  ficam neutros. É uma aproximação deliberada, não uma classificação real do polo vencedor. */
+export function provimentoToOutcome(provimento: Provimento): Outcome {
+  switch (provimento) {
+    case "NEGADO":
+      return "favorable";
+    case "APROVADO":
+      return "unfavorable";
+    case "PARCIAL":
+    case "NAO_APLICAVEL":
+    default:
+      return "neutral";
+  }
+}
 
 interface OutcomeConfig {
   label: string;

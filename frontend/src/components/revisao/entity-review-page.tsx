@@ -15,46 +15,10 @@ import {
   AlertTriangle,
   HelpCircle,
   PencilLine,
+  Loader2,
 } from "lucide-react";
-
-interface EntitySchema {
-  pedido_principal: string;
-  agente_nocivo: string[];
-  violacoes: string[];
-  normas: string[];
-  empresa_ciente: boolean | null;
-  setor: string | null;
-  cargo: string | null;
-  tese_central: string;
-}
-
-const initialData: EntitySchema = {
-  pedido_principal: "Adicional de insalubridade grau máximo",
-  agente_nocivo: ["Benzeno", "Hidrocarbonetos aromáticos"],
-  violacoes: [
-    "Ausência de EPI eficaz",
-    "Falta de treinamento",
-    "Exposição contínua sem monitoramento",
-  ],
-  normas: ["NR-15", "CLT art. 192", "Súmula 448 TST"],
-  empresa_ciente: true,
-  setor: "Indústria química",
-  cargo: "Operador de caldeira",
-  tese_central:
-    "A empresa tinha ciência do risco e não forneceu proteção adequada, expondo o trabalhador a agentes cancerígenos de forma contínua e sem qualquer monitoramento de saúde ocupacional.",
-};
-
-/** UC02 — sem PDF: nenhum campo é extraído por IA, o usuário preenche manualmente (RN06). */
-const emptyData: EntitySchema = {
-  pedido_principal: "",
-  agente_nocivo: [],
-  violacoes: [],
-  normas: [],
-  empresa_ciente: null,
-  setor: null,
-  cargo: null,
-  tese_central: "",
-};
+import { useSearchSession } from "@/lib/search-session";
+import { emptyEstrutura, queryJurisprudencia, ApiError, type EstruturaArgumentativa } from "@/lib/api";
 
 interface ColorScheme {
   bg: string;
@@ -379,17 +343,46 @@ function FieldLabel({ label, description }: { label: string; description?: strin
   );
 }
 
-/** Revisão de entidades extraídas (Figura 3 da RFC). Dados mockados até a extração real existir. */
+/** Revisão de entidades extraídas (Figura 3 da RFC). A EstruturaArgumentativa vem de POST
+ *  /enrich (via SearchSession, setado na Home); "Buscar jurisprudências" chama POST /query com a
+ *  versão editada pelo usuário (RN05: revisão humana antes da busca). */
 export function EntityReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const manual = searchParams.get("modo") === "manual";
-  const [data, setData] = useState<EntitySchema>(manual ? emptyData : initialData);
+  const manualParam = searchParams.get("modo") === "manual";
+  const { estrutura: sessionEstrutura, hasFile, fileName, setEstrutura: persistEstrutura, setResultados } = useSearchSession();
+
+  // Sem estrutura na sessão (ex.: acesso direto à URL) cai no mesmo modo manual do UC02.
+  const manual = manualParam || sessionEstrutura === null;
+  const [data, setData] = useState<EstruturaArgumentativa>(() => sessionEstrutura ?? emptyEstrutura());
   const [teseFocused, setTeseFocused] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const wordCount = data.tese_central.trim().split(/\s+/).filter(Boolean).length;
 
-  const set = <K extends keyof EntitySchema>(key: K) => (val: EntitySchema[K]) =>
+  const set = <K extends keyof EstruturaArgumentativa>(key: K) => (val: EstruturaArgumentativa[K]) =>
     setData((prev) => ({ ...prev, [key]: val }));
+
+  const entidadesConfirmadas = data.agente_nocivo.length + data.violacoes.length + data.normas.length;
+
+  const buscar = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const resultados = await queryJurisprudencia({ estrutura: data, ordenar_por: "relevancia" });
+      persistEstrutura(data);
+      setResultados(resultados);
+      router.push("/resultados");
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Não foi possível buscar jurisprudências agora. Tente novamente."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
@@ -431,9 +424,9 @@ export function EntityReviewPage() {
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EDF7F2] dark:bg-[#122A1E] border border-[#BDE0CF] dark:border-[#1E4A34]">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[#2D8A5F] dark:bg-[#3DA372]" />
+                  <Sparkles className="w-3 h-3 text-[#1A5C3A] dark:text-[#6FCB9A]" strokeWidth={1.8} />
                   <span className="text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "12.1px", fontWeight: 600 }}>
-                    Confiança: Alta
+                    Extraído via IA
                   </span>
                 </div>
               )}
@@ -448,14 +441,21 @@ export function EntityReviewPage() {
                   Busca sem contexto de documento — para resultados mais precisos, envie o PDF do caso.
                 </span>
               </>
-            ) : (
+            ) : hasFile && fileName ? (
               <>
                 <FileText className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C] flex-shrink-0" strokeWidth={1.8} />
                 <span className="text-[#7A7A8E] dark:text-[#9E9EAC] flex-shrink-0" style={{ fontSize: "13.8px" }}>
                   Extraído de:
                 </span>
                 <span className="text-[#4A4A5A] dark:text-[#C4C4CE] truncate min-w-0" style={{ fontSize: "13.8px", fontWeight: 500 }}>
-                  Petição_Insalubridade_Benzeno_v2.pdf
+                  {fileName}
+                </span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-[#AEAEBF] dark:text-[#6E6E7C] flex-shrink-0" strokeWidth={1.8} />
+                <span className="text-[#7A7A8E] dark:text-[#9E9EAC] min-w-0" style={{ fontSize: "13.8px" }}>
+                  Extraído da intenção argumentativa descrita
                 </span>
               </>
             )}
@@ -533,6 +533,13 @@ export function EntityReviewPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="w-full max-w-[800px] mt-4 flex items-start gap-2.5 rounded-xl border border-[#E8C2C2] dark:border-[#4A2529] bg-[#FBF0F0] dark:bg-[#2A1517] px-4 py-3">
+            <AlertTriangle className="w-4 h-4 text-[#C44040] dark:text-[#D96B6B] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
+            <p className="text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.8px" }}>{error}</p>
+          </div>
+        )}
+
         {/* Footer actions */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 w-full max-w-[800px] mt-5">
           <button onClick={() => router.push("/")} className="text-[#9090A8] dark:text-[#7C7C88] hover:text-[#4A4A5A] dark:hover:text-[#C4C4CE] transition-colors self-start" style={{ fontSize: "14.9px" }}>
@@ -541,15 +548,25 @@ export function EntityReviewPage() {
 
           <div className="flex items-center justify-between sm:justify-end gap-4">
             <span className="text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "13.8px" }}>
-              {data.agente_nocivo.length + data.violacoes.length + data.normas.length} entidades confirmadas
+              {entidadesConfirmadas} entidades confirmadas
             </span>
             <button
-              onClick={() => router.push("/resultados")}
-              className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-[#1A3A5C] text-white hover:bg-[#152E4A] active:scale-[0.98] transition-all shadow-[0_2px_14px_rgba(26,58,92,0.30)]"
+              onClick={buscar}
+              disabled={submitting}
+              className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-[#1A3A5C] text-white hover:bg-[#152E4A] active:scale-[0.98] transition-all shadow-[0_2px_14px_rgba(26,58,92,0.30)] disabled:opacity-70 disabled:pointer-events-none"
               style={{ fontSize: "15.5px", fontWeight: 600 }}
             >
-              Buscar jurisprudências
-              <ArrowRight className="w-4 h-4" strokeWidth={2} />
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2} />
+                  Buscando…
+                </>
+              ) : (
+                <>
+                  Buscar jurisprudências
+                  <ArrowRight className="w-4 h-4" strokeWidth={2} />
+                </>
+              )}
             </button>
           </div>
         </div>

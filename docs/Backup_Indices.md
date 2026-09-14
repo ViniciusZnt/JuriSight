@@ -1,5 +1,13 @@
 # Backup dos índices (Chroma + BM25)
 
+> **Histórico.** Válido para a época do ChromaDB (embedded, até 2026-09-13). O
+> vetorial migrou para Qdrant (ver README §Escalabilidade) — o Qdrant persiste no
+> volume Docker `qdrant_data`; para backup, pare o container e copie o volume
+> (`docker run --rm -v jurisight_qdrant_data:/data -v $(pwd):/backup alpine tar
+> czf /backup/qdrant-backup.tar.gz -C / data`) ou use o endpoint de snapshot da
+> própria API do Qdrant (`POST /collections/{nome}/snapshots`) com o serviço no
+> ar. O procedimento do BM25 abaixo continua válido (não mudou).
+
 Como salvar e restaurar os dois índices da indexação. Feito em 2026-07-23.
 
 ## O que é feito backup
