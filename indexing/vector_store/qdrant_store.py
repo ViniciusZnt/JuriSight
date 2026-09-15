@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 COLLECTION_COMPLETO = "chunks_completo"
 COLLECTION_EMENTA = "chunks_ementa"
 
+# Timeout DO SERVIDOR pra uma operação de busca, em segundos — repassado por
+# request via query_points(timeout=...), não é o mesmo timeout de conexão do
+# client (esse já é configurado por quem injeta o QdrantClient). Sem isto, o
+# Qdrant aplica um timeout interno próprio (~60s) e devolve 500 se a busca no
+# disco (mmap, on_disk=True) demorar mais — o que acontece nesta infra sob
+# concorrência de CPU com o Ollama.
+_SEARCH_TIMEOUT_S = 180
+
 # text-embedding-3-small (processing/embeddings/poly_vector.py) — os dois canais
 # Poly-Vector usam o mesmo modelo, logo a mesma dimensão.
 EMBED_DIM = 1536
@@ -180,6 +188,7 @@ class QdrantStore:
             limit=n_results,
             query_filter=_build_filter(where),
             with_payload=True,
+            timeout=_SEARCH_TIMEOUT_S,
         )
         resultados = []
         for point in res.points:

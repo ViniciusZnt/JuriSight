@@ -4,11 +4,15 @@ API Controller (RFC Tabela 6/Figura 10) — a aplicação FastAPI.
 Orquestra o pipeline completo: PDF Extractor -> Query Enrichment -> Query Builder
 -> Hybrid Search (RRF) -> Doc Retriever -> Hierarchical Ranker -> Result Formatter.
 
-Endpoints (Tabela 6 / Tabela 13):
+Endpoints (Tabela 6 / Tabela 13) — todos exigem sessão (cookie httpOnly, ver
+query/api/auth_routes.py::get_current_user), exceto /health:
   - POST /enrich          — extrai a EstruturaArgumentativa do PDF e/ou da intenção.
   - POST /query           — busca híbrida sobre a EstruturaArgumentativa revisada.
   - GET  /document/{id}   — detalhe completo de um documento.
-  - GET  /health          — liveness.
+  - GET  /health          — liveness (público).
+
+Autenticação (/auth/*: registro, login, logout, me) é montada via auth_router,
+definida em query/api/auth_routes.py.
 
 Os singletons com estado (conexões/índices) são construídos uma vez no lifespan e
 lidos via Depends(...) a partir de request.app.state — em teste, cada Depends é
@@ -31,9 +35,13 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from starlette.concurrency import run_in_threadpool
 
+from auth.db import ensure_schema
+from auth.store import UsuarioStore
 from indexing.lexical.bm25_builder import BM25Builder
 from indexing.vector_store.qdrant_store import QdrantStore
 from processing.embeddings.poly_vector import PolyVectorEmbedder
+from query.api.auth_routes import get_current_user
+from query.api.auth_routes import router as auth_router
 from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
@@ -58,17 +66,34 @@ N_CANDIDATOS_COM_FILTRO = 80
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Constrói os singletons com estado uma única vez, na subida da aplicação."""
-    client = QdrantClient(url=QDRANT_URL, timeout=180)
+    client = QdrantClient(url=QDRANT_URL, timeout=210)  # > _SEARCH_TIMEOUT_S (qdrant_store.py)
     store = QdrantStore(client)
     bm25 = BM25Builder.load()
     embedder = PolyVectorEmbedder()
     app.state.hybrid = HybridSearch(embedder, store, bm25)
     app.state.doc_retriever = DocRetriever(DATABASE_URL)
     app.state.enricher = QueryEnricher()
+    ensure_schema(DATABASE_URL)  # idempotente — cria auth.usuarios se ainda não existir
+    app.state.usuario_store = UsuarioStore(DATABASE_URL)
     yield
 
 
 app = FastAPI(title="JuriSight API", lifespan=lifespan)
+
+# Falha alto na subida, não em produção sob ataque: /auth/* autentica via cookie
+# httpOnly (query/api/auth_routes.py), e a única coisa que impede qualquer site
+# de fazer fetch(..., {credentials:"include"}) contra ele é allow_credentials=True
+# exigir uma allowlist explícita — o CORSMiddleware do Starlette aceita "*" +
+# credentials=True SEM erro, e nesse caso ecoa de volta qualquer Origin recebida
+# (autorizando todo mundo). Um "CORS_ORIGINS=*" digitado sob pressão de deploy
+# nunca deve conseguir chegar rodando.
+if "*" in CORS_ORIGINS:
+    raise RuntimeError(
+        "CORS_ORIGINS não pode incluir '*' com allow_credentials=True — isso "
+        "autorizaria qualquer origem a enviar requisições autenticadas via "
+        "cookie (/auth/*). Configure uma allowlist explícita de origens."
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -76,6 +101,8 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+
+app.include_router(auth_router)
 
 
 def get_hybrid(request: Request) -> HybridSearch:
@@ -110,7 +137,7 @@ class EnrichResponse(BaseModel):
     aviso: str | None = None
 
 
-@app.post("/enrich", response_model=EnrichResponse)
+@app.post("/enrich", response_model=EnrichResponse, dependencies=[Depends(get_current_user)])
 async def enrich(
     pdf: UploadFile | None = File(None),
     intencao: str | None = Form(None),
@@ -185,7 +212,7 @@ def _aplicar_filtros(
     return [t for t in triplos if ok(t[1])]
 
 
-@app.post("/query", response_model=list[ResultCard])
+@app.post("/query", response_model=list[ResultCard], dependencies=[Depends(get_current_user)])
 async def query(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
@@ -216,7 +243,7 @@ async def query(
 # GET /document/{id}                                                           #
 # --------------------------------------------------------------------------- #
 
-@app.get("/document/{documento_id}", response_model=DocumentoDetalhe)
+@app.get("/document/{documento_id}", response_model=DocumentoDetalhe, dependencies=[Depends(get_current_user)])
 async def get_document(
     documento_id: str,
     retriever: DocRetriever = Depends(get_doc_retriever),

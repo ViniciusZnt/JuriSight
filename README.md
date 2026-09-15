@@ -374,6 +374,26 @@ desserializado). Se o corpus crescer muito mais, ele é o próximo gargalo.
 
 ---
 
+## Autenticação — pendências futuras
+
+A autenticação real (`auth/`, `query/api/auth_routes.py`) cobre hoje o essencial e
+funcional: cadastro, login, logout, sessão via cookie httpOnly, senha com Argon2id,
+JWT, proteção contra timing attack e contra CSRF via `<form>`. Deliberadamente
+**não** implementado (escopo cortado a pedido — não é trabalho pela metade, é
+trabalho que ainda não começou):
+
+- **Verificação de e-mail** — hoje qualquer e-mail digitado é aceito sem confirmação.
+- **Recuperação de senha** ("esqueci minha senha") — a tela `/esqueci-senha` existe
+  no frontend mas não fala com nenhum backend real.
+- **2FA** (segundo fator de autenticação).
+- **Rate limiting / lockout** de tentativas de login (força bruta hoje não tem
+  nenhum limite além do custo do próprio Argon2id).
+
+Ver `auth/SCHEMA.md` para o que já foi propositalmente deixado de fora do schema
+(is_superuser/roles, tabela de sessões/refresh tokens) — mesma lista, mesma razão.
+
+---
+
 ## Conformidade
 
 - Dados 100% públicos do portal TST

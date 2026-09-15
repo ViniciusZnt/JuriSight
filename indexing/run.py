@@ -78,7 +78,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
-    client = QdrantClient(url=QDRANT_URL, timeout=180)
+    client = QdrantClient(url=QDRANT_URL, timeout=210)  # > _SEARCH_TIMEOUT_S (qdrant_store.py)
     source = DocumentSource(DATABASE_URL)
     chunker = SACChunker()
     embedder = PolyVectorEmbedder()

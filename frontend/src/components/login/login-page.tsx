@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Lock, Mail, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, ArrowRight, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { ApiError } from "@/lib/api";
 
-/** Login — fora do escopo do RFC (que não define autenticação/contas). Fluxo mockado: qualquer
- *  e-mail + senha preenchidos entra, sem backend de auth real. */
+/** Login real — POST /auth/login (query/api/auth_routes.py), sessão via cookie httpOnly. */
 export function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -14,17 +14,23 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const canSubmit = email.trim().length > 0 && password.length > 0 && !loading;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    setError(null);
     setLoading(true);
-    setTimeout(() => {
-      login();
+    try {
+      await login(email.trim(), password);
       router.push("/");
-    }, 500);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Não foi possível entrar. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -50,6 +56,13 @@ export function LoginPage() {
           onSubmit={handleSubmit}
           className="rounded-2xl border border-[#E4E4EC] dark:border-[#26262C] bg-white dark:bg-[#17171B] p-6 shadow-[0_4px_32px_rgba(0,0,0,0.07)] dark:shadow-none"
         >
+          {error && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-[#E8C2C2] dark:border-[#4A2529] bg-[#FBF0F0] dark:bg-[#2A1517] px-3 py-2.5">
+              <AlertCircle className="w-4 h-4 text-[#C44040] dark:text-[#D96B6B] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
+              <p className="text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.2px" }}>{error}</p>
+            </div>
+          )}
+
           <div className="mb-4">
             <label className="block mb-1.5 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px", fontWeight: 500 }}>
               E-mail

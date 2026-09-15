@@ -18,6 +18,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useSearchSession } from "@/lib/search-session";
+import { useConversations } from "@/lib/conversations";
 import { emptyEstrutura, queryJurisprudencia, ApiError, type EstruturaArgumentativa } from "@/lib/api";
 
 interface ColorScheme {
@@ -350,7 +351,8 @@ export function EntityReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const manualParam = searchParams.get("modo") === "manual";
-  const { estrutura: sessionEstrutura, hasFile, fileName, setEstrutura: persistEstrutura, setResultados } = useSearchSession();
+  const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, setEstrutura: persistEstrutura, setResultados } = useSearchSession();
+  const { activeId, setSnapshot } = useConversations();
 
   // Sem estrutura na sessão (ex.: acesso direto à URL) cai no mesmo modo manual do UC02.
   const manual = manualParam || sessionEstrutura === null;
@@ -372,8 +374,12 @@ export function EntityReviewPage() {
       const resultados = await queryJurisprudencia({ estrutura: data, ordenar_por: "relevancia" });
       persistEstrutura(data);
       setResultados(resultados);
+      if (activeId) {
+        setSnapshot(activeId, { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados });
+      }
       router.push("/resultados");
     } catch (err) {
+      console.error("Falha em /query:", err);
       setError(
         err instanceof ApiError
           ? err.message
@@ -532,6 +538,16 @@ export function EntityReviewPage() {
             </div>
           </div>
         </div>
+
+        {submitting && (
+          <div className="w-full max-w-[800px] mt-4 flex items-start gap-2.5 rounded-xl border border-[#D0DEEE] dark:border-[#2A3A4C] bg-[#EFF4FA] dark:bg-[#1A2A3C] px-4 py-3">
+            <Loader2 className="w-4 h-4 text-[#1A3A5C] dark:text-[#8AB0DC] mt-0.5 flex-shrink-0 animate-spin" strokeWidth={1.8} />
+            <p className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "13.8px" }}>
+              Buscando jurisprudências na base (~470 mil trechos indexados)… Pode levar alguns
+              minutos, principalmente com a máquina sob carga. Não recarregue a página.
+            </p>
+          </div>
+        )}
 
         {error && (
           <div className="w-full max-w-[800px] mt-4 flex items-start gap-2.5 rounded-xl border border-[#E8C2C2] dark:border-[#4A2529] bg-[#FBF0F0] dark:bg-[#2A1517] px-4 py-3">

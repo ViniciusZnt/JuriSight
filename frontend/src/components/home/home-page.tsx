@@ -2,11 +2,11 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, FileSearch, Gavel, Star, Zap, AlertCircle, X } from "lucide-react";
+import { BookOpen, FileSearch, Gavel, Star, Zap, AlertCircle, X, Loader2 } from "lucide-react";
 import { SearchInput, type SearchInputHandle, type SearchSubmitPayload } from "@/components/home/search-input";
 import { Fa02Alert } from "@/components/home/fa02-alert";
 import { Fa05Processing } from "@/components/home/fa05-processing";
-import { useConversations } from "@/lib/conversations";
+import { useConversations, type ConversationSnapshot } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 import { enrich, ApiError } from "@/lib/api";
 
@@ -43,6 +43,7 @@ interface Fa02State {
   fileName: string;
   message: string;
   query: string;
+  snapshot: ConversationSnapshot;
 }
 
 /** Home: entrada de consulta (RFC Figura 2). Enviar chama POST /enrich (RF02) — a IA extrai a
@@ -51,7 +52,7 @@ interface Fa02State {
  *  enquanto o backend resume o documento em blocos. */
 export function HomePage() {
   const router = useRouter();
-  const { create } = useConversations();
+  const { create, setSnapshot } = useConversations();
   const { setEnrichResult } = useSearchSession();
   const searchInputRef = useRef<SearchInputHandle>(null);
   const [loading, setLoading] = useState(false);
@@ -59,8 +60,11 @@ export function HomePage() {
   const [fa02, setFa02] = useState<Fa02State | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const goToRevisao = (query: string, hasFile: boolean) => {
-    create(query || "Nova pesquisa");
+  // snapshot vai junto na criação da conversa — é o que a sidebar usa pra reabrir direto na
+  // Revisão (com o contexto já preenchido) em vez de largar o usuário numa tela em branco.
+  const goToRevisao = (query: string, hasFile: boolean, snapshot?: ConversationSnapshot) => {
+    const id = create(query || "Nova pesquisa");
+    if (snapshot) setSnapshot(id, snapshot);
     router.push(hasFile ? "/revisao" : "/revisao?modo=manual");
   };
 
@@ -80,6 +84,14 @@ export function HomePage() {
         pdfExtraido: res.pdf_extraido,
         aviso: res.aviso,
       });
+      const snapshot: ConversationSnapshot = {
+        estrutura: res.estrutura,
+        hasFile,
+        fileName,
+        pdfExtraido: res.pdf_extraido,
+        aviso: res.aviso,
+        resultados: null,
+      };
 
       if (res.pdf_extraido === false) {
         // FA02: o backend já seguiu como FA01 (a estrutura acima veio só da intenção digitada,
@@ -88,12 +100,14 @@ export function HomePage() {
           fileName: fileName ?? "arquivo enviado",
           message: res.aviso ?? "Não foi possível extrair texto do PDF enviado.",
           query,
+          snapshot,
         });
         return;
       }
 
-      goToRevisao(query, hasFile);
+      goToRevisao(query, hasFile, snapshot);
     } catch (err) {
+      console.error("Falha em /enrich:", err);
       setError(
         err instanceof ApiError
           ? err.message
@@ -179,6 +193,17 @@ export function HomePage() {
             </div>
           )}
 
+          {loading && !largeFileName && (
+            <div className="w-full max-w-[720px] mx-auto mt-3 flex items-start gap-2.5 rounded-xl border border-[#D0DEEE] dark:border-[#2A3A4C] bg-[#EFF4FA] dark:bg-[#1A2A3C] px-4 py-3">
+              <Loader2 className="w-4 h-4 text-[#1A3A5C] dark:text-[#8AB0DC] mt-0.5 flex-shrink-0 animate-spin" strokeWidth={1.8} />
+              <p className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "13.8px" }}>
+                Analisando sua consulta com IA local (Ollama)… A primeira consulta do dia pode levar
+                alguns minutos enquanto o modelo carrega. Não recarregue a página — isso cancela a
+                requisição em andamento.
+              </p>
+            </div>
+          )}
+
           {fa02 && (
             <Fa02Alert
               fileName={fa02.fileName}
@@ -188,9 +213,11 @@ export function HomePage() {
                 searchInputRef.current?.clearAndReopenFile();
               }}
               onContinueWithoutFile={() => {
-                const { query } = fa02;
+                const { query, snapshot } = fa02;
                 setFa02(null);
-                goToRevisao(query, false);
+                // A estrutura já veio só da intenção (RN05/FA01) — o snapshot reflete isso,
+                // mesmo tendo havido uma tentativa de upload.
+                goToRevisao(query, false, { ...snapshot, hasFile: false, fileName: null });
               }}
               onDismiss={() => setFa02(null)}
             />

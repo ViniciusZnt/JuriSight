@@ -2,11 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Lock, Mail, User, ArrowRight, ArrowLeft } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, User, ArrowRight, ArrowLeft, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { ApiError, registrarUsuario } from "@/lib/api";
 
-/** Cadastro — fora do escopo do RFC (que não define autenticação/contas). Fluxo mockado: cria a
- *  sessão local e entra direto, sem backend de auth real. */
+// Mínimo real exigido por POST /auth/registro (query/api/auth_routes.py::RegistroRequest) —
+// tem que bater com o backend pra não confundir o usuário com um 422 depois de passar
+// pela validação do próprio formulário.
+const SENHA_MIN_LENGTH = 8;
+
+/** Cadastro real — POST /auth/registro, seguido de login automático (o registro não seta
+ *  cookie sozinho) pra entrar direto na aplicação, como o fluxo anterior já fazia. */
 export function RegisterPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -16,24 +22,31 @@ export function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const passwordTooShort = password.length > 0 && password.length < 6;
+  const passwordTooShort = password.length > 0 && password.length < SENHA_MIN_LENGTH;
   const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
   const formValid =
     name.trim().length > 0 &&
     email.trim().length > 0 &&
-    password.length >= 6 &&
+    password.length >= SENHA_MIN_LENGTH &&
     confirmPassword === password;
   const canSubmit = formValid && !loading;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    setError(null);
     setLoading(true);
-    setTimeout(() => {
-      login();
+    try {
+      await registrarUsuario({ email: email.trim(), password, nome: name.trim() });
+      await login(email.trim(), password);
       router.push("/");
-    }, 500);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Não foi possível criar a conta. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,6 +72,13 @@ export function RegisterPage() {
           onSubmit={handleSubmit}
           className="rounded-2xl border border-[#E4E4EC] dark:border-[#26262C] bg-white dark:bg-[#17171B] p-6 shadow-[0_4px_32px_rgba(0,0,0,0.07)] dark:shadow-none"
         >
+          {error && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-[#E8C2C2] dark:border-[#4A2529] bg-[#FBF0F0] dark:bg-[#2A1517] px-3 py-2.5">
+              <AlertCircle className="w-4 h-4 text-[#C44040] dark:text-[#D96B6B] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
+              <p className="text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.2px" }}>{error}</p>
+            </div>
+          )}
+
           <div className="mb-4">
             <label className="block mb-1.5 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px", fontWeight: 500 }}>
               Nome completo
@@ -106,7 +126,7 @@ export function RegisterPage() {
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder={`Mínimo ${SENHA_MIN_LENGTH} caracteres`}
                 className={`w-full pl-9 pr-9 py-2.5 rounded-xl border bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] outline-none focus:ring-2 transition-all ${
                   passwordTooShort
                     ? "border-[#C44040] dark:border-[#D96B6B] focus:border-[#C44040] dark:focus:border-[#D96B6B] focus:ring-[#C44040]/10 dark:focus:ring-[#D96B6B]/10"
@@ -127,7 +147,7 @@ export function RegisterPage() {
             </div>
             {passwordTooShort && (
               <p className="mt-1.5 text-[#C44040] dark:text-[#D96B6B]" style={{ fontSize: "12.1px" }}>
-                A senha precisa ter pelo menos 6 caracteres.
+                A senha precisa ter pelo menos {SENHA_MIN_LENGTH} caracteres.
               </p>
             )}
           </div>

@@ -8,53 +8,53 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { getUsuarioAtual, loginUsuario, logoutUsuario, type UsuarioPublico } from "@/lib/api";
 
-/** Sessão mockada — não há backend de autenticação (fora do escopo do RFC). Login e Cadastro
- *  apenas gravam uma flag local; serve para exercitar proteção de rotas e logout. */
-const STORAGE_KEY = "jurisight:auth";
-
+/** Sessão real: cookie httpOnly emitido por POST /auth/login (query/api/auth_routes.py).
+ *  Este contexto nunca vê o token — só sabe se GET /auth/me responde com um usuário. */
 interface AuthCtx {
   isAuthenticated: boolean;
-  /** true assim que o localStorage foi lido — evita decidir redirect com um valor "adivinhado". */
+  usuario: UsuarioPublico | null;
+  /** true assim que a checagem de sessão (GET /auth/me) respondeu — evita decidir
+   *  redirect com um valor "adivinhado" antes da API responder. */
   hydrated: boolean;
-  login: () => void;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [usuario, setUsuario] = useState<UsuarioPublico | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    try {
-      setIsAuthenticated(localStorage.getItem(STORAGE_KEY) === "1");
-    } catch {
-      /* storage indisponível — segue deslogado */
-    }
-    setHydrated(true);
+    getUsuarioAtual()
+      .then(setUsuario)
+      .catch(() => setUsuario(null))
+      .finally(() => setHydrated(true));
   }, []);
 
-  const login = useCallback(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      /* ignora */
-    }
-    setIsAuthenticated(true);
+  const login = useCallback(async (email: string, password: string) => {
+    const usuarioLogado = await loginUsuario({ email, password });
+    setUsuario(usuarioLogado);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* ignora */
+      await logoutUsuario();
+    } finally {
+      // Limpa a sessão local mesmo se a chamada ao backend falhar (ex.: já
+      // expirado) — não faz sentido travar o usuário numa sessão "zumbi".
+      setUsuario(null);
     }
-    setIsAuthenticated(false);
   }, []);
 
-  return <Ctx.Provider value={{ isAuthenticated, hydrated, login, logout }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ isAuthenticated: usuario !== null, usuario, hydrated, login, logout }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useAuth() {

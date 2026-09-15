@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useConversations, groupByRecency } from "@/lib/conversations";
+import { useSearchSession } from "@/lib/search-session";
 import { useAuth } from "@/lib/auth";
 import { useProfile, initialsOf } from "@/lib/profile";
 
@@ -22,6 +23,7 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { conversations, activeId, rename, remove, setActive } = useConversations();
+  const { loadSnapshot } = useSearchSession();
   const { logout } = useAuth();
   const { profile } = useProfile();
 
@@ -47,7 +49,20 @@ export function Sidebar() {
   };
   const abrir = (id: string) => {
     setActive(id);
-    router.push("/resultados");
+    const conv = conversations.find((c) => c.id === id);
+    const snapshot = conv?.snapshot;
+    if (!snapshot) {
+      // Conversa sem snapshot salvo (ex.: criada antes desta funcionalidade) — não há o que
+      // restaurar, então não faz sentido largar o usuário numa Revisão/Resultados vazios.
+      router.push("/");
+      return;
+    }
+    loadSnapshot(snapshot);
+    if (snapshot.resultados) {
+      router.push("/resultados");
+    } else {
+      router.push(snapshot.hasFile ? "/revisao" : "/revisao?modo=manual");
+    }
   };
   const startRename = (id: string, title: string) => {
     setMenuId(null);
@@ -272,8 +287,8 @@ export function Sidebar() {
             </div>
           </button>
           <button
-            onClick={() => {
-              logout();
+            onClick={async () => {
+              await logout();
               router.push("/login");
             }}
             title="Sair"

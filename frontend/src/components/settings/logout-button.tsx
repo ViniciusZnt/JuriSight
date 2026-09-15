@@ -11,8 +11,8 @@ export function LogoutButton() {
 
   return (
     <button
-      onClick={() => {
-        logout();
+      onClick={async () => {
+        await logout();
         router.push("/login");
       }}
       className="flex items-center gap-2 mt-3 px-3.5 py-2 rounded-lg border border-[#E8C2C2] dark:border-[#4A2529] text-[#C44040] dark:text-[#D96B6B] hover:bg-[#FBF0F0] dark:hover:bg-[#2A1517] transition-colors"

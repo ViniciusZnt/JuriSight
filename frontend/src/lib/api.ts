@@ -121,7 +121,10 @@ async function detailFrom(res: Response): Promise<string> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, init);
+    // credentials: "include" em toda chamada — necessário pro cookie httpOnly de
+    // sessão (query/api/auth_routes.py) ir e voltar entre :3000 e :8000; inofensivo
+    // nas rotas que não usam cookie.
+    res = await fetch(`${API_BASE_URL}${path}`, { credentials: "include", ...init });
   } catch {
     throw new ApiError(
       "Não foi possível conectar à API. Verifique se o backend (FastAPI) está rodando.",
@@ -129,8 +132,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
   if (!res.ok) throw new ApiError(await detailFrom(res), res.status);
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+/** Toda rota de /auth/* que muda estado exige este header (defesa contra CSRF —
+ *  ver query/api/auth_routes.py::_exigir_header_csrf). Um POST cross-site "simples"
+ *  (via <form>, sem JS) não consegue setar headers arbitrários; fetch/XHR same-origin
+ *  consegue sempre. */
+const CSRF_HEADER = { "X-Requested-With": "XMLHttpRequest" };
 
 /** POST /enrich — extrai a EstruturaArgumentativa do PDF e/ou da intenção digitada. Precisa de
  *  ao menos um dos dois (o backend responde 422 se ambos vierem vazios). */
@@ -153,4 +163,49 @@ export async function queryJurisprudencia(body: QueryRequestBody): Promise<Resul
 /** GET /document/{id} — detalhe completo de um documento (404 se não existir). */
 export async function getDocument(id: string): Promise<DocumentoDetalhe> {
   return request<DocumentoDetalhe>(`/document/${encodeURIComponent(id)}`);
+}
+
+// --------------------------------------------------------------------------- //
+// Autenticação (query/api/auth_routes.py) — sessão via cookie httpOnly, nunca   //
+// um token no corpo/localStorage (ver o módulo do backend para o porquê).      //
+// --------------------------------------------------------------------------- //
+
+/** Campos públicos do usuário — nunca inclui a senha/hash. */
+export interface UsuarioPublico {
+  id: string;
+  email: string;
+  nome: string | null;
+  is_active: boolean;
+  criado_em: string;
+}
+
+/** POST /auth/registro — cria a conta. Não loga sozinho (não seta cookie); chame
+ *  `loginUsuario` em seguida para entrar. */
+export async function registrarUsuario(params: { email: string; password: string; nome?: string | null }): Promise<UsuarioPublico> {
+  return request<UsuarioPublico>("/auth/registro", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...CSRF_HEADER },
+    body: JSON.stringify(params),
+  });
+}
+
+/** POST /auth/login — o cookie de sessão é setado pelo backend na resposta; o
+ *  token de acesso nunca aparece aqui. */
+export async function loginUsuario(params: { email: string; password: string }): Promise<UsuarioPublico> {
+  return request<UsuarioPublico>("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...CSRF_HEADER },
+    body: JSON.stringify(params),
+  });
+}
+
+/** POST /auth/logout — limpa o cookie de sessão no backend. */
+export async function logoutUsuario(): Promise<void> {
+  await request<void>("/auth/logout", { method: "POST", headers: { ...CSRF_HEADER } });
+}
+
+/** GET /auth/me — usuário da sessão atual a partir do cookie. Lança ApiError(401)
+ *  se não houver sessão válida — use isso para checar se o usuário está logado. */
+export async function getUsuarioAtual(): Promise<UsuarioPublico> {
+  return request<UsuarioPublico>("/auth/me");
 }

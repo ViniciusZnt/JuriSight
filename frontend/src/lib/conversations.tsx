@@ -7,12 +7,27 @@ import {
   useEffect,
   useState,
 } from "react";
+import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
+
+/** Snapshot do que essa conversa já produziu — o suficiente pra reabrir exatamente de
+ *  onde parou (Revisão, se só enriqueceu; Resultados, se já buscou). Persistido só no
+ *  navegador (localStorage), igual ao resto do app — ver RFC §6.1 (LGPD): nada disso
+ *  é enviado/guardado no backend. */
+export interface ConversationSnapshot {
+  estrutura: EstruturaArgumentativa;
+  hasFile: boolean;
+  fileName: string | null;
+  pdfExtraido: boolean | null;
+  aviso: string | null;
+  resultados: ResultCard[] | null;
+}
 
 /** Uma pesquisa salva (o "histórico" da sidebar). */
 export interface Conversation {
   id: string;
   title: string;
   createdAt: number; // epoch ms
+  snapshot?: ConversationSnapshot;
 }
 
 const STORAGE_KEY = "jurisight:conversations";
@@ -24,6 +39,8 @@ interface ConversationsCtx {
   rename: (id: string, title: string) => void;
   remove: (id: string) => void;
   setActive: (id: string | null) => void;
+  /** Grava/substitui o snapshot de uma conversa (chamado após /enrich e após /query). */
+  setSnapshot: (id: string, snapshot: ConversationSnapshot) => void;
 }
 
 const Ctx = createContext<ConversationsCtx | null>(null);
@@ -77,9 +94,13 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     setActiveId((prev) => (prev === id ? null : prev));
   }, []);
 
+  const setSnapshot = useCallback((id: string, snapshot: ConversationSnapshot) => {
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, snapshot } : c)));
+  }, []);
+
   return (
     <Ctx.Provider
-      value={{ conversations, activeId, create, rename, remove, setActive: setActiveId }}
+      value={{ conversations, activeId, create, rename, remove, setActive: setActiveId, setSnapshot }}
     >
       {children}
     </Ctx.Provider>

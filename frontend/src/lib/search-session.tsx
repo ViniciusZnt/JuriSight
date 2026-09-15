@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useState } from "react";
 import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
+import type { ConversationSnapshot } from "@/lib/conversations";
 
 interface SearchSessionState {
   /** EstruturaArgumentativa retornada por /enrich (ou editada na Revisão). null = nenhuma
@@ -27,6 +28,9 @@ interface SearchSessionCtx extends SearchSessionState {
   setEnrichResult: (data: EnrichResultInput) => void;
   setEstrutura: (estrutura: EstruturaArgumentativa) => void;
   setResultados: (resultados: ResultCard[]) => void;
+  /** Restaura a sessão a partir do snapshot salvo numa conversa (clique no histórico da
+   *  sidebar) — ao contrário de setEnrichResult, também repõe os resultados, se houver. */
+  loadSnapshot: (snapshot: ConversationSnapshot) => void;
   reset: () => void;
 }
 
@@ -67,10 +71,21 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
     setState((prev) => ({ ...prev, resultados }));
   }, []);
 
+  const loadSnapshot = useCallback((snapshot: ConversationSnapshot) => {
+    setState({
+      estrutura: snapshot.estrutura,
+      hasFile: snapshot.hasFile,
+      fileName: snapshot.fileName,
+      pdfExtraido: snapshot.pdfExtraido,
+      aviso: snapshot.aviso,
+      resultados: snapshot.resultados,
+    });
+  }, []);
+
   const reset = useCallback(() => setState(initialState), []);
 
   return (
-    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, setResultados, reset }}>
+    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, setResultados, loadSnapshot, reset }}>
       {children}
     </Ctx.Provider>
   );
