@@ -12,7 +12,7 @@ spacy>=3.7.0
 ollama>=0.2.0
 
 # Vector DB e GraphRAG
-chromadb>=0.5.0
+qdrant-client>=1.19.0
 lightrag-hku>=1.0.0
 
 # Busca lexical
