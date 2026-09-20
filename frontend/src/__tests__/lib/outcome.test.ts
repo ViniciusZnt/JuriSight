@@ -1,4 +1,5 @@
-import { OUTCOME_CONFIG, type Outcome } from "@/lib/outcome";
+import { OUTCOME_CONFIG, provimentoToOutcome, type Outcome } from "@/lib/outcome";
+import type { Provimento } from "@/lib/api";
 
 describe("OUTCOME_CONFIG", () => {
   const outcomes: Outcome[] = ["favorable", "unfavorable", "neutral"];
@@ -24,5 +25,27 @@ describe("OUTCOME_CONFIG", () => {
     expect(OUTCOME_CONFIG.favorable.label).toBe("Favorável");
     expect(OUTCOME_CONFIG.unfavorable.label).toBe("Desfavorável");
     expect(OUTCOME_CONFIG.neutral.label).toBe("Neutro");
+  });
+});
+
+describe("provimentoToOutcome", () => {
+  it("mapeia NEGADO para favorable", () => {
+    expect(provimentoToOutcome("NEGADO")).toBe("favorable");
+  });
+
+  it("mapeia APROVADO para unfavorable", () => {
+    expect(provimentoToOutcome("APROVADO")).toBe("unfavorable");
+  });
+
+  it("mapeia PARCIAL e NAO_APLICAVEL para neutral", () => {
+    expect(provimentoToOutcome("PARCIAL")).toBe("neutral");
+    expect(provimentoToOutcome("NAO_APLICAVEL")).toBe("neutral");
+  });
+
+  it("cobre todos os valores de Provimento sem lançar", () => {
+    const todos: Provimento[] = ["APROVADO", "PARCIAL", "NEGADO", "NAO_APLICAVEL"];
+    for (const p of todos) {
+      expect(() => provimentoToOutcome(p)).not.toThrow();
+    }
   });
 });
