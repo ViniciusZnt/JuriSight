@@ -8,7 +8,7 @@ import pytest
 
 from scraper.schema import Provimento, TipoDocumento
 from processing.chunking.sac_chunker import Chunk
-from indexing.lexical.bm25_builder import BM25Builder, _tokenize
+from indexing.lexical.bm25_builder import BM25Builder, _tokenize, _validar_indice
 
 
 def _chunk(documento_id: str, posicao: int, texto_bruto: str, sac_summary: str = "resumo") -> Chunk:
@@ -101,6 +101,42 @@ def test_indexa_texto_bruto_e_nao_texto():
     assert b._corpus_tokens == [["janela", "crua"]]
     assert "resumo" not in b._corpus_tokens[0]
     assert b._chunk_ids == ["d1:0"]
+
+
+# --------------------------------------------------------------------------- #
+# Escrita atômica + validação pós-escrita                                     #
+# --------------------------------------------------------------------------- #
+
+def test_build_nao_deixa_tmp(tmp_path):
+    """Após o build, o .tmp já foi renomeado — não sobra lixo."""
+    path = tmp_path / "bm25.pkl"
+    b = BM25Builder(index_path=path)
+    b.add([_chunk("d1", 0, "benzeno insalubridade")])
+    b.build_and_save()
+    assert path.exists()
+    assert not (tmp_path / "bm25.pkl.tmp").exists()
+
+
+def test_validar_rejeita_pickle_truncado(tmp_path):
+    """Um pickle cortado no meio (dump interrompido) é rejeitado ao validar."""
+    path = tmp_path / "bm25.pkl"
+    b = BM25Builder(index_path=path)
+    b.add([_chunk("d1", 0, "benzeno"), _chunk("d2", 0, "horas extras")])
+    b.build_and_save()
+    dados = path.read_bytes()
+    path.write_bytes(dados[: len(dados) // 2])          # corta na metade
+    with pytest.raises(RuntimeError, match="corrompido/truncado"):
+        _validar_indice(path, esperado=2)
+
+
+def test_validar_rejeita_contagem_divergente(tmp_path):
+    """Índice que carrega mas com nº de chunks inesperado também é rejeitado."""
+    path = tmp_path / "bm25.pkl"
+    b = BM25Builder(index_path=path)
+    b.add([_chunk("d1", 0, "benzeno")])
+    b.build_and_save()
+    with pytest.raises(RuntimeError, match="incompleto"):
+        _validar_indice(path, esperado=999)
 
 
 if __name__ == "__main__":
