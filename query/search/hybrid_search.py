@@ -11,6 +11,8 @@ Três canais de recuperação:
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from indexing.lexical.bm25_builder import LoadedBM25
 from indexing.vector_store.qdrant_store import (
     COLLECTION_COMPLETO,
@@ -104,11 +106,23 @@ class HybridSearch:
         o DocumentoJuridico recuperado).
         """
         n_candidates = n_results * CANDIDATOS_POR_CANAL
+        texto_bm25 = bm25_query if bm25_query is not None else query
 
-        query_vector = self.embedder.embed_text(query)
-        hits_completo = self.store.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_COMPLETO)
-        hits_ementa = self.store.query(query_vector, n_results=n_candidates, where=where, collection=COLLECTION_EMENTA)
-        hits_bm25 = self.bm25.search(bm25_query if bm25_query is not None else query, n=n_candidates)
+        # Os 3 canais são independentes entre si (BM25 nem depende do embedding) —
+        # rodavam em série antes, somando os tempos de rede do Qdrant (x2) + BM25.
+        # Em paralelo, o tempo total vira ~o do canal mais lento, não a soma dos 3.
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            fut_bm25 = executor.submit(self.bm25.search, texto_bm25, n=n_candidates)
+            query_vector = self.embedder.embed_text(query)
+            fut_completo = executor.submit(
+                self.store.query, query_vector, n_results=n_candidates, where=where, collection=COLLECTION_COMPLETO
+            )
+            fut_ementa = executor.submit(
+                self.store.query, query_vector, n_results=n_candidates, where=where, collection=COLLECTION_EMENTA
+            )
+            hits_bm25 = fut_bm25.result()
+            hits_completo = fut_completo.result()
+            hits_ementa = fut_ementa.result()
 
         # Projeta cada canal para uma lista ranqueada de documento_id, sem duplicar.
         r_completo = _dedup_ordenado([h["documento_id"] for h in hits_completo])

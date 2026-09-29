@@ -1,29 +1,40 @@
 """
 BM25 Builder
 
-Constrói o índice lexical a partir do campo `texto_bruto`(SEM o prefixo SAC) de cada chunk e o
-persiste em disco (pickle). Garante precisão em termos jurídicos exatos — "NR-15", "CLT art. 193",
-"LTCAT", "benzeno" — que embeddings aproximam mas não casam literalmente. O Backendcarrega esse índice
-em memória para a busca lexical, fundida com a vetorial via RRF.
+Constrói o índice lexical a partir do campo `texto_bruto` (SEM o prefixo SAC) de
+cada chunk e o persiste em disco. Garante precisão em termos jurídicos exatos —
+"NR-15", "CLT art. 193", "LTCAT", "benzeno" — que embeddings aproximam mas não
+casam literalmente. O Backend carrega esse índice para a busca lexical, fundida
+com a vetorial via RRF.
 
-Mantém DOIS arrays paralelos ao corpus:
-  - tokens por documento (entrada do BM25Okapi);
-  - chunk_ids correspondentes (para mapear rank → chunk).
+Via `bm25s` (matriz esparsa CSC do scipy), não `rank_bm25` (que guardava um dict
+Python por DOCUMENTO — para ~400k chunks isso media ~6-7GB de RAM no processo do
+backend, a causa raiz de buscas levando 80-125s medida nesta infra: a máquina
+tem só 11GB de RAM total, e esse footprint sozinho já empurrava o sistema pra
+swap, competindo por I/O de disco com o próprio Qdrant). `bm25s` permite carregar
+o índice via `mmap=True`: os arrays da matriz ficam em disco, paginados sob
+demanda pelo SO — igual ao que o Qdrant já faz com os vetores — então o processo
+do backend passa a usar só dezenas de MB pro BM25 em vez de gigabytes.
+
+Mantém um array paralelo ao corpus:
+  - chunk_ids (bm25s indexa por posição inteira; nosso `search()` traduz de
+    volta pro chunk_id usando esse array, passado como `corpus=` ao `retrieve()`).
 """
 from __future__ import annotations
 
+import json
 import os
-import pickle
 import re
 import unicodedata
 from pathlib import Path
 
-from rank_bm25 import BM25Okapi
+import bm25s
 from stop_words import get_stop_words
 
 from processing.chunking.sac_chunker import Chunk
 
-BM25_INDEX_PATH = Path(os.getenv("BM25_INDEX_PATH", "./data/index/bm25.pkl"))
+BM25_INDEX_PATH = Path(os.getenv("BM25_INDEX_PATH", "./data/index/bm25s_index"))
+_CHUNK_IDS_FILENAME = "chunk_ids.json"
 
 
 def _strip_accents(text: str) -> str:
@@ -65,7 +76,7 @@ class BM25Builder:
     def __init__(self, index_path: Path = BM25_INDEX_PATH) -> None:
         """Inicializa os arrays paralelos do corpus.
 
-        Input:  index_path — caminho do índice serializado.
+        Input:  index_path — diretório onde o índice será persistido.
         Returns: None.
         """
         self.index_path = index_path
@@ -83,47 +94,56 @@ class BM25Builder:
             self._chunk_ids.append(c.chunk_id)
 
     def build_and_save(self) -> None:
-        """Constrói o BM25Okapi sobre o corpus e serializa para self.index_path.
+        """Constrói o índice bm25s sobre o corpus e persiste em self.index_path.
 
         Input:  nenhum (usa o corpus acumulado por add()).
-        Returns: None. Grava um pickle com {bm25, chunk_ids}.
+        Returns: None. Grava os arrays da matriz CSC + vocabulário (bm25s.save)
+        e, à parte, chunk_ids.json (o mapeamento posição → chunk_id que o bm25s
+        não sabe persistir sozinho).
         """
-        # TODO (delta): o BM25Okapi não é incremental — reconstrói do corpus inteiro.
-        #   Para indexação delta sem re-chunkar tudo, persistir também o corpus
-        #   tokenizado e, no delta, carregar + adicionar/remover só o que mudou.
+        # TODO (delta): reconstrói do corpus inteiro, não é incremental — igual
+        #   à limitação já documentada quando isto usava rank_bm25.
         if not self._corpus_tokens:
             raise ValueError("Corpus vazio: chame add() antes de build_and_save().")
-        bm25 = BM25Okapi(self._corpus_tokens)
-        self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.index_path, "wb") as f:
-            pickle.dump({"bm25": bm25, "chunk_ids": self._chunk_ids}, f)
+        retriever = bm25s.BM25()
+        retriever.index(self._corpus_tokens)
+        self.index_path.mkdir(parents=True, exist_ok=True)
+        retriever.save(str(self.index_path))
+        with open(self.index_path / _CHUNK_IDS_FILENAME, "w") as f:
+            json.dump(self._chunk_ids, f)
 
     @staticmethod
     def load(index_path: Path = BM25_INDEX_PATH) -> "LoadedBM25":
         """Carrega o índice persistido para uso na busca (lado do Backend).
 
-        Input:  index_path — caminho do índice.
+        `mmap=True`: os arrays da matriz ficam em disco (mmap), paginados sob
+        demanda — não carrega o corpus inteiro pra RAM na subida (era o ponto
+        inteiro desta troca, ver docstring do módulo).
+
+        Input:  index_path — diretório do índice.
         Returns: um LoadedBM25 pronto para consulta.
         """
-        with open(index_path, "rb") as f:
-            data = pickle.load(f)
-        return LoadedBM25(data["bm25"], data["chunk_ids"])
+        retriever = bm25s.BM25.load(str(index_path), mmap=True, load_corpus=False, show_progress=False)
+        with open(index_path / _CHUNK_IDS_FILENAME) as f:
+            chunk_ids = json.load(f)
+        return LoadedBM25(retriever, chunk_ids)
 
 
 class LoadedBM25:
-    """Índice BM25 carregado em memória, pronto para consulta (usado na busca).
+    """Índice BM25 carregado (mmap), pronto para consulta (usado na busca).
 
     Vive aqui por proximidade com o builder, mas é consumido por
     query/search/hybrid_search.py.
     """
 
-    def __init__(self, bm25: BM25Okapi, chunk_ids: list[str]) -> None:
+    def __init__(self, retriever: bm25s.BM25, chunk_ids: list[str]) -> None:
         """Guarda o índice e o mapeamento posição → chunk_id.
 
-        Input:  bm25 — BM25Okapi treinado; chunk_ids — ids na ordem do corpus.
+        Input:  retriever — bm25s.BM25 carregado; chunk_ids — ids na ordem do corpus
+                (mesma ordem usada na indexação — bm25s indexa por posição inteira).
         Returns: None.
         """
-        self._bm25 = bm25
+        self._retriever = retriever
         self._chunk_ids = chunk_ids
 
     def search(self, query: str, n: int = 20) -> list[tuple[str, float]]:
@@ -135,6 +155,11 @@ class LoadedBM25:
         tokens = _tokenize(query)
         if not tokens or not self._chunk_ids:
             return []
-        scores = self._bm25.get_scores(tokens)
-        ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n]
-        return [(self._chunk_ids[i], float(scores[i])) for i in ranked]
+        n = min(n, len(self._chunk_ids))
+        # corpus=self._chunk_ids: o bm25s devolve o chunk_id diretamente (em vez
+        # do índice numérico interno), então não precisamos traduzir na mão.
+        resultado = self._retriever.retrieve(
+            [tokens], corpus=self._chunk_ids, k=n, show_progress=False
+        )
+        docs, scores = resultado.documents[0], resultado.scores[0]
+        return [(docs[i], float(scores[i])) for i in range(len(docs))]

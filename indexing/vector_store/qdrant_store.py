@@ -1,11 +1,17 @@
 """
 Qdrant Vector Store — substitui indexing/vector_store/chroma_store.py (README §Escalabilidade).
 
-Por quê: o HNSW do Chroma exige o índice inteiro em RAM. Com ~69k acórdãos (~400k
-chunks) isso já é pesado demais numa máquina com RAM limitada — ver
+Por quê: o Chroma exige vetores E grafo HNSW inteiros em RAM. Com ~69k acórdãos
+(~400k chunks) isso já é pesado demais numa máquina com RAM limitada — ver
 docs/Backup_Indices.md e a medição real: só abrir a coleção via PersistentClient
-levou minutos, puro I/O de disco carregando o grafo. O Qdrant permite vetores E
-grafo HNSW em disco (mmap, `on_disk=True`), que é o requisito real aqui.
+levou minutos, puro I/O de disco carregando tudo pra RAM na subida. O Qdrant
+separa as duas coisas: os VETORES brutos (a parte grande, ~2.4GB pra 400k pontos
+de 1536 dims) ficam em disco via mmap (`VectorParams.on_disk=True`); o GRAFO HNSW
+em si (só os links entre vizinhos, dezenas de MB) fica em RAM (`HnswConfigDiff.
+on_disk=False`, o default do Qdrant) — colocar o grafo em disco também parecia
+"mais econômico" mas media 80-125s por busca nesta infra (cada salto no grafo
+vira I/O de disco); em RAM ele é pequeno o bastante pra não custar quase nada e
+elimina esse gargalo.
 
 Mesmo modelo Poly-Vector do Chroma, duas coleções:
   - COLLECTION_COMPLETO -> um ponto por CHUNK  (id = uuid5 determinístico do chunk_id);
@@ -42,8 +48,25 @@ _SEARCH_TIMEOUT_S = 180
 # Poly-Vector usam o mesmo modelo, logo a mesma dimensão.
 EMBED_DIM = 1536
 
-# HNSW/quantização tunados para favorecer disco sobre RAM (o objetivo desta troca).
-_HNSW_CONFIG = models.HnswConfigDiff(on_disk=True)
+# Vetores em disco (VectorParams.on_disk=True abaixo), mas o GRAFO HNSW em si
+# fica em RAM (on_disk=False, o default do Qdrant) — são coisas bem diferentes
+# de tamanho: o grafo de ~400k pontos custa dezenas de MB (só os links entre
+# vizinhos), enquanto os vetores brutos custam ~2.4GB (400k × 1536 dims × 4
+# bytes). Medido nesta infra: com o grafo em disco, cada busca nova (que
+# percorre o grafo fazendo I/O a cada salto) levava 80-125s; o grafo é pequeno
+# o bastante pra caber em RAM sem reintroduzir o problema original do Chroma
+# (que forçava vetores E grafo, ~14GB, inteiros em RAM).
+_HNSW_CONFIG = models.HnswConfigDiff(on_disk=False)
+
+# Quantização escalar (int8): guarda uma versão comprimida (~4x menor) de cada
+# vetor em RAM (always_ram=True) para a busca inicial no grafo HNSW; só os poucos
+# candidatos finais (não o corpus inteiro) são re-pontuados com o vetor original
+# em disco. Isso reduz drasticamente o I/O de disco por busca — a mesma economia
+# de "grafo em RAM" acima, mas para os próprios vetores. Custo: ~600MB de RAM
+# pra chunks_completo (400k × 1536 bytes) — pouco perto do que precisa caber.
+_QUANTIZATION_CONFIG = models.ScalarQuantization(
+    scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, quantile=0.99, always_ram=True)
+)
 
 # Namespace fixo (UUID aleatório gerado uma única vez) para o uuid5 determinístico
 # do chunk_id — NUNCA mude este valor: mudar quebra a idempotência do upsert (o
@@ -125,6 +148,7 @@ class QdrantStore:
                 on_disk=True,  # vetores em disco (mmap) — não força o corpus inteiro em RAM
             ),
             hnsw_config=_HNSW_CONFIG,
+            quantization_config=_QUANTIZATION_CONFIG,
             on_disk_payload=True,
         )
         logger.info("Coleção Qdrant '%s' criada (vetores e HNSW em disco).", nome)

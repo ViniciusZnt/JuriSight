@@ -468,6 +468,7 @@ export function SearchResultsPage() {
                 <div
                   key={decision.id}
                   className="bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group cursor-pointer"
+                  onMouseEnter={() => router.prefetch(`/decisao/${decision.id}`)}
                   onClick={() => router.push(`/decisao/${decision.id}`)}
                 >
                   {/* Header */}
