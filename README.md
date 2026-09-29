@@ -168,7 +168,7 @@ cp .env.example .env
 | `OPENAI_API_KEY`    | —                                                   | Chave da OpenAI (embeddings) — **obrigatória**, exige crédito pré-pago |
 | `OPENAI_EMBED_MODEL`| `text-embedding-3-small`                            | Modelo de embeddings (1536d)     |
 | `QDRANT_URL`        | `http://localhost:6333`                             | Endpoint do Qdrant (banco vetorial, sobe via `docker compose`) |
-| `BM25_INDEX_PATH`   | `./data/index/bm25.pkl`                             | Índice lexical BM25 (pickle)     |
+| `BM25_INDEX_PATH`   | `./data/index/bm25s_index`                          | Índice lexical BM25 (diretório — matriz esparsa `bm25s`, carregada via mmap) |
 | `OLLAMA_HOST`       | `http://localhost:11434`                            | Endpoint do Ollama (Query Enrichment) |
 | `OLLAMA_MODEL`      | `llama3.2:3b`                                       | Modelo usado no enriquecimento de query e na sumarização de PDFs longos |
 | `API_HOST` / `API_PORT` | `0.0.0.0` / `8000`                              | Endereço do backend FastAPI      |
@@ -177,6 +177,12 @@ cp .env.example .env
 
 > A chave da OpenAI vai só no `.env` (gitignored) — **nunca** commitada. Sem crédito
 > pré-pago na conta, a API responde `429 insufficient_quota`.
+
+> **Atalho:** com `.env` preenchido (`OPENAI_API_KEY` e `JWT_SECRET_KEY`, gere a
+> segunda com `openssl rand -hex 32`) e a coleta/indexação já feitas (passos 6-7,
+> só na primeira vez), `./run.sh` faz os passos 5, 8 e 9 de uma vez — sobe
+> infra + backend + frontend com um comando só, espera cada um responder antes
+> de seguir, e Ctrl+C encerra backend+frontend (a infra continua no ar).
 
 ### 5 — Subir a infraestrutura (Docker)
 
@@ -190,9 +196,9 @@ Para subir só o Postgres (usando o Ollama nativo): `docker compose up -d postgr
 A tabela `documentos` é criada automaticamente na primeira execução do scraper.
 
 > **Qdrant é um serviço** (imagem `qdrant/qdrant`, portas 6333/REST e 6334/gRPC),
-> ao contrário do antigo ChromaDB embedded. Os vetores e o grafo HNSW ficam em
-> disco (mmap) dentro do volume `qdrant_data` — não carregam o índice inteiro em
-> RAM (ver §Escalabilidade).
+> ao contrário do antigo ChromaDB embedded. Os vetores ficam em disco (mmap,
+> quantizados em int8 em RAM pra busca inicial) dentro do volume `qdrant_data`;
+> o grafo HNSW fica em RAM (ver §Escalabilidade).
 
 Para parar sem apagar dados:
 
@@ -343,7 +349,7 @@ uv run pytest
 | Qdrant             | Banco vetorial — busca semântica (vetores/HNSW em disco) |
 | Ollama / Llama 3.2 3B | Query enrichment local + sumarização de PDFs longos |
 | OpenAI text-embedding-3-small | Embeddings (1536d)              |
-| rank-bm25          | Busca lexical — índice BM25                 |
+| bm25s              | Busca lexical — índice BM25 (matriz esparsa, mmap) |
 | pdfplumber         | Extração de texto do PDF do usuário         |
 | FastAPI / Uvicorn  | Backend — API REST, fusão RRF dos rankings  |
 | Next.js / React    | Interface do usuário                        |
@@ -359,18 +365,36 @@ o HNSW carregava o índice inteiro em memória, e com ~69k acórdãos (~470k pon
 somando as duas coleções Poly-Vector) isso já travava numa máquina com RAM
 limitada ([docs](https://docs.trychroma.com/guides/deploy/performance)).
 
-O Qdrant (`indexing/vector_store/qdrant_store.py`) guarda vetores e o grafo HNSW
-em disco (mmap, `on_disk=True`) em vez de forçar tudo em RAM. Troca localizada,
-como planejado: só o `ChromaStore` virou `QdrantStore` — `HybridSearch`,
-`query/api/app.py` e `indexing/run.py` não mudaram de lógica, só de import. Dados
-migrados com `indexing/vector_store/migrate_chroma_to_qdrant.py` (lê o Chroma
-antigo, sem apagá-lo, e faz upsert idempotente no Qdrant). Ganho medido nesta
-máquina: a mesma consulta real caiu de ~14min (Chroma, sob pressão de RAM/swap)
-para <1min (Qdrant) — resultados idênticos (mesmos documentos, mesmo `score_rrf`).
+O Qdrant (`indexing/vector_store/qdrant_store.py`) guarda os vetores brutos em
+disco (mmap, `VectorParams.on_disk=True` — a parte grande, ~2.4GB pra 400k
+pontos de 1536 dims). Troca localizada, como planejado: só o `ChromaStore`
+virou `QdrantStore` — `HybridSearch`, `query/api/app.py` e `indexing/run.py`
+não mudaram de lógica, só de import. Dados migrados com
+`indexing/vector_store/migrate_chroma_to_qdrant.py` (lê o Chroma antigo, sem
+apagá-lo, e faz upsert idempotente no Qdrant).
 
-BM25 (`rank_bm25`) continua 100% em memória de processo — não tem opção de
-disco — e ainda é um consumidor pesado de RAM (~1GB em pickle, vira vários GB
-desserializado). Se o corpus crescer muito mais, ele é o próximo gargalo.
+**Ajuste de 2026-09-28 — grafo HNSW em RAM + quantização.** A primeira versão
+também colocava o grafo HNSW em disco (`HnswConfigDiff.on_disk=True`), na
+teoria pra economizar RAM. Na prática, cada busca nova percorre o grafo fazendo
+I/O a disco a cada salto — medido nesta infra, 80-125s por busca. O grafo em si
+(só os links entre vizinhos) custa dezenas de MB pra 400k pontos — bem menos
+que os vetores — então voltou pra RAM (`on_disk=False`, o default do Qdrant).
+Também foi ligada quantização escalar int8 nas duas coleções: uma versão
+comprimida (~4x menor) de cada vetor fica em RAM pra busca inicial no grafo, e
+só os poucos candidatos finais são re-pontuados com o vetor original em disco
+— reduz ainda mais o I/O por busca. Resultado combinado (com a mudança do BM25
+abaixo): a mesma busca caiu de 80-330s para 3-5s.
+
+BM25 migrou de `rank_bm25` para `bm25s` (2026-09-28). O `rank_bm25` guardava um
+dict Python por documento — pra ~400k chunks isso media ~6-7GB desserializado
+em RAM no processo do backend, que numa máquina de 11GB empurrava o sistema
+inteiro pra swap (confirmado via `pswpin`/`pswpout` subindo durante as buscas
+lentas — o Qdrant ficava competindo com o swap pela banda de disco, daí os
+80-125s do parágrafo acima serem ainda piores na prática). `bm25s` guarda o
+índice como matriz esparsa CSC e carrega via `mmap=True`
+(`indexing/lexical/bm25_builder.py`) — fica em disco, paginado sob demanda,
+igual ao Qdrant já fazia com os vetores. RAM do processo do backend: de ~7.4GB
+para ~300MB.
 
 ---
 
