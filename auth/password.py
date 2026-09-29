@@ -1,19 +1,17 @@
 """
 Hashing e verificação de senha.
 
-Algoritmo: Argon2id (via `pwdlib[argon2,bcrypt]`) para TODO hash novo — é o
-KDF memory-hard recomendado atualmente pela OWASP, resistente a ataques por
-GPU/ASIC muito melhor que bcrypt/PBKDF2. Bcrypt entra só como alvo de
-*verificação*: se em algum momento este backend herdar hashes bcrypt (ex.:
-migração de um sistema anterior), `verify_password` ainda consegue validá-los
-e sinaliza que devem ser re-hasheados em Argon2id no próximo login bem
-sucedido (ver `verify_password` abaixo — mesmo padrão de "rehash on verify"
-do passlib/pwdlib, `verify_and_update`).
+Algoritmo: Argon2id (via `pwdlib[argon2]`) — o KDF memory-hard recomendado
+atualmente pela OWASP, resistente a ataques por GPU/ASIC muito melhor que
+bcrypt/PBKDF2. Sistema novo, sem usuários herdados de outro backend: não há
+hash em outro algoritmo pra verificar, então só Argon2id existe aqui (nada de
+fallback de verificação para um formato que nunca vai aparecer).
 
 Este módulo não faz lookup de usuário nem toca banco — isso é responsabilidade
 de uma peça futura (endpoints). O único acoplamento esperado é: o caller passa
 uma senha em texto puro e um hash armazenado, e recebe de volta se bateu (e,
-opcionalmente, um novo hash para persistir).
+opcionalmente, um novo hash para persistir, se os parâmetros de custo do
+Argon2 mudarem no futuro — "rehash on verify" via `verify_and_update`).
 """
 from __future__ import annotations
 
@@ -21,11 +19,8 @@ from typing import NamedTuple
 
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
-from pwdlib.hashers.bcrypt import BcryptHasher
 
-# Argon2Hasher primeiro = é o que `hash_password` usa para hashes novos.
-# BcryptHasher fica como fallback de *verificação* de hashes legados.
-_password_hash = PasswordHash((Argon2Hasher(), BcryptHasher()))
+_password_hash = PasswordHash((Argon2Hasher(),))
 
 
 class PasswordVerification(NamedTuple):

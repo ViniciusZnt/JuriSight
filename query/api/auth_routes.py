@@ -43,26 +43,11 @@ from auth.tokens import DEFAULT_EXPIRES_DELTA, create_access_token, decode_acces
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Defesa em profundidade contra CSRF, além do SameSite=Lax do cookie (ver
-# _set_access_cookie): a proteção real hoje depende de um invariante externo
-# a este módulo — CORS_ORIGINS (query/api/app.py) nunca virar "*" enquanto
-# allow_credentials=True (Starlette permite essa combinação silenciosamente
-# se `CORS_ORIGINS=*` for setado por engano em produção, autorizando qualquer
-# origem a mandar fetch com cookie). Exigir este header em toda rota que muda
-# estado é uma segunda camada independente dessa config: um POST cross-site
-# "simples" (via <form>, sem preflight) não consegue setar headers
-# arbitrários, então nunca vai ter X-Requested-With — só um fetch/XHR
-# same-origin (ou uma origem já autorizada pelo CORS) consegue.
-_REQUIRED_CSRF_HEADER = "x-requested-with"
-_REQUIRED_CSRF_HEADER_VALUE = "XMLHttpRequest"
-
-
-def _exigir_header_csrf(request: Request) -> None:
-    if request.headers.get(_REQUIRED_CSRF_HEADER, "").lower() != _REQUIRED_CSRF_HEADER_VALUE.lower():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Header {_REQUIRED_CSRF_HEADER}: {_REQUIRED_CSRF_HEADER_VALUE} obrigatório.",
-        )
+# Proteção contra CSRF: cookie SameSite=Lax (ver _set_access_cookie) + a
+# allowlist explícita de CORS_ORIGINS em query/api/app.py (nunca "*" com
+# allow_credentials=True — o app falha ao subir se isso acontecer). Isso já
+# barra um POST cross-site de terceiro mandando o cookie; não há uma segunda
+# camada de header aqui de propósito (mantém o cliente simples).
 
 # Nome do cookie: prefixado com o nome do produto para não colidir com
 # nenhum outro cookie que um domínio futuro compartilhado venha a usar.
@@ -210,12 +195,7 @@ def _clear_access_cookie(response: Response) -> None:
 # POST /auth/registro                                                         #
 # --------------------------------------------------------------------------- #
 
-@router.post(
-    "/registro",
-    response_model=UsuarioPublico,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(_exigir_header_csrf)],
-)
+@router.post("/registro", response_model=UsuarioPublico, status_code=status.HTTP_201_CREATED)
 def registrar(
     body: RegistroRequest,
     store: UsuarioStore = Depends(get_usuario_store),
@@ -241,7 +221,7 @@ _CREDENCIAIS_INVALIDAS = HTTPException(
 )
 
 
-@router.post("/login", response_model=UsuarioPublico, dependencies=[Depends(_exigir_header_csrf)])
+@router.post("/login", response_model=UsuarioPublico)
 def login(
     body: LoginRequest,
     response: Response,
@@ -274,7 +254,7 @@ def login(
 # POST /auth/logout                                                           #
 # --------------------------------------------------------------------------- #
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(_exigir_header_csrf)])
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(response: Response) -> None:
     _clear_access_cookie(response)
 
