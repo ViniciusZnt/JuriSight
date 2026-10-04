@@ -210,21 +210,29 @@ export async function getUsuarioAtual(): Promise<UsuarioPublico> {
 // texto — só a EstruturaArgumentativa revisada e os resultados do /query.     //
 // --------------------------------------------------------------------------- //
 
+/** query/api/conversa_routes.py::VersaoResponse — uma busca dentro de uma
+ *  conversa ("V{numero}" no dropdown de versões). */
+export interface VersaoApi {
+  numero: number;
+  estrutura: EstruturaArgumentativa;
+  has_file: boolean;
+  file_name: string | null;
+  pdf_extraido: boolean | null;
+  aviso: string | null;
+  resultados: ResultCard[] | null;
+  criado_em: string; // ISO datetime
+}
+
 /** query/api/conversa_routes.py::ConversaResponse. */
 export interface ConversaApi {
   id: string;
   titulo: string;
   criado_em: string; // ISO datetime
   atualizado_em: string;
-  estrutura: EstruturaArgumentativa | null;
-  has_file: boolean | null;
-  file_name: string | null;
-  pdf_extraido: boolean | null;
-  aviso: string | null;
-  resultados: ResultCard[] | null;
+  versoes: VersaoApi[];
 }
 
-export interface SnapshotBody {
+export interface NovaVersaoBody {
   estrutura: EstruturaArgumentativa;
   has_file: boolean;
   file_name?: string | null;
@@ -261,13 +269,14 @@ export async function apagarConversa(id: string): Promise<void> {
   await request<void>(`/conversas/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-/** PUT /conversas/{id}/snapshot — grava/substitui o snapshot (chamado após /enrich e após
- *  /query). Cada vez que o usuário refaz a busca na mesma conversa, isto sobrescreve o
- *  snapshot anterior — é assim que "refazer o search na mesma conversa" fica persistido. */
-export async function salvarSnapshotConversa(id: string, snapshot: SnapshotBody): Promise<ConversaApi> {
-  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}/snapshot`, {
-    method: "PUT",
+/** POST /conversas/{id}/versoes — acrescenta uma versão nova (nunca sobrescreve as
+ *  anteriores). Chamado toda vez que POST /query retorna com sucesso — a primeira busca
+ *  vira V1, cada "Refinar consulta" bem-sucedido vira a próxima versão. Devolve a conversa
+ *  inteira (todas as versões), pro dropdown V1/V2/... ficar completo sem outra chamada. */
+export async function adicionarVersaoConversa(id: string, versao: NovaVersaoBody): Promise<ConversaApi> {
+  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}/versoes`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(snapshot),
+    body: JSON.stringify(versao),
   });
 }

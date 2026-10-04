@@ -8,18 +8,21 @@ psycopg puro, sem ORM, conecta/cursora/fecha a cada chamada. Deliberadamente
 sem import de FastAPI/Pydantic — a camada HTTP decide o mapeamento de
 `ConversaNaoEncontradaError` para um HTTPException.
 
-Toda operação (get/rename/delete/set_snapshot) filtra por
+Toda operação (get/rename/delete/add_versao) filtra por
 `id = %s AND usuario_id = %s` — nunca só por `id`. Isso é o que impede um
 usuário autenticado de ler/alterar a conversa de outro só adivinhando um
 UUID: a query simplesmente não encontra a linha (mesmo efeito de um 404),
 em vez de precisar de uma checagem de autorização separada que alguém
 poderia esquecer de chamar.
+
+Cada busca (a original + cada "Refinar consulta") vira uma VERSÃO própria no
+array `versoes`, não sobrescreve a anterior — ver conversations/db.py.
 """
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import psycopg
@@ -28,19 +31,17 @@ from psycopg.types.json import Json
 
 @dataclass(frozen=True)
 class Conversa:
-    """Uma linha de `public.conversas`."""
+    """Uma linha de `public.conversas`. `versoes` vem do Postgres já como
+    lista de dicts (JSONB decodificado pelo psycopg) — cada item tem
+    {numero, estrutura, has_file, file_name, pdf_extraido, aviso, resultados,
+    criado_em}, numerados a partir de 1 na ordem em que foram buscados."""
 
     id: uuid.UUID
     usuario_id: uuid.UUID
     titulo: str
     criado_em: datetime
     atualizado_em: datetime
-    estrutura: dict[str, Any] | None
-    has_file: bool | None
-    file_name: str | None
-    pdf_extraido: bool | None
-    aviso: str | None
-    resultados: list[dict[str, Any]] | None
+    versoes: list[dict[str, Any]]
 
 
 class ConversaNaoEncontradaError(Exception):
@@ -49,10 +50,7 @@ class ConversaNaoEncontradaError(Exception):
     docstring do módulo)."""
 
 
-_SELECT_COLUNAS = (
-    "id, usuario_id, titulo, criado_em, atualizado_em, "
-    "estrutura, has_file, file_name, pdf_extraido, aviso, resultados"
-)
+_SELECT_COLUNAS = "id, usuario_id, titulo, criado_em, atualizado_em, versoes"
 
 _INSERT = f"""
 INSERT INTO public.conversas (usuario_id, titulo)
@@ -72,10 +70,24 @@ WHERE id = %s AND usuario_id = %s
 RETURNING {_SELECT_COLUNAS}
 """
 
-_UPDATE_SNAPSHOT = f"""
+# `jsonb_array_length(versoes) + 1` calcula o número da versão nova a partir
+# do tamanho ATUAL do array, no mesmo UPDATE — atômico (o lock de linha do
+# Postgres no UPDATE evita a corrida de ler o tamanho numa query separada e
+# escrever depois, que duas buscas simultâneas na mesma conversa poderiam
+# atropelar). `versoes || jsonb_build_object(...)` acrescenta ao array em vez
+# de substituir — é o que torna isto versionamento, não um snapshot único.
+_ADD_VERSAO = f"""
 UPDATE public.conversas SET
-    estrutura = %s, has_file = %s, file_name = %s,
-    pdf_extraido = %s, aviso = %s, resultados = %s,
+    versoes = versoes || jsonb_build_object(
+        'numero', jsonb_array_length(versoes) + 1,
+        'estrutura', %s::jsonb,
+        'has_file', %s::boolean,
+        'file_name', %s::text,
+        'pdf_extraido', %s::boolean,
+        'aviso', %s::text,
+        'resultados', %s::jsonb,
+        'criado_em', %s::text
+    ),
     atualizado_em = NOW()
 WHERE id = %s AND usuario_id = %s
 RETURNING {_SELECT_COLUNAS}
@@ -93,12 +105,7 @@ def _row_para_conversa(row) -> Conversa:
         titulo=row[2],
         criado_em=row[3],
         atualizado_em=row[4],
-        estrutura=row[5],
-        has_file=row[6],
-        file_name=row[7],
-        pdf_extraido=row[8],
-        aviso=row[9],
-        resultados=row[10],
+        versoes=row[5] or [],
     )
 
 
@@ -111,8 +118,8 @@ class ConversaStore:
         self.database_url = database_url
 
     def create(self, usuario_id: uuid.UUID, titulo: str) -> Conversa:
-        """Cria uma conversa nova, sem snapshot ainda (criada ao clicar em
-        "Nova pesquisa", antes mesmo do primeiro /enrich)."""
+        """Cria uma conversa nova, sem nenhuma versão ainda (criada ao
+        clicar em "Nova pesquisa", antes mesmo do primeiro /enrich)."""
         conn = psycopg.connect(self.database_url)
         try:
             with conn.cursor() as cur:
@@ -147,7 +154,7 @@ class ConversaStore:
             raise ConversaNaoEncontradaError(conversa_id)
         return _row_para_conversa(row)
 
-    def set_snapshot(
+    def add_versao(
         self,
         conversa_id: uuid.UUID,
         usuario_id: uuid.UUID,
@@ -159,22 +166,24 @@ class ConversaStore:
         aviso: str | None,
         resultados: list[dict[str, Any]] | None,
     ) -> Conversa:
-        """Grava/substitui o snapshot de uma conversa — chamado após /enrich
-        (resultados=None, nova consulta invalida os anteriores) e de novo
-        após /query (resultados preenchido). Cada vez que o usuário refaz a
-        busca na mesma conversa, isto sobrescreve o snapshot anterior."""
+        """Acrescenta uma nova versão ao array `versoes` — chamado após
+        /enrich (resultados=None, é uma busca nova começando) e de novo após
+        /query (resultados preenchido, mesma versão sendo completada). Cada
+        "Refinar consulta" bem-sucedida gera uma versão nova (V2, V3, ...),
+        nunca sobrescreve a anterior."""
         conn = psycopg.connect(self.database_url)
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    _UPDATE_SNAPSHOT,
+                    _ADD_VERSAO,
                     (
                         Json(estrutura),
                         has_file,
                         file_name,
                         pdf_extraido,
                         aviso,
-                        Json(resultados) if resultados is not None else None,
+                        Json(resultados),
+                        datetime.now(timezone.utc).isoformat(),
                         conversa_id,
                         usuario_id,
                     ),

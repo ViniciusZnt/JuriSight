@@ -52,7 +52,7 @@ interface Fa02State {
  *  enquanto o backend resume o documento em blocos. */
 export function HomePage() {
   const router = useRouter();
-  const { create, setSnapshot } = useConversations();
+  const { create } = useConversations();
   const { setEnrichResult } = useSearchSession();
   const searchInputRef = useRef<SearchInputHandle>(null);
   const [loading, setLoading] = useState(false);
@@ -60,11 +60,22 @@ export function HomePage() {
   const [fa02, setFa02] = useState<Fa02State | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // snapshot vai junto na criação da conversa — é o que a sidebar usa pra reabrir direto na
-  // Revisão (com o contexto já preenchido) em vez de largar o usuário numa tela em branco.
+  // A conversa é criada aqui (sem versão ainda — isso só acontece no 1º POST /query bem
+  // sucedido, ver entity-review-page.tsx::buscar) pra já existir um activeId quando o
+  // usuário chegar na Revisão. `snapshot`, quando passado, corrige a sessão antes de navegar
+  // (caso da FA02 "continuar sem o PDF" — setEnrichResult já rodou com hasFile=true, da
+  // tentativa de upload, e precisa ser corrigido pra hasFile=false).
   const goToRevisao = async (query: string, hasFile: boolean, snapshot?: ConversationSnapshot) => {
-    const id = await create(query || "Nova pesquisa");
-    if (snapshot) await setSnapshot(id, snapshot);
+    if (snapshot) {
+      setEnrichResult({
+        estrutura: snapshot.estrutura,
+        hasFile: snapshot.hasFile,
+        fileName: snapshot.fileName,
+        pdfExtraido: snapshot.pdfExtraido,
+        aviso: snapshot.aviso,
+      });
+    }
+    await create(query || "Nova pesquisa");
     router.push(hasFile ? "/revisao" : "/revisao?modo=manual");
   };
 
@@ -84,15 +95,6 @@ export function HomePage() {
         pdfExtraido: res.pdf_extraido,
         aviso: res.aviso,
       });
-      const snapshot: ConversationSnapshot = {
-        estrutura: res.estrutura,
-        hasFile,
-        fileName,
-        pdfExtraido: res.pdf_extraido,
-        aviso: res.aviso,
-        resultados: null,
-      };
-
       if (res.pdf_extraido === false) {
         // FA02: o backend já seguiu como FA01 (a estrutura acima veio só da intenção digitada,
         // se houver) — "Continuar sem o PDF" só precisa navegar, sem chamar /enrich de novo.
@@ -100,12 +102,19 @@ export function HomePage() {
           fileName: fileName ?? "arquivo enviado",
           message: res.aviso ?? "Não foi possível extrair texto do PDF enviado.",
           query,
-          snapshot,
+          snapshot: {
+            estrutura: res.estrutura,
+            hasFile,
+            fileName,
+            pdfExtraido: res.pdf_extraido,
+            aviso: res.aviso,
+            resultados: null,
+          },
         });
         return;
       }
 
-      await goToRevisao(query, hasFile, snapshot);
+      await goToRevisao(query, hasFile);
     } catch (err) {
       console.error("Falha em /enrich:", err);
       setError(

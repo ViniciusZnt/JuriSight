@@ -8,6 +8,10 @@ exige sessão (`Depends(get_current_user)`) e toda operação de leitura/escrita
 é escopada ao usuário autenticado — `ConversaStore` já filtra por
 `usuario_id` em cada query, então um usuário nunca consegue ler/alterar a
 conversa de outro.
+
+Cada busca bem-sucedida (a original + cada "Refinar consulta") vira uma
+VERSÃO própria (`POST /conversas/{id}/versoes` acrescenta, nunca sobrescreve)
+— é o que dá o histórico V1/V2/V3 navegável no frontend.
 """
 from __future__ import annotations
 
@@ -34,17 +38,25 @@ def get_conversa_store(request: Request) -> ConversaStore:
 # Modelos Pydantic                                                             #
 # --------------------------------------------------------------------------- #
 
+class VersaoResponse(BaseModel):
+    """Uma versão de busca dentro de uma conversa — "V{numero}" no frontend."""
+
+    numero: int
+    estrutura: EstruturaArgumentativa
+    has_file: bool
+    file_name: str | None
+    pdf_extraido: bool | None
+    aviso: str | None
+    resultados: list[ResultCard] | None
+    criado_em: str
+
+
 class ConversaResponse(BaseModel):
     id: str
     titulo: str
     criado_em: str
     atualizado_em: str
-    estrutura: EstruturaArgumentativa | None
-    has_file: bool | None
-    file_name: str | None
-    pdf_extraido: bool | None
-    aviso: str | None
-    resultados: list[ResultCard] | None
+    versoes: list[VersaoResponse]
 
     @classmethod
     def de_conversa(cls, c: Conversa) -> "ConversaResponse":
@@ -53,12 +65,7 @@ class ConversaResponse(BaseModel):
             titulo=c.titulo,
             criado_em=c.criado_em.isoformat(),
             atualizado_em=c.atualizado_em.isoformat(),
-            estrutura=c.estrutura,
-            has_file=c.has_file,
-            file_name=c.file_name,
-            pdf_extraido=c.pdf_extraido,
-            aviso=c.aviso,
-            resultados=c.resultados,
+            versoes=[VersaoResponse(**v) for v in c.versoes],
         )
 
 
@@ -70,7 +77,7 @@ class RenomearConversaRequest(BaseModel):
     titulo: str = Field(min_length=1, max_length=255)
 
 
-class SnapshotRequest(BaseModel):
+class NovaVersaoRequest(BaseModel):
     estrutura: EstruturaArgumentativa
     has_file: bool
     file_name: str | None = None
@@ -120,15 +127,19 @@ def renomear(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
 
 
-@router.put("/{conversa_id}/snapshot", response_model=ConversaResponse)
-def salvar_snapshot(
+@router.post("/{conversa_id}/versoes", response_model=ConversaResponse, status_code=status.HTTP_201_CREATED)
+def adicionar_versao(
     conversa_id: str,
-    body: SnapshotRequest,
+    body: NovaVersaoRequest,
     usuario: Usuario = Depends(get_current_user),
     store: ConversaStore = Depends(get_conversa_store),
 ) -> ConversaResponse:
+    """Acrescenta uma versão nova ao array `versoes` — nunca sobrescreve as
+    anteriores (ver conversations/store.py::add_versao). Devolve a conversa
+    inteira (todas as versões) pra o frontend já ter o dropdown V1/V2/...
+    completo sem precisar de outra chamada."""
     try:
-        conversa = store.set_snapshot(
+        conversa = store.add_versao(
             _parse_id(conversa_id),
             usuario.id,
             estrutura=body.estrutura.model_dump(mode="json"),

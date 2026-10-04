@@ -351,8 +351,8 @@ export function EntityReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const manualParam = searchParams.get("modo") === "manual";
-  const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, setEstrutura: persistEstrutura, setResultados } = useSearchSession();
-  const { activeId, setSnapshot } = useConversations();
+  const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, setEstrutura: persistEstrutura, loadVersion } = useSearchSession();
+  const { activeId, addVersion } = useConversations();
 
   // Sem estrutura na sessão (ex.: acesso direto à URL) cai no mesmo modo manual do UC02.
   const manual = manualParam || sessionEstrutura === null;
@@ -373,10 +373,14 @@ export function EntityReviewPage() {
     try {
       const resultados = await queryJurisprudencia({ estrutura: data, ordenar_por: "relevancia" });
       persistEstrutura(data);
-      setResultados(resultados);
-      if (activeId) {
-        await setSnapshot(activeId, { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados });
-      }
+      const snapshot = { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados };
+      // Cada busca bem-sucedida vira uma versão NOVA (V1 na 1ª vez, V2 ao "Refinar
+      // consulta" e buscar de novo, ...) — nunca sobrescreve a anterior, é o que dá o
+      // histórico navegável no dropdown de versões da página de Resultados.
+      const versao = activeId
+        ? await addVersion(activeId, snapshot)
+        : { numero: 1, ...snapshot, createdAt: Date.now() }; // acesso direto à URL, sem conversa — só exibe, não persiste
+      loadVersion(versao);
       router.push("/resultados");
     } catch (err) {
       console.error("Falha em /query:", err);

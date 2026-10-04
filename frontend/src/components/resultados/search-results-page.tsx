@@ -35,6 +35,7 @@ import {
   TIPO_DOCUMENTO_LABEL,
 } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
+import { useConversations } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 
 /** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
@@ -120,7 +121,8 @@ function DropdownOption({ label, active, onClick }: { label: string; active: boo
  *  de provimento/data e ordenação operam sobre o mesmo lote já recebido. */
 export function SearchResultsPage() {
   const router = useRouter();
-  const { resultados, estrutura } = useSearchSession();
+  const { resultados, estrutura, versionNumero, loadVersion } = useSearchSession();
+  const { conversations, activeId } = useConversations();
   const { isSaved, toggle } = useSaved();
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
@@ -134,6 +136,11 @@ export function SearchResultsPage() {
   }, [resultados, router]);
 
   const results = useMemo(() => resultados ?? [], [resultados]);
+
+  // Versões da conversa ativa (V1, V2, ... — cada "Refinar consulta" bem-sucedido cria
+  // uma): já vêm todas carregadas junto com a lista de conversas, trocar de versão aqui é
+  // só um swap local (loadVersion), sem chamar a API de novo.
+  const versoes = conversations.find((c) => c.id === activeId)?.versions ?? [];
 
   const maxScore = useMemo(() => results.reduce((max, r) => Math.max(max, r.score_rrf), 0), [results]);
 
@@ -260,8 +267,29 @@ export function SearchResultsPage() {
           </div>
         </div>
 
-        {/* Refine query */}
-        <div className="w-full max-w-[800px] flex justify-end mb-3">
+        {/* Versões (V1/V2/...) e refinar consulta */}
+        <div className="w-full max-w-[800px] flex items-center justify-between gap-3 mb-3">
+          {versoes.length > 1 ? (
+            <DropdownPill label={`Versão V${versionNumero ?? versoes[versoes.length - 1].numero}`} active={false}>
+              {(close) => (
+                <>
+                  {[...versoes].reverse().map((v) => (
+                    <DropdownOption
+                      key={v.numero}
+                      label={`V${v.numero}${v.numero === versoes.length ? " (mais recente)" : ""}`}
+                      active={v.numero === versionNumero}
+                      onClick={() => {
+                        loadVersion(v);
+                        close();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            </DropdownPill>
+          ) : (
+            <span />
+          )}
           <button
             onClick={() => router.push("/revisao")}
             className="flex items-center gap-1.5 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"

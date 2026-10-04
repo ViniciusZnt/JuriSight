@@ -9,7 +9,7 @@ function daysAgo(n: number): number {
 }
 
 function conv(id: string, createdAt: number): Conversation {
-  return { id, title: `Consulta ${id}`, createdAt };
+  return { id, title: `Consulta ${id}`, createdAt, versions: [] };
 }
 
 describe("groupByRecency", () => {

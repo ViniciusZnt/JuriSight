@@ -23,7 +23,7 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const { conversations, activeId, rename, remove, setActive } = useConversations();
-  const { loadSnapshot } = useSearchSession();
+  const { loadVersion } = useSearchSession();
   const { logout } = useAuth();
   const { profile } = useProfile();
 
@@ -50,18 +50,20 @@ export function Sidebar() {
   const abrir = (id: string) => {
     setActive(id);
     const conv = conversations.find((c) => c.id === id);
-    const snapshot = conv?.snapshot;
-    if (!snapshot) {
-      // Conversa sem snapshot salvo (ex.: criada antes desta funcionalidade) — não há o que
-      // restaurar, então não faz sentido largar o usuário numa Revisão/Resultados vazios.
+    // Reabre na versão mais recente (a sidebar não distingue versão — o dropdown V1/V2/...
+    // na página de Resultados é que permite navegar pras anteriores depois de aberta).
+    const ultimaVersao = conv?.versions[conv.versions.length - 1];
+    if (!ultimaVersao) {
+      // Conversa ainda sem nenhuma busca completada (ex.: abandonada na Revisão antes de
+      // clicar em "Buscar") — não há o que restaurar.
       router.push("/");
       return;
     }
-    loadSnapshot(snapshot);
-    if (snapshot.resultados) {
+    loadVersion(ultimaVersao);
+    if (ultimaVersao.resultados) {
       router.push("/resultados");
     } else {
-      router.push(snapshot.hasFile ? "/revisao" : "/revisao?modo=manual");
+      router.push(ultimaVersao.hasFile ? "/revisao" : "/revisao?modo=manual");
     }
   };
   const startRename = (id: string, title: string) => {
