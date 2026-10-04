@@ -447,6 +447,9 @@ Ver `auth/SCHEMA.md` para o que já foi propositalmente deixado de fora do schem
   `public.conversas`, ver `conversations/db.py`) é só a EstruturaArgumentativa
   já revisada e os resultados do `/query` — dado derivado/estruturado, não o
   documento em si — pra manter o histórico de busca disponível entre sessões.
+  Cada busca bem-sucedida numa conversa (a original + cada "Refinar consulta")
+  vira uma versão própria no array `versoes` (V1, V2, ... — dropdown navegável
+  na página de Resultados), nenhuma sobrescreve as anteriores.
 - Conformidade com LGPD
 - Delay adaptativo entre requisições (mínimo 2s, aumenta automaticamente em caso de erro)
 
