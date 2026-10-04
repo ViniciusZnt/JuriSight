@@ -51,6 +51,7 @@ from query.enrichment.schema import EstruturaArgumentativa
 from query.search import categorical_sort
 from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
+from query.search.reranker import Reranker
 from query.search.result_formatter import DocumentoDetalhe, ResultCard, format_results
 from scraper.schema import Provimento
 
@@ -60,9 +61,18 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3
 
 # Top-N final devolvido por /query (RFC: RRF Fusion "retorna os top-20").
 N_RESULTS_FINAL = 20
+# Pool fundido pelo RRF antes do re-ranking (query/search/reranker.py) — maior
+# que N_RESULTS_FINAL de propósito: a prática de 2026 é "funde um pool maior
+# via RRF, depois um cross-encoder reordena esse pool", não só reordenar os
+# mesmos 20 que já seriam devolvidos. 50 (o número usual na literatura) media
+# ~14s nesta infra — o hybrid_search pede 5x isso por canal (ver
+# CANDIDATOS_POR_CANAL em hybrid_search.py), então o pool maior também pesa na
+# BUSCA, não só no re-ranking. 30 é o equilíbrio medido: ~50% de folga sobre
+# os 20 finais, latência total ficando ~2x o baseline sem re-ranking.
+N_CANDIDATOS_PARA_RERANK = 30
 # Pool de candidatos maior quando algum filtro (provimento/período) está ativo —
 # o filtro é aplicado em Python DEPOIS da busca (ver _aplicar_filtros), então um
-# pool maior evita perder recall.
+# pool maior evita perder recall. Já cobre a folga do re-ranking acima.
 N_CANDIDATOS_COM_FILTRO = 80
 
 
@@ -76,6 +86,7 @@ async def lifespan(app: FastAPI):
     app.state.hybrid = HybridSearch(embedder, store, bm25)
     app.state.doc_retriever = DocRetriever(DATABASE_URL)
     app.state.enricher = QueryEnricher()
+    app.state.reranker = Reranker()  # ~150MB, carregado uma vez (ver query/search/reranker.py)
     ensure_schema(DATABASE_URL)  # idempotente — cria auth.usuarios se ainda não existir
     app.state.usuario_store = UsuarioStore(DATABASE_URL)
     ensure_conversas_schema(DATABASE_URL)  # depende de auth.usuarios (FK) — roda depois
@@ -121,6 +132,10 @@ def get_doc_retriever(request: Request) -> DocRetriever:
 
 def get_enricher(request: Request) -> QueryEnricher:
     return request.app.state.enricher
+
+
+def get_reranker(request: Request) -> Reranker:
+    return request.app.state.reranker
 
 
 # --------------------------------------------------------------------------- #
@@ -218,11 +233,35 @@ def _aplicar_filtros(
     return [t for t in triplos if ok(t[1])]
 
 
+def _normalizar_scores(scores: list[float]) -> list[float]:
+    """Min-max normaliza os scores do re-ranking pro intervalo [0, 1].
+
+    Por quê: o cross-encoder (query/search/reranker.py) devolve scores muito
+    comprimidos pra esse domínio (ex.: 0.97–0.999 — ver o módulo) — ótimo pra
+    REORDENAR (é só a ordem relativa que importa), péssimo pro "% de
+    relevância" exibido no frontend, que já divide pelo score máximo do lote
+    (relevancePercent): sem normalizar, todo resultado apareceria como
+    "~99% relevante". Esticar pro intervalo [0, 1] aqui resolve os dois usos
+    com a MESMA métrica, sem precisar de um campo novo no ResultCard.
+
+    Input:  scores — um por candidato, em qualquer ordem.
+    Returns: mesma lista, normalizada; todos 1.0 se não houver variação
+    (evita divisão por zero quando só 1 candidato, ou scores empatados).
+    """
+    if not scores:
+        return []
+    lo, hi = min(scores), max(scores)
+    if hi == lo:
+        return [1.0] * len(scores)
+    return [(s - lo) / (hi - lo) for s in scores]
+
+
 @app.post("/query", response_model=list[ResultCard], dependencies=[Depends(get_current_user)])
 async def query(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
     retriever: DocRetriever = Depends(get_doc_retriever),
+    reranker: Reranker = Depends(get_reranker),
 ) -> list[ResultCard]:
     try:
         bm25_query = query_builder.build_bm25_query(body.estrutura)
@@ -231,7 +270,7 @@ async def query(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     tem_filtro = body.provimento is not None or body.data_inicio is not None or body.data_fim is not None
-    n_candidatos = N_CANDIDATOS_COM_FILTRO if tem_filtro else N_RESULTS_FINAL
+    n_candidatos = N_CANDIDATOS_COM_FILTRO if tem_filtro else N_CANDIDATOS_PARA_RERANK
 
     rankings = await run_in_threadpool(hybrid.search, frase_tese, n_candidatos, bm25_query=bm25_query)
     docs = await run_in_threadpool(retriever.fetch, [doc_id for doc_id, _ in rankings])
@@ -239,6 +278,24 @@ async def query(
     triplos = [(doc_id, docs[doc_id], score) for doc_id, score in rankings if doc_id in docs]
     if tem_filtro:
         triplos = _aplicar_filtros(triplos, body.provimento, body.data_inicio, body.data_fim)
+
+    # Re-ranking: o RRF funde bem os RANKS de cada canal, mas não lê o
+    # conteúdo — um cross-encoder pontua tese+ementa juntas e reordena por
+    # relevância de verdade (ver query/search/reranker.py). Substitui o
+    # score_rrf pelo score do re-ranking (normalizado) ANTES do corte final —
+    # é o que faz o corte escolher os top-20 certos, não só reordenar os 20
+    # que já seriam devolvidos de qualquer forma.
+    if triplos:
+        scores_rerank = await run_in_threadpool(
+            reranker.rerank_scores, frase_tese, [doc.ementa for _, doc, _ in triplos]
+        )
+        scores_normalizados = _normalizar_scores(scores_rerank)
+        triplos = [
+            (doc_id, doc, score_norm)
+            for (doc_id, doc, _), score_norm in zip(triplos, scores_normalizados)
+        ]
+        triplos.sort(key=lambda t: t[2], reverse=True)
+
     triplos = triplos[:N_RESULTS_FINAL]
 
     ordenados = categorical_sort.ordenar(triplos, body.ordenar_por)

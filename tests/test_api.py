@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 
 import query.api.app as api_app
 from auth.store import Usuario
-from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid
+from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid, get_reranker
 from query.api.auth_routes import get_usuario_store
 from query.enrichment.pdf_extractor import PDFSemTextoError
 from query.enrichment.query_enrichment import _montar_conteudo
@@ -47,6 +47,16 @@ class _FakeHybrid:
     def search(self, query, n_results, where=None, *, bm25_query=None):
         self.calls.append({"query": query, "n_results": n_results, "bm25_query": bm25_query})
         return self._resultados[:n_results]
+
+
+class _FakeReranker:
+    """Passthrough: devolve scores estritamente decrescentes na MESMA ordem de
+    entrada, então o sort por score em query/api/app.py não muda a ordem que
+    já veio do (fake) RRF — os testes abaixo continuam testando a lógica de
+    filtro/hierarquia/paginação sem precisar saber de re-ranking."""
+
+    def rerank_scores(self, query: str, passagens: list[str]) -> list[float]:
+        return [1.0 - i * 0.01 for i in range(len(passagens))]
 
 
 class _FakeDocRetriever:
@@ -101,6 +111,16 @@ def _usuario_autenticado():
     app.dependency_overrides[get_current_user] = lambda: _USUARIO_FAKE
     yield
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reranker_passthrough():
+    """O reranker real (query/search/reranker.py) baixa/carrega um modelo ONNX
+    — nunca deve rodar em teste. Os testes de /query abaixo testam filtro/
+    hierarquia/paginação, não a qualidade do re-ranking em si (isso é
+    tests/test_reranker.py)."""
+    app.dependency_overrides[get_reranker] = lambda: _FakeReranker()
+    yield
 
 
 # --------------------------------------------------------------------------- #
@@ -231,6 +251,23 @@ def test_enrich_pdf_corrompido_400(client):
 
 
 # --------------------------------------------------------------------------- #
+# _normalizar_scores (helper do re-ranking)                                   #
+# --------------------------------------------------------------------------- #
+
+def test_normalizar_scores_espalha_entre_0_e_1():
+    assert api_app._normalizar_scores([0.97, 0.98, 0.999]) == [0.0, pytest.approx((0.98 - 0.97) / (0.999 - 0.97)), 1.0]
+
+
+def test_normalizar_scores_vazio():
+    assert api_app._normalizar_scores([]) == []
+
+
+def test_normalizar_scores_sem_variacao_nao_divide_por_zero():
+    assert api_app._normalizar_scores([0.5]) == [1.0]
+    assert api_app._normalizar_scores([0.5, 0.5, 0.5]) == [1.0, 1.0, 1.0]
+
+
+# --------------------------------------------------------------------------- #
 # POST /query                                                                  #
 # --------------------------------------------------------------------------- #
 
@@ -281,7 +318,10 @@ def test_query_filtro_provimento_reduz_resultados_e_pede_pool_maior(client):
     assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_COM_FILTRO
 
 
-def test_query_sem_filtro_usa_pool_padrao(client):
+def test_query_sem_filtro_usa_pool_de_rerank(client):
+    """Sem filtro, o pool pedido ao hybrid search é N_CANDIDATOS_PARA_RERANK
+    (maior que N_RESULTS_FINAL) — o re-ranking precisa de mais candidatos que
+    o corte final pra ter o que escolher (ver query/api/app.py::query)."""
     doc = _doc()
     fake_hybrid = _FakeHybrid([("doc-1", 1.0)])
     app.dependency_overrides[get_hybrid] = lambda: fake_hybrid
@@ -289,7 +329,29 @@ def test_query_sem_filtro_usa_pool_padrao(client):
 
     client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
 
-    assert fake_hybrid.calls[0]["n_results"] == api_app.N_RESULTS_FINAL
+    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_PARA_RERANK
+
+
+def test_query_reranking_promove_candidato_mal_rankeado_pelo_rrf(client):
+    """O re-ranking (query/search/reranker.py) reordena por relevância real —
+    um candidato que o RRF rankeou por último pode terminar primeiro, se o
+    cross-encoder achar que ele é o mais relevante pro conteúdo da tese."""
+    mesma_hierarquia = {"a": _doc(), "b": _doc(), "c": _doc()}  # todos ACORDAO (default)
+
+    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid(
+        [("a", 3.0), ("b", 2.0), ("c", 1.0)]  # RRF: a > b > c
+    )
+    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(mesma_hierarquia)
+
+    class _RerankerInverteOrdem:
+        def rerank_scores(self, query, passagens):
+            return list(range(len(passagens)))  # cresce com a posição -> inverte a ordem do RRF
+
+    app.dependency_overrides[get_reranker] = lambda: _RerankerInverteOrdem()
+
+    resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
+
+    assert [card["id"] for card in resp.json()] == ["c", "b", "a"]
 
 
 def test_query_ordenar_por_data(client):
