@@ -281,22 +281,36 @@ async def query(
 
     # Re-ranking: o RRF funde bem os RANKS de cada canal, mas não lê o
     # conteúdo — um cross-encoder pontua tese+ementa juntas e reordena por
-    # relevância de verdade (ver query/search/reranker.py). Substitui o
-    # score_rrf pelo score do re-ranking (normalizado) ANTES do corte final —
-    # é o que faz o corte escolher os top-20 certos, não só reordenar os 20
-    # que já seriam devolvidos de qualquer forma.
+    # relevância de verdade (ver query/search/reranker.py). Ordena pelo score
+    # BRUTO do cross-encoder (reordenar por score bruto ou normalizado dá a
+    # MESMA ordem — min-max é uma transformação monótona — então normalizar
+    # antes não muda quem entra no corte, só a escala).
     if triplos:
         scores_rerank = await run_in_threadpool(
             reranker.rerank_scores, frase_tese, [doc.ementa for _, doc, _ in triplos]
         )
-        scores_normalizados = _normalizar_scores(scores_rerank)
         triplos = [
-            (doc_id, doc, score_norm)
-            for (doc_id, doc, _), score_norm in zip(triplos, scores_normalizados)
+            (doc_id, doc, score_bruto)
+            for (doc_id, doc, _), score_bruto in zip(triplos, scores_rerank)
         ]
         triplos.sort(key=lambda t: t[2], reverse=True)
 
     triplos = triplos[:N_RESULTS_FINAL]
+
+    # Normaliza DEPOIS do corte — só sobre os 20 exibidos, não o pool de 30.
+    # Por quê: o cross-encoder devolve scores comprimidos nesse domínio (ex.:
+    # 0.997-0.999); normalizar ANTES do corte usava os candidatos descartados
+    # (os piores do pool) para ancorar o "0%", deixando os top-20 — que são os
+    # melhores, logo os mais parecidos entre si — todos espremidos perto de
+    # 100% (o bug visto em produção: toda carta mostrando "100% relevante").
+    # Normalizar só os 20 exibidos espalha o score pelo intervalo completo
+    # 0-100% de novo, sem mudar a ordem (a mesma transformação monótona).
+    if triplos:
+        scores_normalizados = _normalizar_scores([t[2] for t in triplos])
+        triplos = [
+            (doc_id, doc, score_norm)
+            for (doc_id, doc, _), score_norm in zip(triplos, scores_normalizados)
+        ]
 
     ordenados = categorical_sort.ordenar(triplos, body.ordenar_por)
     return format_results(ordenados)
