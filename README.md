@@ -30,9 +30,10 @@ Portal TST (Falcão)
     → [PostgreSQL]              ← source of truth
     → [SAC Chunking]
     → [Poly-Vector Embeddings]  ← OpenAI text-embedding-3-small (1536d)
-    → [Qdrant]                  ← busca semântica (vetores/HNSW em disco)
-    → [BM25 Index]              ← busca lexical
-    → [FastAPI + RRF]           ← fusão dos rankings
+    → [Qdrant]                  ← busca semântica (vetores em disco, HNSW em RAM)
+    → [BM25 Index]              ← busca lexical (bm25s, mmap)
+    → [FastAPI + RRF]           ← fusão dos rankings (pool de 30 candidatos)
+    → [Cross-Encoder Rerank]    ← reordena por relevância real (FlashRank, ONNX)
     → [Sort Categórico]         ← hierarquia jurídica
     → [Next.js]
 ```
@@ -354,6 +355,7 @@ uv run pytest
 | Ollama / Llama 3.2 3B | Query enrichment local + sumarização de PDFs longos |
 | OpenAI text-embedding-3-small | Embeddings (1536d)              |
 | bm25s              | Busca lexical — índice BM25 (matriz esparsa, mmap) |
+| FlashRank          | Re-ranking pós-RRF — cross-encoder ONNX (sem PyTorch), multilíngue |
 | pdfplumber         | Extração de texto do PDF do usuário         |
 | FastAPI / Uvicorn  | Backend — API REST, fusão RRF dos rankings  |
 | Next.js / React    | Interface do usuário                        |
@@ -399,6 +401,21 @@ lentas — o Qdrant ficava competindo com o swap pela banda de disco, daí os
 (`indexing/lexical/bm25_builder.py`) — fica em disco, paginado sob demanda,
 igual ao Qdrant já fazia com os vetores. RAM do processo do backend: de ~7.4GB
 para ~300MB.
+
+**Re-ranking pós-RRF (2026-10-04).** RRF funde bem o RANK de cada canal
+(Qdrant completo, Qdrant ementa, BM25), mas não lê o conteúdo — só a posição
+relativa. `query/search/reranker.py` adiciona um cross-encoder (FlashRank,
+`ms-marco-MultiBERT-L-12`, ONNX — sem PyTorch/Transformers de propósito, pra
+não pesar a RAM que o BM25 acabou de liberar) que pontua tese+ementa juntas e
+reordena o pool do RRF antes do corte final. Dois problemas de performance
+reais até ficar aceitável: (1) mandar todas as passagens num só
+`RerankRequest` tinha custo super-linear (~49s pra 50) — uma chamada por
+passagem, paralelizada em 8 threads, caiu pra ~5s; (2) uma única ementa-outlier
+(a base tem casos >60 mil caracteres) travava o lote inteiro — corrigido
+truncando a 1200 chars antes de reranquear. `N_CANDIDATOS_PARA_RERANK = 30`
+(não os 50 "de livro-texto"): a busca híbrida pede 5x esse número por canal,
+então o pool também pesa na busca, não só no re-ranking — 30 é o equilíbrio
+que manteve o re-ranking em si consistente (~2s) sem inflar demais a busca.
 
 ---
 
