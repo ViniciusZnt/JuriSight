@@ -62,9 +62,9 @@ export function HomePage() {
 
   // snapshot vai junto na criação da conversa — é o que a sidebar usa pra reabrir direto na
   // Revisão (com o contexto já preenchido) em vez de largar o usuário numa tela em branco.
-  const goToRevisao = (query: string, hasFile: boolean, snapshot?: ConversationSnapshot) => {
-    const id = create(query || "Nova pesquisa");
-    if (snapshot) setSnapshot(id, snapshot);
+  const goToRevisao = async (query: string, hasFile: boolean, snapshot?: ConversationSnapshot) => {
+    const id = await create(query || "Nova pesquisa");
+    if (snapshot) await setSnapshot(id, snapshot);
     router.push(hasFile ? "/revisao" : "/revisao?modo=manual");
   };
 
@@ -105,7 +105,7 @@ export function HomePage() {
         return;
       }
 
-      goToRevisao(query, hasFile, snapshot);
+      await goToRevisao(query, hasFile, snapshot);
     } catch (err) {
       console.error("Falha em /enrich:", err);
       setError(
@@ -217,7 +217,7 @@ export function HomePage() {
                 setFa02(null);
                 // A estrutura já veio só da intenção (RN05/FA01) — o snapshot reflete isso,
                 // mesmo tendo havido uma tentativa de upload.
-                goToRevisao(query, false, { ...snapshot, hasFile: false, fileName: null });
+                void goToRevisao(query, false, { ...snapshot, hasFile: false, fileName: null });
               }}
               onDismiss={() => setFa02(null)}
             />

@@ -47,6 +47,9 @@ para indexar todo o corpus; por consulta, o custo é desprezível.
 
 ```
 jurisight/
+├── auth/                    ← autenticação real (hash de senha, JWT, acesso a auth.usuarios)
+├── conversations/           ← histórico de busca persistido (public.conversas, ver §Conformidade)
+│
 ├── scraper/
 │   ├── run.py              ← ponto de entrada da coleta
 │   ├── api.py              ← cliente HTTP (requests.Session)
@@ -69,7 +72,7 @@ jurisight/
 ├── query/
 │   ├── enrichment/          ← PDF Extractor, Query Enrichment (LLM), Query Builder
 │   ├── search/              ← Hybrid Search (RRF), Doc Retriever, Categorical Sort, Result Formatter
-│   └── api/                 ← FastAPI: POST /enrich, POST /query, GET /document/{id}, GET /health
+│   └── api/                 ← FastAPI: /enrich, /query, /document/{id}, /health, /auth/*, /conversas
 │
 ├── frontend/                ← interface Next.js (App Router)
 │   ├── src/
@@ -320,7 +323,8 @@ uv run pytest
 | `scraper`/`processing`/`indexing` | Parsing HTML, chunking SAC, embeddings (OpenAI mockado), BM25 |
 | `query/enrichment` | PDF Extractor (pdfplumber mockado), Query Enrichment (Ollama mockado, RN05), Query Builder |
 | `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), Categorical Sort, Result Formatter |
-| `query/api` | Os 4 endpoints via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
+| `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
+| `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
 
 > Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
 > clientes externos são substituídos por fakes injetados. Um smoke test manual de
@@ -421,7 +425,11 @@ Ver `auth/SCHEMA.md` para o que já foi propositalmente deixado de fora do schem
 ## Conformidade
 
 - Dados 100% públicos do portal TST
-- Documentos privados processados apenas em memória
+- Documentos privados (PDF enviado pelo usuário) processados apenas em
+  memória — nunca tocam disco nem banco. O que É persistido (Postgres,
+  `public.conversas`, ver `conversations/db.py`) é só a EstruturaArgumentativa
+  já revisada e os resultados do `/query` — dado derivado/estruturado, não o
+  documento em si — pra manter o histórico de busca disponível entre sessões.
 - Conformidade com LGPD
 - Delay adaptativo entre requisições (mínimo 2s, aumenta automaticamente em caso de erro)
 

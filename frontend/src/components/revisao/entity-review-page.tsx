@@ -375,7 +375,7 @@ export function EntityReviewPage() {
       persistEstrutura(data);
       setResultados(resultados);
       if (activeId) {
-        setSnapshot(activeId, { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados });
+        await setSnapshot(activeId, { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados });
       }
       router.push("/resultados");
     } catch (err) {

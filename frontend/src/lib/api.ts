@@ -203,3 +203,71 @@ export async function logoutUsuario(): Promise<void> {
 export async function getUsuarioAtual(): Promise<UsuarioPublico> {
   return request<UsuarioPublico>("/auth/me");
 }
+
+// --------------------------------------------------------------------------- //
+// Conversas (query/api/conversa_routes.py) — histórico de busca persistido no  //
+// Postgres, escopado ao usuário da sessão. Nunca inclui o PDF enviado nem seu  //
+// texto — só a EstruturaArgumentativa revisada e os resultados do /query.     //
+// --------------------------------------------------------------------------- //
+
+/** query/api/conversa_routes.py::ConversaResponse. */
+export interface ConversaApi {
+  id: string;
+  titulo: string;
+  criado_em: string; // ISO datetime
+  atualizado_em: string;
+  estrutura: EstruturaArgumentativa | null;
+  has_file: boolean | null;
+  file_name: string | null;
+  pdf_extraido: boolean | null;
+  aviso: string | null;
+  resultados: ResultCard[] | null;
+}
+
+export interface SnapshotBody {
+  estrutura: EstruturaArgumentativa;
+  has_file: boolean;
+  file_name?: string | null;
+  pdf_extraido?: boolean | null;
+  aviso?: string | null;
+  resultados?: ResultCard[] | null;
+}
+
+/** GET /conversas — todas as conversas do usuário da sessão, mais recente primeiro. */
+export async function listarConversas(): Promise<ConversaApi[]> {
+  return request<ConversaApi[]>("/conversas");
+}
+
+/** POST /conversas — cria uma conversa nova, ainda sem snapshot. */
+export async function criarConversa(titulo: string): Promise<ConversaApi> {
+  return request<ConversaApi>("/conversas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ titulo }),
+  });
+}
+
+/** PATCH /conversas/{id} — renomeia. */
+export async function renomearConversa(id: string, titulo: string): Promise<ConversaApi> {
+  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ titulo }),
+  });
+}
+
+/** DELETE /conversas/{id}. */
+export async function apagarConversa(id: string): Promise<void> {
+  await request<void>(`/conversas/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** PUT /conversas/{id}/snapshot — grava/substitui o snapshot (chamado após /enrich e após
+ *  /query). Cada vez que o usuário refaz a busca na mesma conversa, isto sobrescreve o
+ *  snapshot anterior — é assim que "refazer o search na mesma conversa" fica persistido. */
+export async function salvarSnapshotConversa(id: string, snapshot: SnapshotBody): Promise<ConversaApi> {
+  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}/snapshot`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(snapshot),
+  });
+}

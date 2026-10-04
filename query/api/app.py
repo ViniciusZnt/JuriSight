@@ -37,11 +37,14 @@ from starlette.concurrency import run_in_threadpool
 
 from auth.db import ensure_schema
 from auth.store import UsuarioStore
+from conversations.db import ensure_schema as ensure_conversas_schema
+from conversations.store import ConversaStore
 from indexing.lexical.bm25_builder import BM25Builder
 from indexing.vector_store.qdrant_store import QdrantStore
 from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
+from query.api.conversa_routes import router as conversa_router
 from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
@@ -75,6 +78,8 @@ async def lifespan(app: FastAPI):
     app.state.enricher = QueryEnricher()
     ensure_schema(DATABASE_URL)  # idempotente — cria auth.usuarios se ainda não existir
     app.state.usuario_store = UsuarioStore(DATABASE_URL)
+    ensure_conversas_schema(DATABASE_URL)  # depende de auth.usuarios (FK) — roda depois
+    app.state.conversa_store = ConversaStore(DATABASE_URL)
     yield
 
 
@@ -103,6 +108,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(conversa_router)
 
 
 def get_hybrid(request: Request) -> HybridSearch:
