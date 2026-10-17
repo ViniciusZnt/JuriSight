@@ -280,3 +280,49 @@ export async function adicionarVersaoConversa(id: string, versao: NovaVersaoBody
     body: JSON.stringify(versao),
   });
 }
+
+// --------------------------------------------------------------------------- //
+// Avaliação (query/api/avaliacao_routes.py) — fila de rotulação do harness. As //
+// rotas exigem sessão E e-mail em AVALIACAO_EMAILS (403 "Acesso restrito à     //
+// avaliação." caso contrário). A API nunca envia a nota do Jev.               //
+// --------------------------------------------------------------------------- //
+
+export type StanceAvaliacao = "fortalece" | "enfraquece" | "neutro";
+
+/** query/api/avaliacao_routes.py::DocumentoFila — campos null quando o documento não foi encontrado. */
+export interface DocumentoAvaliacao {
+  id: string;
+  ementa: string | null;
+  fundamentacao_inicio: string | null;
+  link_original: string | null;
+  numero_processo: string | null;
+  tribunal: string | null;
+}
+
+/** query/api/avaliacao_routes.py::ParFila — um par (tese, acórdão) a rotular. */
+export interface ParAvaliacao {
+  id: string;
+  tese: EstruturaArgumentativa;
+  documento: DocumentoAvaliacao;
+}
+
+/** query/api/avaliacao_routes.py::FilaResponse — `par` é null quando a fila acabou. */
+export interface FilaAvaliacao {
+  par: ParAvaliacao | null;
+  feitos: number;
+  total: number;
+}
+
+/** GET /avaliacao/fila — próximo par ainda não rotulado pelo usuário e o progresso. */
+export async function obterFilaAvaliacao(): Promise<FilaAvaliacao> {
+  return request<FilaAvaliacao>("/avaliacao/fila");
+}
+
+/** POST /avaliacao/pares/{id}/rotulo — grava relevância (0-3) e stance; regravar sobrescreve. */
+export async function enviarRotulo(parId: string, relevancia: number, stance: StanceAvaliacao): Promise<void> {
+  await request<void>(`/avaliacao/pares/${encodeURIComponent(parId)}/rotulo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ relevancia, stance }),
+  });
+}
