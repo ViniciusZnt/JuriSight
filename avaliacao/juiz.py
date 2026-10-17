@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Protocol
 
 from typesafe_sdk import Choice, Score, TypeSafeClient, TypeSafeError
@@ -120,8 +120,7 @@ def julgar_lote(
     """Julga os itens em paralelo; devolve quantos deram certo.
 
     Falha do SDK num item é registrada e o item é pulado (o lote segue).
-    `ao_julgar` roda na thread principal, então pode gravar sem lock, e é chamado
-    assim que cada resultado chega (não espera os itens anteriores).
+    `ao_julgar` roda na thread principal, então pode gravar sem lock.
     """
 
     def _um(item):
@@ -134,9 +133,7 @@ def julgar_lote(
 
     ok = 0
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futuros = [pool.submit(_um, item) for item in itens]
-        for futuro in as_completed(futuros):
-            julgamento = futuro.result()
+        for julgamento in pool.map(_um, itens):
             if julgamento is not None:
                 ao_julgar(julgamento)
                 ok += 1
