@@ -8,7 +8,13 @@ from avaliacao.passo_zero import (
     COLUNAS_CSV,
     escolher_docs,
     escrever_csv,
+    confirmar,
+    csv_tem_rotulos,
+    jev_das_rodadas,
     ler_csv,
+    ler_ids_csv,
+    comparar,
+    preparar,
     resumo_comparacao,
 )
 from avaliacao.store import Julgamento
@@ -139,3 +145,53 @@ def test_escolher_docs_ranking_curto_nao_duplica():
     escolhidos = escolher_docs(teses, por_tese=4, seed=3)
     assert all(len(set(e)) == len(e) for e in escolhidos)
     assert escolhidos[0][:2] == ["a0", "a1"]
+
+
+def test_ler_ids_csv_inclui_nao_rotuladas(tmp_path):
+    a, b = uuid.uuid4(), uuid.uuid4()
+    caminho = _csv(tmp_path, [[a, "t", "e", "l", "2", "neutro"], [b, "t", "e", "l", "", ""],
+                              ["lixo", "t", "e", "l", "", ""]])
+    assert ler_ids_csv(caminho) == [a, b]
+
+
+def test_jev_das_rodadas_filtra_pelos_pares_do_csv():
+    no_csv, fora = uuid.uuid4(), uuid.uuid4()
+    jev = [_j(no_csv, "jev:x", 1, 1, "neutro"), _j(no_csv, "jev:x", 2, 1, "neutro"),
+           _j(fora, "jev:x", 1, 3, "fortalece"), _j(fora, "jev:x", 2, 0, "enfraquece")]
+
+    jev1, jev2 = jev_das_rodadas(jev, {no_csv})
+
+    assert [j.par_id for j in jev1] == [no_csv]
+    assert [j.par_id for j in jev2] == [no_csv]
+    r = resumo_comparacao([], jev1, jev2)
+    assert r["n_rodadas"] == 1 and r["concordancia_rodadas"] == 1.0  # o par de fora discorda e não entra
+
+
+def test_csv_tem_rotulos(tmp_path):
+    a = uuid.uuid4()
+    assert not csv_tem_rotulos(tmp_path / "nao_existe.csv")
+    assert not csv_tem_rotulos(_csv(tmp_path, [[a, "t", "e", "l", "", ""]]))
+    assert csv_tem_rotulos(_csv(tmp_path, [[a, "t", "e", "l", "", ""], [a, "t", "e", "l", "1", ""]]))
+
+
+def test_preparar_recusa_sobrescrever_csv_rotulado(tmp_path, capsys):
+    caminho = _csv(tmp_path, [[uuid.uuid4(), "t", "e", "l", "2", "neutro"]])
+    assert preparar(1, 2, True, caminho) == 1
+    assert "rótulo" in capsys.readouterr().err
+
+
+def test_comparar_valida_antes_de_conectar(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("AVALIACAO_EMAILS", raising=False)
+    assert comparar(tmp_path / "nao_existe.csv", "a@b.c") == 2
+    assert "CSV" in capsys.readouterr().err
+    caminho = _csv(tmp_path, [])
+    monkeypatch.setattr("avaliacao.passo_zero._carregar_env", lambda: None)
+    assert comparar(caminho, None) == 2
+    assert "rotulador" in capsys.readouterr().err
+
+
+def test_confirmar_trata_eof_como_cancelado(monkeypatch):
+    def _eof(_):
+        raise EOFError
+    monkeypatch.setattr("builtins.input", _eof)
+    assert confirmar("?") is False

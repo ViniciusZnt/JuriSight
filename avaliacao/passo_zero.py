@@ -133,7 +133,44 @@ def ler_csv(caminho: Path) -> list[tuple[uuid.UUID, int, str]]:
     return lidos
 
 
+def ler_ids_csv(caminho: Path) -> list[uuid.UUID]:
+    """Todos os par_ids válidos do CSV, rotulados ou não."""
+    ids: list[uuid.UUID] = []
+    with open(caminho, encoding="utf-8-sig", newline="") as f:
+        for linha in csv.DictReader(f):
+            try:
+                ids.append(uuid.UUID((linha.get("par_id") or "").strip()))
+            except ValueError:
+                continue
+    return ids
+
+
+def csv_tem_rotulos(caminho: Path) -> bool:
+    """True se o arquivo existe e alguma linha tem relevância ou stance preenchida."""
+    if not Path(caminho).exists():
+        return False
+    with open(caminho, encoding="utf-8-sig", newline="") as f:
+        return any(
+            (l.get("relevancia_alexia") or "").strip() or (l.get("stance_alexia") or "").strip()
+            for l in csv.DictReader(f)
+        )
+
+
 # --- comparação -------------------------------------------------------------
+
+
+def jev_das_rodadas(
+    julgamentos: list[Julgamento], par_ids: set[uuid.UUID]
+) -> tuple[list[Julgamento], list[Julgamento]]:
+    """Separa os julgamentos do Jev em (rodada 1, rodada 2), só dos pares dados.
+
+    Sem o filtro, pares de outras execuções (ex.: a amostra do eval) entrariam
+    na concordância entre rodadas."""
+    dos_pares = [j for j in julgamentos if j.par_id in par_ids]
+    return (
+        [j for j in dos_pares if j.rodada == 1],
+        [j for j in dos_pares if j.rodada == 2],
+    )
 
 
 def resumo_comparacao(
@@ -181,6 +218,20 @@ def resumo_comparacao(
     }
 
 
+def confirmar(pergunta: str) -> bool:
+    """Pergunta s/N; sem terminal interativo (EOF) conta como não."""
+    try:
+        return input(pergunta).strip().lower() == "s"
+    except EOFError:
+        return False
+
+
+def _carregar_env() -> None:
+    from dotenv import load_dotenv
+
+    load_dotenv(CSV_PADRAO.parent.parent.parent / ".env")
+
+
 def _fmt(valor: float | None) -> str:
     return "indefinido" if valor is None else f"{valor:.3f}"
 
@@ -218,6 +269,12 @@ def _uuids_origem(database_url: str, docs) -> dict[str, str]:
 
 
 def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
+    if csv_tem_rotulos(caminho):
+        _aviso(
+            f"{caminho} já tem rótulos preenchidos; recusando sobrescrever. "
+            "Mova ou apague o arquivo se for mesmo recomeçar."
+        )
+        return 1
     tokens = n_teses * por_tese * len(RODADAS) * TOKENS_POR_JULGAMENTO
     print(
         f"Chamadas pagas: OpenAI ({n_teses} teses) e Jev ({n_teses} temas + "
@@ -225,7 +282,7 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
         f"Estimativa Jev: {n_teses * por_tese} pares x {len(RODADAS)} x ~{TOKENS_POR_JULGAMENTO} "
         f"= ~{tokens} tokens"
     )
-    if not sim and input("Continuar? [s/N] ").strip().lower() != "s":
+    if not sim and not confirmar("Continuar? [s/N] "):
         print("Cancelado.")
         return 1
 
@@ -251,6 +308,9 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
     registros: list[dict] = []
     for i, acordao in enumerate(acordaos):
         lado = "favoravel" if i < n_favoravel else "contrario"
+        if acordao.id_documento not in uuids:
+            _aviso(f"Acórdão {acordao.id_documento}: UUID não encontrado em documentos; tese {i + 1} pulada")
+            continue
         try:
             estrutura = gerar_tese(acordao, lado)
             dados = estrutura.model_dump()
@@ -263,7 +323,7 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
             continue
         tese = deps.store.criar_tese(
             dados, "sintetica", tema, splits[tema],
-            documento_origem_id=uuids.get(acordao.id_documento, acordao.id_documento),
+            documento_origem_id=uuids[acordao.id_documento],
         )
         print(f"Tese {i + 1}/{len(acordaos)} ({lado}, tema: {tema}): {len(ranking)} resultados")
         registros.append({"tese": tese, "estrutura": estrutura, "dados": dados, "ranking": ranking})
@@ -305,10 +365,10 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
 
 
 def comparar(caminho: Path, rotulador: str | None) -> int:
-    from avaliacao.contexto import carregar_store
-
-    store = carregar_store()  # também carrega o .env
-
+    if not Path(caminho).exists():
+        _aviso(f"CSV não encontrado: {caminho}. Rode `preparar` primeiro ou passe --csv.")
+        return 2
+    _carregar_env()
     if not rotulador:
         emails = [e.strip() for e in os.getenv("AVALIACAO_EMAILS", "").split(",") if e.strip()]
         if not emails:
@@ -316,10 +376,14 @@ def comparar(caminho: Path, rotulador: str | None) -> int:
             return 2
         rotulador = emails[0]
 
+    from avaliacao.contexto import carregar_store
+
+    store = carregar_store()
+
     jev = store.julgamentos("jev:")
-    jev1 = [j for j in jev if j.rodada == 1]
-    jev2 = [j for j in jev if j.rodada == 2]
     conhecidos = {j.par_id for j in jev}
+    # A concordância entre rodadas usa todos os pares do CSV, rotulados ou não.
+    jev1, jev2 = jev_das_rodadas(jev, set(ler_ids_csv(caminho)))
 
     humanos: list[Julgamento] = []
     for par_id, rel, stance in ler_csv(caminho):
