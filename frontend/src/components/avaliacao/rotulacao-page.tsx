@@ -82,11 +82,12 @@ export function RotulacaoPage() {
       await enviarRotulo(parId, relevancia, stance);
       setRelevancia(null);
       setStance(null);
-      enviandoRef.current = false;
-      setEnviando(false);
+      // Só libera depois que o próximo par chegou: uma tecla entre o POST e a nova fila
+      // não pode deixar seleção para o par seguinte.
       await carregar();
     } catch (e) {
       setErroEnvio(mensagemDe(e));
+    } finally {
       enviandoRef.current = false;
       setEnviando(false);
     }

@@ -141,6 +141,30 @@ describe("RotulacaoPage", () => {
     expect(await screen.findByText("1 de 150")).toBeInTheDocument();
   });
 
+  it("tecla_durante_o_carregamento_do_proximo_par_nao_vaza_a_selecao", async () => {
+    let entregarProximo: (f: FilaAvaliacao) => void = () => {};
+    obterFila
+      .mockResolvedValueOnce(fila("p1"))
+      .mockReturnValueOnce(new Promise<FilaAvaliacao>((r) => (entregarProximo = r)));
+    enviar.mockResolvedValue(undefined);
+    render(<RotulacaoPage />);
+    await screen.findByText("EMENTA do acórdão de teste");
+
+    await userEvent.keyboard("3");
+    await userEvent.keyboard("f");
+    await waitFor(() => expect(enviar).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(obterFila).toHaveBeenCalledTimes(2));
+
+    // o POST terminou, mas o próximo par ainda não chegou
+    await userEvent.keyboard("4");
+    await userEvent.keyboard("n");
+
+    entregarProximo(fila("p2", 1));
+    expect(await screen.findByText("1 de 150")).toBeInTheDocument();
+    expect(enviar).toHaveBeenCalledTimes(1);
+    expect(screen.queryAllByRole("button", { pressed: true })).toHaveLength(0);
+  });
+
   it("link_do_inteiro_teor_abre_em_nova_aba", async () => {
     obterFila.mockResolvedValueOnce(fila("p1"));
     render(<RotulacaoPage />);
