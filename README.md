@@ -50,6 +50,7 @@ para indexar todo o corpus; por consulta, o custo é desprezível.
 jurisight/
 ├── auth/                    ← autenticação real (hash de senha, JWT, acesso a auth.usuarios)
 ├── conversations/           ← histórico de busca persistido (public.conversas, ver §Conformidade)
+├── avaliacao/               ← harness de avaliação da busca (conjunto-ouro, juiz Jev, métricas; ver §Avaliação da busca)
 │
 ├── scraper/
 │   ├── run.py              ← ponto de entrada da coleta
@@ -326,10 +327,105 @@ uv run pytest
 | `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), Categorical Sort, Result Formatter |
 | `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
 | `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
+| `avaliacao` / `/avaliacao/*` | Métricas (nDCG, Recall, kappa), juiz Jev com cliente fake, pooling, amostra estratificada, `construir`/`eval`/passo 0, rotas de rotulação via `TestClient`; o store contra Postgres real só roda com `DATABASE_URL` |
 
 > Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
 > clientes externos são substituídos por fakes injetados. Um smoke test manual de
 > ponta a ponta (com a infra de verdade no ar) é o passo 8 do Quick Start.
+
+---
+
+## Avaliação da busca
+
+Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem
+uma régua: um **conjunto-ouro** de pares (tese × acórdão) com **relevância 0–3** e
+**stance** (fortalece / enfraquece / neutro). A especialista (Alexia) rotula uma
+amostra pequena; o **Jev** (TypeSafe System One) rotula o resto, depois de
+calibrado contra ela. O comando `eval` roda a busca para cada tese e reporta
+**nDCG@10**, **Recall@20**, a fração de "fortalece" entre os relevantes do top-10 e
+a fração de resultados **não julgados** no top-10. Esta etapa só mede, não muda a
+busca. Racional e decisões: [`docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md`](docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md).
+
+Variáveis novas no `.env` (ver `.env.example`):
+
+| Variável            | Padrão          | Descrição |
+|---------------------|-----------------|-----------|
+| `TYPESAFE_API_KEY`  | —               | Chave da TypeSafe (juiz Jev) — **obrigatória** |
+| `TYPESAFE_MODEL`    | `jev-1.13.0`    | Versão do Jev. Fixada de propósito: o alias `jev-latest` muda sozinho e invalidaria a comparação entre execuções |
+| `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas |
+| `AVALIACAO_EMAILS`  | —               | E-mails (separados por vírgula) que podem usar a tela de rotulação |
+| `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (amostra e split dev/teste) |
+
+Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start, passos 5 e 7).
+
+### 1 — Passo 0: o Jev funciona em português?
+
+Antes de construir o conjunto inteiro, testa-se o Jev numa amostra mínima
+(5 teses × 4 acórdãos, julgados duas vezes):
+
+```bash
+uv run python -m avaliacao.passo_zero preparar            # gera data/eval/passo_zero.csv
+# a Alexia preenche as colunas relevancia_alexia (0-3) e stance_alexia no CSV
+uv run python -m avaliacao.passo_zero comparar            # grava os rótulos e mostra os kappas
+```
+
+Flags: `preparar [--teses 5] [--por-tese 4] [--csv ...] [--sim]` e
+`comparar [--csv ...] [--rotulador email]`.
+
+- O CSV não traz a nota do Jev, para não enviesar a Alexia.
+- O `preparar` **recusa sobrescrever** um CSV que já tenha rótulos preenchidos.
+- `--rotulador` usa por padrão o **primeiro e-mail de `AVALIACAO_EMAILS`**. Esse deve
+  ser o mesmo e-mail da conta usada na tela `/avaliacao`: o juiz humano é gravado
+  como `humano:<email>` (minúsculas), e e-mails diferentes viram rotuladores diferentes.
+- Decisão a partir do relatório: seguir, usar o Jev só para relevância, ou trocar o juiz.
+
+### 2 — `construir`: o conjunto-ouro
+
+```bash
+uv run python -m avaliacao.construir [--teses 100] [--rodadas 2] [--sim]
+```
+
+Quatro etapas **idempotentes** (cada uma pula o que já existe, então dá para
+interromper e retomar de onde parou):
+
+1. **teses** — completa até `--teses` (reais das conversas + sintéticas filtradas);
+2. **pool** — une o top-20 de BM25, vetorial e pipeline completo para cada tese;
+3. **julgamento** — o Jev julga os pares ainda sem julgamento, nas rodadas `1..--rodadas`;
+4. **amostra** — escolhe os pares que a Alexia vai rotular (75 sorteados + 75 de menor confiança).
+
+As etapas pagas (teses sintéticas na OpenAI e julgamento no Jev) mostram a
+estimativa e **pedem confirmação**; `--sim` pula. Ordem de grandeza: ~1.300 tokens
+do Jev por chamada e ~40 pares por tese x rodadas (100 teses x 40 pares x 2
+rodadas = ~8.000 chamadas, ~10 milhões de tokens). A amostra só é montada quando
+**todos os pares têm a rodada 1 julgada**; se alguma chamada falhou, rode de novo.
+
+### 3 — Tela `/avaliacao`: a Alexia rotula
+
+Abra `http://localhost:3000/avaliacao` (não há link na sidebar; o acesso é pela URL
+direta). Exige login **e** e-mail em `AVALIACAO_EMAILS`. A tela mostra a tese no
+topo e um acórdão por vez, **sem a nota do Jev**, com progresso.
+
+| Tecla | Ação |
+|-------|------|
+| `1` `2` `3` `4` | Relevância 0, 1, 2, 3 |
+| `F` `E` `N`     | Stance: fortalece, enfraquece, neutro |
+
+Cada rótulo é salvo ao clicar, então dá para parar e voltar depois.
+
+### 4 — `eval`: medir a busca
+
+```bash
+uv run python -m avaliacao.eval --split dev [--saida data/eval/runs/]
+uv run python -m avaliacao.eval --split teste     # só para a medição final
+```
+
+Só lê o banco (não chama a API do Jev). Grava um JSON em `data/eval/runs/` com as
+métricas, o **commit** git, o **modelo do Jev**, o `perguntas_sha` (hash das
+perguntas feitas ao Jev) e a **calibração**: kappa de relevância (ponderado) e de
+stance contra a Alexia — **aprovado** se os dois forem **>= 0,6** — e o limite de
+confiança a partir do qual o Jev acerta >= 80%. Use `dev` para iterar; o split
+`teste` deve ser usado **só na medição final**, senão deixa de ser uma medida
+independente.
 
 ---
 
