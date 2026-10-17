@@ -4,6 +4,7 @@ import os
 import uuid
 from types import SimpleNamespace
 
+import psycopg
 import pytest
 
 from avaliacao.geracao import (
@@ -117,7 +118,6 @@ def test_split_deterministico_e_cobre_os_dois_lados():
     assert set(s1) == set(temas)
     assert set(s1.values()) == {"dev", "teste"}
     assert sum(v == "teste" for v in s1.values()) == round(0.4 * 7)
-    assert sortear_split(["a", "b"], seed=1).values() != {"dev"}
     assert sorted(sortear_split(["a", "b"], seed=1).values()) == ["dev", "teste"]
     # fração extrema ainda deixa um tema de cada lado
     assert set(sortear_split(["a", "b", "c"], seed=1, fracao_teste=0.0).values()) == {"dev", "teste"}
@@ -139,6 +139,42 @@ def test_teses_reais_integracao():
     teses = teses_reais(os.environ["DATABASE_URL"])
     assert isinstance(teses, list)
     assert len({json.dumps(t, sort_keys=True) for t in teses}) == len(teses)
+
+
+@pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="sem DATABASE_URL")
+def test_teses_reais_ignora_contas_example_com():
+    from auth.db import ensure_schema as ensure_auth_schema
+    from auth.store import UsuarioStore
+    from conversations.db import ensure_schema as ensure_conversas_schema
+    from conversations.store import ConversaStore
+
+    url = os.environ["DATABASE_URL"]
+    ensure_auth_schema(url)
+    ensure_conversas_schema(url)
+    sufixo = uuid.uuid4().hex
+    usuarios = UsuarioStore(url)
+    conversas = ConversaStore(url)
+    criados = []
+    try:
+        for email, marca in (
+            (f"e2e-{sufixo}@Example.com", f"tese-example-{sufixo}"),
+            (f"real-{sufixo}@teste-integracao.invalid", f"tese-real-{sufixo}"),
+        ):
+            u = usuarios.create(email=email, hashed_password="hash-fake", nome=None)
+            criados.append(u.id)
+            c = conversas.create(u.id, "t")
+            conversas.add_versao(
+                c.id, u.id, estrutura={"tese_central": marca}, has_file=False,
+                file_name=None, pdf_extraido=None, aviso=None, resultados=None,
+            )
+
+        centrais = {t.get("tese_central") for t in teses_reais(url)}
+
+        assert f"tese-real-{sufixo}" in centrais
+        assert f"tese-example-{sufixo}" not in centrais
+    finally:
+        with psycopg.connect(url) as conn:
+            conn.execute("DELETE FROM auth.usuarios WHERE id = ANY(%s)", (criados,))
 
 
 @pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="sem DATABASE_URL")

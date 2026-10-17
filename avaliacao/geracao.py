@@ -29,6 +29,14 @@ ORDER BY md5(id::text || %s)
 LIMIT %s
 """
 
+_SQL_TESES_REAIS = """
+SELECT c.versoes
+FROM public.conversas c
+JOIN auth.usuarios u ON u.id = c.usuario_id
+WHERE lower(u.email) NOT LIKE '%@example.com'
+ORDER BY c.criado_em, c.id
+"""
+
 _PROMPT_SISTEMA = (
     "Você é um advogado trabalhista brasileiro. A partir da ementa de um acórdão, "
     "você escreve a tese que um advogado levaria à busca de jurisprudência, "
@@ -111,9 +119,11 @@ def deduplicar_estruturas(estruturas: list[dict]) -> list[dict]:
 
 
 def teses_reais(database_url: str) -> list[dict]:
-    """Estruturas de todas as versões de todas as conversas salvas, sem repetição."""
+    """Estruturas de todas as versões das conversas salvas, sem repetição.
+
+    Conversas de contas `@example.com` (usadas nos testes E2E) ficam de fora."""
     with psycopg.connect(database_url) as conn, conn.cursor() as cur:
-        cur.execute("SELECT versoes FROM public.conversas ORDER BY criado_em, id")
+        cur.execute(_SQL_TESES_REAIS)
         linhas = cur.fetchall()
     estruturas = [
         versao.get("estrutura")
