@@ -351,7 +351,7 @@ Variáveis novas no `.env` (ver `.env.example`):
 | Variável            | Padrão          | Descrição |
 |---------------------|-----------------|-----------|
 | `TYPESAFE_API_KEY`  | —               | Chave da TypeSafe (juiz Jev) — **obrigatória** |
-| `TYPESAFE_MODEL`    | `jev-1.13.0`    | Versão do Jev. Fixada de propósito: o alias `jev-latest` muda sozinho e invalidaria a comparação entre execuções |
+| `TYPESAFE_MODEL`    | `jev-1.13.0`    | Versão do Jev. Fixada de propósito: o alias `jev-latest` muda sozinho e invalidaria a comparação entre execuções. Trocar o modelo exige **julgar tudo de novo**: `rotulos_finais` aceita o Jev rodada 1 de qualquer modelo, então rótulos de modelos diferentes se misturariam |
 | `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas |
 | `AVALIACAO_EMAILS`  | —               | E-mails (separados por vírgula) que podem usar a tela de rotulação |
 | `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (amostra e split dev/teste) |
@@ -372,11 +372,18 @@ uv run python -m avaliacao.passo_zero comparar            # grava os rótulos e 
 Flags: `preparar [--teses 5] [--por-tese 4] [--csv ...] [--sim]` e
 `comparar [--csv ...] [--rotulador email]`.
 
-- O CSV não traz a nota do Jev, para não enviesar a Alexia.
+- O CSV não traz a nota do Jev, para não enviesar a Alexia. As colunas são
+  `par_id,tese,ementa,fundamentacao_inicio,link,relevancia_alexia,stance_alexia`: a
+  `tese` traz pedido, tese central e normas (`Pedido: … | Tese: … | Normas: a; b`) e
+  `fundamentacao_inicio` traz os mesmos 3.000 caracteres de fundamentação que o Jev
+  recebe, para a Alexia julgar a mesma evidência.
+- O `preparar` pula acórdãos que já originaram alguma tese no banco e sorteia a mais
+  para ainda gerar `--teses` teses novas.
 - O `preparar` **recusa sobrescrever** um CSV que já tenha rótulos preenchidos.
 - `--rotulador` usa por padrão o **primeiro e-mail de `AVALIACAO_EMAILS`**. Esse deve
   ser o mesmo e-mail da conta usada na tela `/avaliacao`: o juiz humano é gravado
-  como `humano:<email>` (minúsculas), e e-mails diferentes viram rotuladores diferentes.
+  como `humano:<email>` (sem espaços nas pontas e em minúsculas; o `comparar` normaliza
+  o e-mail assim), e e-mails diferentes viram rotuladores diferentes.
 - Decisão a partir do relatório: seguir, usar o Jev só para relevância, ou trocar o juiz.
 
 ### 2 — `construir`: o conjunto-ouro
@@ -388,7 +395,8 @@ uv run python -m avaliacao.construir [--teses 100] [--rodadas 2] [--sim]
 Quatro etapas **idempotentes** (cada uma pula o que já existe, então dá para
 interromper e retomar de onde parou):
 
-1. **teses** — completa até `--teses` (reais das conversas + sintéticas filtradas);
+1. **teses** — completa até `--teses` (reais das conversas + sintéticas filtradas;
+   conversas de contas `@example.com`, usadas nos testes E2E, ficam de fora);
 2. **pool** — une o top-20 de BM25, vetorial e pipeline completo para cada tese;
 3. **julgamento** — o Jev julga os pares ainda sem julgamento, nas rodadas `1..--rodadas`;
 4. **amostra** — escolhe os pares que a Alexia vai rotular (75 sorteados + 75 de menor confiança).
@@ -410,7 +418,9 @@ topo e um acórdão por vez, **sem a nota do Jev**, com progresso.
 | `1` `2` `3` `4` | Relevância 0, 1, 2, 3 |
 | `F` `E` `N`     | Stance: fortalece, enfraquece, neutro |
 
-Cada rótulo é salvo ao clicar, então dá para parar e voltar depois.
+Escolha a relevância e o stance; quando os dois estão escolhidos, o rótulo é salvo e o
+próximo acórdão aparece, então dá para parar e voltar depois. Se o envio falhar, a
+seleção fica na tela e dá para tentar de novo.
 
 ### 4 — `eval`: medir a busca
 
@@ -419,7 +429,10 @@ uv run python -m avaliacao.eval --split dev [--saida data/eval/runs/]
 uv run python -m avaliacao.eval --split teste     # só para a medição final
 ```
 
-Só lê o banco (não chama a API do Jev). Grava um JSON em `data/eval/runs/` com as
+Não chama a API do Jev, mas roda a busca real para cada tese: precisa de Qdrant, do
+índice BM25 e do embedding da OpenAI (além do Postgres). Se a busca de uma tese falhar,
+ela é avisada em stderr, fica fora das médias (conta como excluída) e seu id vai para
+`teses_com_erro` no JSON. Grava um JSON em `data/eval/runs/` com as
 métricas, o **commit** git, o **modelo do Jev**, o `perguntas_sha` (hash das
 perguntas feitas ao Jev) e a **calibração**: kappa de relevância (ponderado) e de
 stance contra a Alexia — **aprovado** se os dois forem **>= 0,6** — e o limite de
