@@ -58,7 +58,6 @@ _DDL = [
         metade  TEXT NOT NULL CHECK (metade IN ('sorteada', 'incerta'))
     );
     """,
-    "CREATE INDEX IF NOT EXISTS pares_tese_id_idx ON avaliacao.pares (tese_id);",
 ]
 
 

@@ -161,6 +161,9 @@ def test_fila_segue_ordem_e_progresso(store, teses_criadas):
     pares = store.adicionar_pares(tese.id, {d: ["bm25"] for d in docs})
     ordem_id = sorted(p.id for p in pares)  # desempate por id
     metade = {ordem_id[0]: "incerta", ordem_id[1]: "sorteada", ordem_id[2]: "sorteada"}
+    # a fila é global: com pares reais na amostra a ordem não é isolável
+    if store.amostra():
+        pytest.skip("amostra real presente no banco; ordem da fila não é isolável")
     store.definir_amostra(metade)
     assert {k: v for k, v in store.amostra().items() if k in metade} == metade
 
@@ -178,3 +181,19 @@ def test_fila_segue_ordem_e_progresso(store, teses_criadas):
         assert store.progresso(juiz) == (i + 1, total_inicial)
 
     assert store.proximo_da_fila(juiz) is None
+
+
+def test_rotulo_humano_mais_recente_prevalece(store, teses_criadas):
+    tese = _tese(store, teses_criadas)
+    doc = _doc()
+    (par,) = store.adicionar_pares(tese.id, {doc: ["bm25"]})
+    store.gravar_julgamento(Julgamento(par.id, "humano:a@x.invalid", 1, 1, "neutro"))
+    store.gravar_julgamento(Julgamento(par.id, "humano:b@x.invalid", 1, 3, "enfraquece"))
+
+    rel, stance = store.rotulos_finais(tese.id)
+    assert rel == {doc: 3} and stance == {doc: "enfraquece"}
+
+    # regravar o julgamento de A o torna o mais recente
+    store.gravar_julgamento(Julgamento(par.id, "humano:a@x.invalid", 1, 0, "fortalece"))
+    rel, stance = store.rotulos_finais(tese.id)
+    assert rel == {doc: 0} and stance == {doc: "fortalece"}
