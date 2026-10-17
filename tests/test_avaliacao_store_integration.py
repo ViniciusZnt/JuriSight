@@ -1,0 +1,180 @@
+"""
+Testes de integração de avaliacao/store.py contra um Postgres DE VERDADE.
+
+Cada teste cria suas teses (UUIDs próprios) e as apaga ao final — as FKs com
+ON DELETE CASCADE derrubam pares, julgamentos e amostra junto.
+
+Pulado automaticamente se DATABASE_URL não estiver definida ou o Postgres não
+responder (mesmo espírito de tests/test_conversa_store_integration.py).
+"""
+from __future__ import annotations
+
+import os
+import uuid
+
+import psycopg
+import pytest
+
+from avaliacao.db import ensure_schema
+from avaliacao.store import AvaliacaoStore, Julgamento
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def _postgres_disponivel() -> bool:
+    if not DATABASE_URL:
+        return False
+    try:
+        psycopg.connect(DATABASE_URL, connect_timeout=2).close()
+        return True
+    except psycopg.OperationalError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _postgres_disponivel(),
+    reason="Requer DATABASE_URL apontando para um Postgres real e acessível.",
+)
+
+
+@pytest.fixture(autouse=True)
+def _schema_pronto():
+    ensure_schema(DATABASE_URL)
+
+
+@pytest.fixture
+def store() -> AvaliacaoStore:
+    return AvaliacaoStore(DATABASE_URL)
+
+
+@pytest.fixture
+def teses_criadas():
+    """Lista a ser preenchida pelos testes; apaga as teses (e, em cascata,
+    pares/julgamentos/amostra) ao final."""
+    ids: list[uuid.UUID] = []
+    yield ids
+    if not ids:
+        return
+    conn = psycopg.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM avaliacao.teses WHERE id = ANY(%s)", (ids,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _tese(store, teses_criadas, tema="horas extras", split="dev", origem="sintetica", doc_origem=None):
+    t = store.criar_tese({"pedido_principal": f"p-{uuid.uuid4().hex[:6]}"}, origem, tema, split, doc_origem)
+    teses_criadas.append(t.id)
+    return t
+
+
+def _doc(prefixo="d") -> str:
+    return f"{prefixo}-{uuid.uuid4().hex}"
+
+
+def test_round_trip_tese_par_julgamento(store, teses_criadas):
+    tese = _tese(store, teses_criadas, doc_origem="origem-1")
+    assert tese.estrutura["pedido_principal"].startswith("p-")
+    assert (tese.origem, tese.tema, tese.split, tese.documento_origem_id) == (
+        "sintetica", "horas extras", "dev", "origem-1",
+    )
+    assert tese.id in {t.id for t in store.listar_teses()}
+    assert tese.id in {t.id for t in store.listar_teses(split="dev")}
+    assert tese.id not in {t.id for t in store.listar_teses(split="teste")}
+
+    doc = _doc()
+    (par,) = store.adicionar_pares(tese.id, {doc: ["bm25"]})
+    assert par.tese_id == tese.id and par.documento_id == doc and par.corredores == ["bm25"]
+    assert [p.id for p in store.pares_da_tese(tese.id)] == [par.id]
+
+    j = Julgamento(
+        par_id=par.id, juiz="jev:jev-1.13.0", rodada=1, relevancia=2, stance="fortalece",
+        relevancia_probs={"0": 0.1, "1": 0.2, "2": 0.6, "3": 0.1},
+        stance_probs={"fortalece": 0.7, "enfraquece": 0.1, "neutro": 0.2},
+        confianca_rel=0.6, confianca_stance=0.7,
+    )
+    store.gravar_julgamento(j)
+    (lido,) = [x for x in store.julgamentos("jev:") if x.par_id == par.id]
+    assert lido.juiz == "jev:jev-1.13.0" and lido.rodada == 1
+    assert (lido.relevancia, lido.stance) == (2, "fortalece")
+    assert lido.relevancia_probs == j.relevancia_probs
+    assert lido.stance_probs == j.stance_probs
+    assert lido.confianca_rel == pytest.approx(0.6)
+    assert lido.confianca_stance == pytest.approx(0.7)
+    assert all(x.par_id != par.id for x in store.julgamentos("humano:"))
+
+    # upsert por (par, juiz, rodada): regravar substitui, não duplica
+    store.gravar_julgamento(Julgamento(par.id, "jev:jev-1.13.0", 1, 3, "neutro"))
+    (relido,) = [x for x in store.julgamentos("jev:") if x.par_id == par.id]
+    assert (relido.relevancia, relido.stance) == (3, "neutro")
+    assert relido.relevancia_probs is None and relido.confianca_rel is None
+
+
+def test_adicionar_pares_une_corredores(store, teses_criadas):
+    tese = _tese(store, teses_criadas)
+    doc = _doc()
+    store.adicionar_pares(tese.id, {doc: ["bm25"]})
+    pares = store.adicionar_pares(tese.id, {doc: ["pipeline"], _doc("outro"): ["vetorial"]})
+
+    por_doc = {p.documento_id: p for p in pares}
+    assert por_doc[doc].corredores == ["bm25", "pipeline"]
+    assert len(store.pares_da_tese(tese.id)) == 2  # sem duplicar o par
+
+
+def test_rotulo_humano_prevalece(store, teses_criadas):
+    tese = _tese(store, teses_criadas)
+    d1, d2, d3 = _doc(), _doc(), _doc()
+    pares = {p.documento_id: p for p in store.adicionar_pares(tese.id, {d1: ["bm25"], d2: ["bm25"], d3: ["bm25"]})}
+
+    for d, rel, st in [(d1, 1, "neutro"), (d2, 2, "fortalece"), (d3, 3, "enfraquece")]:
+        store.gravar_julgamento(Julgamento(pares[d].id, "jev:m", 1, rel, st))
+    # rodada 2 do Jev não conta como rótulo final
+    store.gravar_julgamento(Julgamento(pares[d1].id, "jev:m", 2, 0, "neutro"))
+    # humano só no d1
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:a@x.invalid", 1, 3, "fortalece"))
+
+    rel, stance = store.rotulos_finais(tese.id)
+    assert rel == {d1: 3, d2: 2, d3: 3}
+    assert stance == {d1: "fortalece", d2: "fortalece", d3: "enfraquece"}
+
+
+def test_pares_sem_julgamento_ignora_rodada_feita(store, teses_criadas):
+    tese = _tese(store, teses_criadas)
+    d1, d2 = _doc(), _doc()
+    pares = {p.documento_id: p for p in store.adicionar_pares(tese.id, {d1: ["bm25"], d2: ["bm25"]})}
+    juiz = f"jev:teste-{uuid.uuid4().hex[:6]}"
+
+    ids = lambda rodada: {p.id for p in store.pares_sem_julgamento(juiz, rodada)}  # noqa: E731
+    assert ids(1) >= {pares[d1].id, pares[d2].id}
+
+    store.gravar_julgamento(Julgamento(pares[d1].id, juiz, 1, 2, "neutro"))
+    assert pares[d1].id not in ids(1)
+    assert pares[d2].id in ids(1)
+    assert pares[d1].id in ids(2)  # outra rodada continua pendente
+
+
+def test_fila_segue_ordem_e_progresso(store, teses_criadas):
+    tese = _tese(store, teses_criadas, tema="rescisão")
+    docs = [_doc() for _ in range(3)]
+    pares = store.adicionar_pares(tese.id, {d: ["bm25"] for d in docs})
+    ordem_id = sorted(p.id for p in pares)  # desempate por id
+    metade = {ordem_id[0]: "incerta", ordem_id[1]: "sorteada", ordem_id[2]: "sorteada"}
+    store.definir_amostra(metade)
+    assert {k: v for k, v in store.amostra().items() if k in metade} == metade
+
+    juiz = f"humano:{uuid.uuid4().hex[:6]}@x.invalid"
+    ja_feitos, total_inicial = store.progresso(juiz)
+    assert ja_feitos == 0
+
+    esperado = [ordem_id[1], ordem_id[2], ordem_id[0]]  # sorteadas primeiro, depois a incerta
+    for i, par_id in enumerate(esperado):
+        proximo = store.proximo_da_fila(juiz)
+        assert proximo is not None
+        par, t = proximo
+        assert par.id == par_id and t.id == tese.id
+        store.gravar_julgamento(Julgamento(par_id, juiz, 1, 1, "neutro"))
+        assert store.progresso(juiz) == (i + 1, total_inicial)
+
+    assert store.proximo_da_fila(juiz) is None

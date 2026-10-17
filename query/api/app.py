@@ -37,6 +37,8 @@ from starlette.concurrency import run_in_threadpool
 
 from auth.db import ensure_schema
 from auth.store import UsuarioStore
+from avaliacao.db import ensure_schema as ensure_avaliacao_schema
+from avaliacao.store import AvaliacaoStore
 from conversations.db import ensure_schema as ensure_conversas_schema
 from conversations.store import ConversaStore
 from indexing.lexical.bm25_builder import BM25Builder
@@ -80,6 +82,8 @@ async def lifespan(app: FastAPI):
     app.state.usuario_store = UsuarioStore(DATABASE_URL)
     ensure_conversas_schema(DATABASE_URL)  # depende de auth.usuarios (FK) — roda depois
     app.state.conversa_store = ConversaStore(DATABASE_URL)
+    ensure_avaliacao_schema(DATABASE_URL)
+    app.state.avaliacao_store = AvaliacaoStore(DATABASE_URL)
     yield
 
 
