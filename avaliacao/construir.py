@@ -15,13 +15,13 @@ confirmação, a menos que --sim. Recusar uma etapa só pula essa etapa.
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import os
 import sys
 from typing import Callable
 
 from avaliacao.amostra import ItemAmostra, escolher_amostra
+from avaliacao.geracao import candidatos_sinteticos
 from avaliacao.passo_zero import TOKENS_POR_JULGAMENTO, confirmar, uuids_origem
 from avaliacao.pooling import CORREDORES
 from avaliacao.store import Julgamento, Par, Tese
@@ -76,21 +76,6 @@ def itens_da_amostra(
         confianca = min(j.confianca_rel or 0.0, j.confianca_stance or 0.0)
         itens.append(ItemAmostra(j.par_id, tese.tema, tese.origem, j.relevancia, j.stance, confianca))
     return itens
-
-
-def candidatos_sinteticos(acordaos, uuids: dict[str, str], usados: set[str]):
-    """(acórdão, uuid, lado) ainda sem tese, alternando favorável e contrário.
-
-    O lado vem do provimento: NEGADO -> "contrario"; APROVADO/PARCIAL -> "favoravel"."""
-    por_lado: dict[str, list] = {"favoravel": [], "contrario": []}
-    for a in acordaos:
-        uid = uuids.get(a.id_documento)
-        if uid is None or uid in usados:
-            continue
-        lado = "contrario" if getattr(a.provimento, "value", a.provimento) == "NEGADO" else "favoravel"
-        por_lado[lado].append((a, uid, lado))
-    alternados = itertools.zip_longest(por_lado["favoravel"], por_lado["contrario"])
-    return [c for par in alternados for c in par if c is not None]
 
 
 # --- carregamento de documentos ---------------------------------------------

@@ -16,11 +16,15 @@ import sys
 import uuid
 from pathlib import Path
 
+from avaliacao.juiz import TAMANHO_FUNDAMENTACAO
 from avaliacao.metricas import kappa_cohen, kappa_ponderado_quadratico
 from avaliacao.store import Julgamento
 
 CSV_PADRAO = Path(__file__).resolve().parent.parent / "data" / "eval" / "passo_zero.csv"
-COLUNAS_CSV = ["par_id", "tese", "ementa", "link", "relevancia_alexia", "stance_alexia"]
+COLUNAS_CSV = [
+    "par_id", "tese", "ementa", "fundamentacao_inicio", "link",
+    "relevancia_alexia", "stance_alexia",
+]
 STANCES = ("fortalece", "enfraquece", "neutro")
 CORREDOR = "passo_zero"
 TOKENS_POR_JULGAMENTO = 1300
@@ -77,10 +81,25 @@ def escolher_docs(teses: list[dict], por_tese: int, seed: int) -> list[list[str]
 # --- CSV --------------------------------------------------------------------
 
 
+def texto_tese(dados: dict) -> str:
+    """Tese em uma célula legível: pedido, tese central e normas, o que o Jev vê.
+
+    Ex.: "Pedido: ... | Tese: ... | Normas: a; b". Partes vazias são omitidas."""
+    partes = []
+    if (dados.get("pedido_principal") or "").strip():
+        partes.append(f"Pedido: {dados['pedido_principal'].strip()}")
+    if (dados.get("tese_central") or "").strip():
+        partes.append(f"Tese: {dados['tese_central'].strip()}")
+    normas = [n.strip() for n in dados.get("normas") or [] if n and n.strip()]
+    if normas:
+        partes.append(f"Normas: {'; '.join(normas)}")
+    return " | ".join(partes)
+
+
 def escrever_csv(caminho: Path, linhas: list[dict]) -> None:
-    """Escreve o CSV da Alexia: par_id, tese, ementa, link e as duas colunas em
-    branco para ela preencher. Não inclui nada do Jev. utf-8 com BOM para o Excel
-    abrir os acentos corretamente."""
+    """Escreve o CSV da Alexia: par_id, tese, ementa, início da fundamentação, link e
+    as duas colunas em branco para ela preencher. Não inclui nada do Jev. utf-8 com
+    BOM para o Excel abrir os acentos corretamente."""
     caminho = Path(caminho)
     caminho.parent.mkdir(parents=True, exist_ok=True)
     with open(caminho, "w", encoding="utf-8-sig", newline="") as f:
@@ -92,6 +111,7 @@ def escrever_csv(caminho: Path, linhas: list[dict]) -> None:
                     "par_id": str(linha["par_id"]),
                     "tese": linha["tese"],
                     "ementa": linha["ementa"],
+                    "fundamentacao_inicio": linha["fundamentacao_inicio"],
                     "link": linha["link"],
                     "relevancia_alexia": "",
                     "stance_alexia": "",
@@ -289,10 +309,9 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
     from typesafe_sdk import TypeSafeClient
 
     from avaliacao.contexto import carregar_dependencias
-    from avaliacao.geracao import gerar_tese, sortear_acordaos, sortear_split
+    from avaliacao.geracao import candidatos_sinteticos, gerar_tese, sortear_acordaos, sortear_split
     from avaliacao.juiz import JuizJev, julgar_lote
     from avaliacao.temas import TEMAS, atribuir_tema
-    from query.enrichment import query_builder
     from query.search.pipeline import buscar
 
     seed = int(os.getenv("AVALIACAO_SEED", "42"))
@@ -301,16 +320,16 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
     juiz = JuizJev(client=client)
     splits = sortear_split(TEMAS, seed)
 
-    acordaos = sortear_acordaos(deps.database_url, n_teses, seed)
+    # Pula acórdãos que já originaram uma tese (smoke anterior, `construir`) e
+    # sobreamostra para ainda obter n_teses: mesma regra de `_completar_sinteticas`.
+    usados = {t.documento_origem_id for t in deps.store.listar_teses() if t.documento_origem_id}
+    acordaos = sortear_acordaos(deps.database_url, len(usados) + 2 * n_teses, seed)
     uuids = uuids_origem(deps.database_url, acordaos)
-    n_favoravel = (n_teses + 1) // 2  # mesma regra de sortear_acordaos
 
     registros: list[dict] = []
-    for i, acordao in enumerate(acordaos):
-        lado = "favoravel" if i < n_favoravel else "contrario"
-        if acordao.id_documento not in uuids:
-            _aviso(f"Acórdão {acordao.id_documento}: UUID não encontrado em documentos; tese {i + 1} pulada")
-            continue
+    for acordao, uid, lado in candidatos_sinteticos(acordaos, uuids, usados):
+        if len(registros) >= n_teses:
+            break
         try:
             estrutura = gerar_tese(acordao, lado)
             dados = estrutura.model_dump()
@@ -319,14 +338,15 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
                 estrutura, hybrid=deps.hybrid, retriever=deps.retriever, reranker=deps.reranker
             )]
         except Exception as e:  # noqa: BLE001 — uma tese ruim não deve derrubar o lote
-            _aviso(f"Tese {i + 1} ({acordao.id_documento}) descartada: {e}")
+            _aviso(f"Acórdão {acordao.id_documento} descartado: {e}")
             continue
         tese = deps.store.criar_tese(
-            dados, "sintetica", tema, splits[tema],
-            documento_origem_id=uuids[acordao.id_documento],
+            dados, "sintetica", tema, splits[tema], documento_origem_id=uid,
         )
-        print(f"Tese {i + 1}/{len(acordaos)} ({lado}, tema: {tema}): {len(ranking)} resultados")
-        registros.append({"tese": tese, "estrutura": estrutura, "dados": dados, "ranking": ranking})
+        print(f"Tese {len(registros) + 1}/{n_teses} ({lado}, tema: {tema}): {len(ranking)} resultados")
+        registros.append({"tese": tese, "dados": dados, "ranking": ranking})
+    if len(registros) < n_teses:
+        _aviso(f"Atenção: só {len(registros)} de {n_teses} teses geradas (acabaram os candidatos).")
 
     if not registros:
         _aviso("Nenhuma tese foi gerada.")
@@ -342,12 +362,18 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
     for registro, ids in zip(registros, escolhidos):
         ids = [d for d in ids if d in documentos]
         pares = deps.store.adicionar_pares(registro["tese"].id, {d: [CORREDOR] for d in ids})
-        frase = query_builder.build_frase_tese(registro["estrutura"])
+        texto = texto_tese(registro["dados"])
         for par in pares:
             doc = documentos[par.documento_id]
             itens_por_par.append((par.id, registro["dados"], doc))
             linhas.append(
-                {"par_id": par.id, "tese": frase, "ementa": doc.ementa, "link": doc.link_original or ""}
+                {
+                    "par_id": par.id,
+                    "tese": texto,
+                    "ementa": doc.ementa,
+                    "fundamentacao_inicio": (doc.fundamentacao or "")[:TAMANHO_FUNDAMENTACAO],
+                    "link": doc.link_original or "",
+                }
             )
 
     random.Random(seed).shuffle(linhas)  # a posição no CSV não deve revelar a origem do par
@@ -375,6 +401,7 @@ def comparar(caminho: Path, rotulador: str | None) -> int:
             _aviso("Informe --rotulador ou defina AVALIACAO_EMAILS no .env.")
             return 2
         rotulador = emails[0]
+    rotulador = rotulador.strip().lower()  # a rota /avaliacao grava assim; sem isso o mesmo humano vira dois
 
     from avaliacao.contexto import carregar_store
 

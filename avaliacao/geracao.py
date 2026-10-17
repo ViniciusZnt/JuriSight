@@ -4,6 +4,7 @@ reais, estilo Promptagator), reais (conversas salvas) e split dev/teste por tema
 """
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import random
@@ -63,6 +64,21 @@ def sortear_acordaos(database_url: str, n: int, seed: int) -> list[DocumentoJuri
             cur.execute(_SQL_SORTEIO, (provimentos, str(seed), qtd))
             docs.extend(_row_para_documento(row) for row in cur.fetchall())
     return docs
+
+
+def candidatos_sinteticos(acordaos, uuids: dict[str, str], usados: set[str]):
+    """(acórdão, uuid, lado) ainda sem tese, alternando favorável e contrário.
+
+    O lado vem do provimento: NEGADO -> "contrario"; APROVADO/PARCIAL -> "favoravel"."""
+    por_lado: dict[str, list] = {"favoravel": [], "contrario": []}
+    for a in acordaos:
+        uid = uuids.get(a.id_documento)
+        if uid is None or uid in usados:
+            continue
+        lado = "contrario" if getattr(a.provimento, "value", a.provimento) == "NEGADO" else "favoravel"
+        por_lado[lado].append((a, uid, lado))
+    alternados = itertools.zip_longest(por_lado["favoravel"], por_lado["contrario"])
+    return [c for par in alternados for c in par if c is not None]
 
 
 def gerar_tese(

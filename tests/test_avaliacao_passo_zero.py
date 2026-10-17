@@ -1,12 +1,14 @@
 """Testes do CLI do passo 0 (funções puras; sem Jev, OpenAI nem banco)."""
 import csv
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
 from avaliacao.passo_zero import (
     COLUNAS_CSV,
     escolher_docs,
+    texto_tese,
     escrever_csv,
     confirmar,
     csv_tem_rotulos,
@@ -72,10 +74,14 @@ def test_resumo_comparacao_vazio():
 
 def test_csv_nao_vaza_nota_do_jev(tmp_path):
     caminho = tmp_path / "eval" / "passo_zero.csv"
-    escrever_csv(caminho, [{"par_id": uuid.uuid4(), "tese": "t", "ementa": "e", "link": "http://x"}])
+    escrever_csv(caminho, [{"par_id": uuid.uuid4(), "tese": "t", "ementa": "e",
+                            "fundamentacao_inicio": "f", "link": "http://x"}])
     with open(caminho, encoding="utf-8-sig", newline="") as f:
         cabecalho = next(csv.reader(f))
-    assert cabecalho == ["par_id", "tese", "ementa", "link", "relevancia_alexia", "stance_alexia"]
+    assert cabecalho == [
+        "par_id", "tese", "ementa", "fundamentacao_inicio", "link",
+        "relevancia_alexia", "stance_alexia",
+    ]
     assert cabecalho == COLUNAS_CSV
 
 
@@ -91,12 +97,12 @@ def _csv(tmp_path, linhas):
 def test_ler_csv_ignora_linhas_nao_preenchidas(tmp_path, capsys):
     ok, sem_rel, sem_stance, ruim_rel, ruim_stance, ruim_id = (str(uuid.uuid4()) for _ in range(6))
     caminho = _csv(tmp_path, [
-        [ok, "t", "e", "l", "2", "Fortalece "],
-        [sem_rel, "t", "e", "l", "", "neutro"],
-        [sem_stance, "t", "e", "l", "1", ""],
-        [ruim_rel, "t", "e", "l", "4", "neutro"],
-        [ruim_stance, "t", "e", "l", "1", "talvez"],
-        ["nao-e-uuid", "t", "e", "l", "1", "neutro"],
+        [ok, "t", "e", "f", "l", "2", "Fortalece "],
+        [sem_rel, "t", "e", "f", "l", "", "neutro"],
+        [sem_stance, "t", "e", "f", "l", "1", ""],
+        [ruim_rel, "t", "e", "f", "l", "4", "neutro"],
+        [ruim_stance, "t", "e", "f", "l", "1", "talvez"],
+        ["nao-e-uuid", "t", "e", "f", "l", "1", "neutro"],
     ])
 
     lidos = ler_csv(caminho)
@@ -149,8 +155,8 @@ def test_escolher_docs_ranking_curto_nao_duplica():
 
 def test_ler_ids_csv_inclui_nao_rotuladas(tmp_path):
     a, b = uuid.uuid4(), uuid.uuid4()
-    caminho = _csv(tmp_path, [[a, "t", "e", "l", "2", "neutro"], [b, "t", "e", "l", "", ""],
-                              ["lixo", "t", "e", "l", "", ""]])
+    caminho = _csv(tmp_path, [[a, "t", "e", "f", "l", "2", "neutro"], [b, "t", "e", "f", "l", "", ""],
+                              ["lixo", "t", "e", "f", "l", "", ""]])
     assert ler_ids_csv(caminho) == [a, b]
 
 
@@ -170,12 +176,12 @@ def test_jev_das_rodadas_filtra_pelos_pares_do_csv():
 def test_csv_tem_rotulos(tmp_path):
     a = uuid.uuid4()
     assert not csv_tem_rotulos(tmp_path / "nao_existe.csv")
-    assert not csv_tem_rotulos(_csv(tmp_path, [[a, "t", "e", "l", "", ""]]))
-    assert csv_tem_rotulos(_csv(tmp_path, [[a, "t", "e", "l", "", ""], [a, "t", "e", "l", "1", ""]]))
+    assert not csv_tem_rotulos(_csv(tmp_path, [[a, "t", "e", "f", "l", "", ""]]))
+    assert csv_tem_rotulos(_csv(tmp_path, [[a, "t", "e", "f", "l", "", ""], [a, "t", "e", "f", "l", "1", ""]]))
 
 
 def test_preparar_recusa_sobrescrever_csv_rotulado(tmp_path, capsys):
-    caminho = _csv(tmp_path, [[uuid.uuid4(), "t", "e", "l", "2", "neutro"]])
+    caminho = _csv(tmp_path, [[uuid.uuid4(), "t", "e", "f", "l", "2", "neutro"]])
     assert preparar(1, 2, True, caminho) == 1
     assert "rótulo" in capsys.readouterr().err
 
@@ -195,3 +201,161 @@ def test_confirmar_trata_eof_como_cancelado(monkeypatch):
         raise EOFError
     monkeypatch.setattr("builtins.input", _eof)
     assert confirmar("?") is False
+
+
+def test_texto_tese_traz_pedido_tese_e_normas():
+    dados = {
+        "pedido_principal": "adicional de insalubridade",
+        "tese_central": "EPI sem fiscalização não elide a insalubridade.",
+        "normas": ["NR-15", "Súmula 289 do TST"],
+        "violacoes": ["ignorado"],
+    }
+    assert texto_tese(dados) == (
+        "Pedido: adicional de insalubridade | Tese: EPI sem fiscalização não elide a "
+        "insalubridade. | Normas: NR-15; Súmula 289 do TST"
+    )
+    assert texto_tese({"tese_central": "só a tese", "normas": []}) == "Tese: só a tese"
+    assert texto_tese({}) == ""
+
+
+class _StoreFalso:
+    def __init__(self, teses=()):
+        self._teses = list(teses)
+        self.criadas = []
+        self.julgados = []
+
+    def listar_teses(self, split=None):
+        return list(self._teses)
+
+    def criar_tese(self, estrutura, origem, tema, split, documento_origem_id=None):
+        from avaliacao.store import Tese
+
+        tese = Tese(uuid.uuid4(), estrutura, origem, tema, split, documento_origem_id)
+        self.criadas.append(tese)
+        return tese
+
+    def adicionar_pares(self, tese_id, docs):
+        from avaliacao.store import Par
+
+        return [Par(uuid.uuid4(), tese_id, d, c) for d, c in docs.items()]
+
+    def gravar_julgamento(self, j):
+        self.julgados.append(j)
+
+
+def _preparar_com_fakes(monkeypatch, tmp_path, store, acordaos, n_teses=2, por_tese=2, gerar=None):
+    """Roda `preparar` sem rede: troca dependências e etapas pagas por fakes."""
+    from avaliacao.temas import TEMAS
+    from query.enrichment.schema import EstruturaArgumentativa
+
+    pedidos_sorteio = []
+    uuids = {a.id_documento: f"uuid-{a.id_documento}" for a in acordaos}
+    fundamentacao = "F" * 3500
+    docs = {
+        f"uuid-{a.id_documento}": SimpleNamespace(
+            ementa=f"ementa {a.id_documento}", fundamentacao=fundamentacao,
+            link_original=f"http://x/{a.id_documento}",
+        )
+        for a in acordaos
+    }
+    retriever = SimpleNamespace(fetch=lambda ids: {i: docs[i] for i in ids if i in docs})
+    deps = SimpleNamespace(
+        database_url="postgresql://x", hybrid=None, retriever=retriever, reranker=None, store=store,
+    )
+
+    def _sortear(url, n, seed):
+        pedidos_sorteio.append(n)
+        return acordaos
+
+    monkeypatch.setattr("avaliacao.contexto.carregar_dependencias", lambda: deps)
+    monkeypatch.setattr("typesafe_sdk.TypeSafeClient", lambda: object())
+    monkeypatch.setattr("avaliacao.juiz.JuizJev", lambda client: SimpleNamespace(nome="jev:x"))
+    monkeypatch.setattr("avaliacao.juiz.julgar_lote", lambda juiz, itens, rodada, grava: len(itens))
+    monkeypatch.setattr("avaliacao.geracao.sortear_acordaos", _sortear)
+    monkeypatch.setattr(
+        "avaliacao.geracao.gerar_tese",
+        gerar or (lambda acordao, lado: EstruturaArgumentativa(
+            pedido_principal=f"pedido {acordao.id_documento}", tese_central=f"tese {acordao.id_documento}",
+            normas=["NR-15", "CLT art. 192"],
+        )),
+    )
+    monkeypatch.setattr("avaliacao.temas.atribuir_tema", lambda dados, client=None: TEMAS[0])
+    monkeypatch.setattr("avaliacao.passo_zero.uuids_origem", lambda url, a: uuids)
+    monkeypatch.setattr(
+        "query.search.pipeline.buscar",
+        lambda estrutura, **kw: [SimpleNamespace(id=i) for i in docs],
+    )
+    caminho = tmp_path / "p.csv"
+    codigo = preparar(n_teses, por_tese, True, caminho)
+    return codigo, caminho, pedidos_sorteio, fundamentacao
+
+
+def _acordao(id_, provimento):
+    return SimpleNamespace(id_documento=id_, provimento=provimento)
+
+
+def test_preparar_pula_acordao_ja_usado_e_sobreamostra(monkeypatch, tmp_path):
+    from avaliacao.store import Tese
+
+    ja_tem_tese = Tese(uuid.uuid4(), {}, "sintetica", "t", "dev", documento_origem_id="uuid-A")
+    store = _StoreFalso([ja_tem_tese])
+    acordaos = [_acordao("A", "APROVADO"), _acordao("B", "APROVADO"),
+                _acordao("C", "NEGADO"), _acordao("D", "NEGADO")]
+
+    codigo, caminho, pedidos, fundamentacao = _preparar_com_fakes(
+        monkeypatch, tmp_path, store, acordaos, n_teses=2
+    )
+
+    assert codigo == 0
+    assert pedidos == [1 + 2 * 2]  # sobreamostra: os já usados mais 2x as pedidas
+    assert [t.documento_origem_id for t in store.criadas] == ["uuid-B", "uuid-C"]
+    with open(caminho, encoding="utf-8-sig", newline="") as f:
+        linhas = list(csv.DictReader(f))
+    assert list(linhas[0]) == COLUNAS_CSV
+    assert len(linhas) == 4
+    for linha in linhas:
+        assert linha["tese"].startswith("Pedido: pedido ") and "| Normas: NR-15; CLT art. 192" in linha["tese"]
+        assert linha["fundamentacao_inicio"] == fundamentacao[:3000]
+        assert linha["relevancia_alexia"] == "" and linha["stance_alexia"] == ""
+
+
+def test_preparar_tenta_proximo_candidato_quando_um_falha(monkeypatch, tmp_path):
+    from query.enrichment.schema import EstruturaArgumentativa
+
+    store = _StoreFalso()
+    acordaos = [_acordao("B", "APROVADO"), _acordao("C", "NEGADO"), _acordao("D", "APROVADO")]
+
+    def _gerar(acordao, lado):
+        if acordao.id_documento == "B":
+            raise RuntimeError("openai fora")
+        return EstruturaArgumentativa(tese_central=f"tese {acordao.id_documento}")
+
+    codigo, _, _, _ = _preparar_com_fakes(monkeypatch, tmp_path, store, acordaos, n_teses=1, gerar=_gerar)
+
+    assert codigo == 0
+    assert [t.documento_origem_id for t in store.criadas] == ["uuid-C"]  # B falhou: segue para o próximo candidato
+
+
+def test_comparar_normaliza_email_do_rotulador(monkeypatch, tmp_path):
+    par = uuid.uuid4()
+    caminho = _csv(tmp_path, [[par, "t", "e", "f", "l", "2", "neutro"]])
+
+    class _Store:
+        def __init__(self):
+            self.gravados = []
+
+        def julgamentos(self, prefixo):
+            return [_j(par, "jev:x", 1, 2, "neutro"), _j(par, "jev:x", 2, 2, "neutro")]
+
+        def gravar_julgamento(self, j):
+            self.gravados.append(j)
+
+    store = _Store()
+    monkeypatch.setattr("avaliacao.passo_zero._carregar_env", lambda: None)
+    monkeypatch.setattr("avaliacao.contexto.carregar_store", lambda: store)
+
+    assert comparar(caminho, "  Alexia@Escritorio.COM ") == 0
+    monkeypatch.setenv("AVALIACAO_EMAILS", " Outra@X.com , b@y.com")
+    assert comparar(caminho, None) == 0
+
+    assert [h.juiz for h in store.gravados] == ["humano:alexia@escritorio.com", "humano:outra@x.com"]
