@@ -46,6 +46,7 @@ from indexing.vector_store.qdrant_store import QdrantStore
 from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
+from query.api.avaliacao_routes import router as avaliacao_router
 from query.api.conversa_routes import router as conversa_router
 from query.enrichment import pdf_extractor
 from query.enrichment.query_enrichment import QueryEnricher
@@ -113,6 +114,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(conversa_router)
+app.include_router(avaliacao_router)
 
 
 def get_hybrid(request: Request) -> HybridSearch:
