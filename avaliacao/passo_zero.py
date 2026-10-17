@@ -254,7 +254,7 @@ def _imprimir_resumo(r: dict) -> None:
 # --- comandos ---------------------------------------------------------------
 
 
-def _uuids_origem(database_url: str, docs) -> dict[str, str]:
+def uuids_origem(database_url: str, docs) -> dict[str, str]:
     """id_documento (chave natural do portal) -> UUID em `documentos`.
 
     `sortear_acordaos` devolve DocumentoJuridico sem o UUID, e os pares usam UUID."""
@@ -302,7 +302,7 @@ def preparar(n_teses: int, por_tese: int, sim: bool, caminho: Path) -> int:
     splits = sortear_split(TEMAS, seed)
 
     acordaos = sortear_acordaos(deps.database_url, n_teses, seed)
-    uuids = _uuids_origem(deps.database_url, acordaos)
+    uuids = uuids_origem(deps.database_url, acordaos)
     n_favoravel = (n_teses + 1) // 2  # mesma regra de sortear_acordaos
 
     registros: list[dict] = []

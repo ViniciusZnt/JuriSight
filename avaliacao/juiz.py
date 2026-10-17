@@ -5,6 +5,8 @@ trocar o modelo sem tocar no resto do pacote.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import uuid
@@ -45,6 +47,17 @@ PERGUNTAS: dict[str, Score | Choice] = {
         },
     ),
 }
+
+
+def perguntas_sha() -> str:
+    """sha256 das perguntas do Jev (instruções e critérios).
+
+    Serializa cada pergunta com `model_dump(mode="json")` e `json.dumps(sort_keys=True)`,
+    então só muda quando o texto das perguntas muda. Gravada no cabeçalho do CLI e no
+    relatório para saber se dois julgamentos foram feitos com as mesmas perguntas."""
+    dump = {nome: p.model_dump(mode="json") for nome, p in PERGUNTAS.items()}
+    texto = json.dumps(dump, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
 class Juiz(Protocol):
