@@ -66,7 +66,34 @@ def test_eval_ignora_teses_sem_relevantes():
 
 def test_eval_sem_teses():
     resultado = avaliar([], lambda e: [], lambda tid: ({}, {}))
-    assert resultado == {"por_tese": [], "por_split": {}, "por_origem": {}}
+    assert resultado == {"por_tese": [], "por_split": {}, "por_origem": {}, "teses_com_erro": []}
+
+
+def test_eval_tese_com_busca_que_falha_nao_derruba(capsys):
+    from query.enrichment.schema import EstruturaArgumentativa
+
+    boa, ruim_valor, ruim_pydantic = _tese(), _tese(), _tese()
+    rotulos = {boa.id: ({"a": 3}, {"a": "fortalece"})}
+
+    def _buscar(estrutura, _ordem=iter([None, "valor", "pydantic"])):
+        caso = next(_ordem)
+        if caso == "valor":
+            raise ValueError("busca quebrou")
+        if caso == "pydantic":
+            EstruturaArgumentativa(pedido_principal=["não é str"])
+        return ["a"]
+
+    resultado = avaliar([boa, ruim_valor, ruim_pydantic], _buscar, lambda tid: rotulos[tid])
+
+    assert resultado["teses_com_erro"] == [str(ruim_valor.id), str(ruim_pydantic.id)]
+    err = capsys.readouterr().err
+    assert str(ruim_valor.id) in err and str(ruim_pydantic.id) in err
+    dev = resultado["por_split"]["dev"]
+    assert dev["n_teses"] == 3
+    assert dev["medias"]["ndcg_10"] == 1.0  # só a tese boa entra na média
+    assert all(dev["excluidas"][m] == 2 for m in ("ndcg_10", "recall_20", "fortalece_10", "nao_julgados_10"))
+    com_erro = {p["tese_id"]: p for p in resultado["por_tese"]}[str(ruim_valor.id)]
+    assert com_erro["ndcg_10"] is None and "busca quebrou" in com_erro["erro"]
 
 
 def _j(par_id, juiz, rodada, rel, stance, conf_rel=None, conf_stance=None):

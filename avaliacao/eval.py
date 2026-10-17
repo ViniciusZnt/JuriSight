@@ -5,7 +5,7 @@ um relatório JSON por execução.
 
     python -m avaliacao.eval --split {dev,teste} [--saida data/eval/runs/]
 
-Só lê o banco: não chama a API do Jev.
+Não chama a API do Jev, mas roda a busca real (Qdrant, índice BM25 e embedding da OpenAI).
 """
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+
+from pydantic import ValidationError
 
 from avaliacao.metricas import (
     fracao_fortalece,
@@ -68,13 +70,26 @@ def avaliar(
 
     Input:  teses; buscar_ids(estrutura) -> ids dos documentos em ordem de ranking;
             rotulos(tese_id) -> (documento_id -> relevância, documento_id -> stance).
-    Returns: {"por_tese": [...], "por_split": {...}, "por_origem": {...}}. Cada
-             grupo traz n_teses, medias (ignorando None) e excluidas (quantas
-             teses ficaram sem a métrica, p.ex. sem nenhum relevante).
+    Returns: {"por_tese": [...], "por_split": {...}, "por_origem": {...},
+             "teses_com_erro": [tese_id, ...]}. Cada grupo traz n_teses, medias
+             (ignorando None) e excluidas (quantas teses ficaram sem a métrica,
+             p.ex. sem nenhum relevante ou porque a busca falhou).
+    Uma tese cuja busca falha (ValueError/ValidationError) não derruba o eval:
+    avisa em stderr e entra com todas as métricas None (excluída das médias).
     """
     por_tese: list[dict] = []
+    teses_com_erro: list[str] = []
     for tese in teses:
-        ranking = buscar_ids(tese.estrutura)
+        try:
+            ranking = buscar_ids(tese.estrutura)
+        except (ValueError, ValidationError) as e:
+            print(f"Aviso: a busca da tese {tese.id} falhou ({e}); excluída das médias.", file=sys.stderr)
+            teses_com_erro.append(str(tese.id))
+            por_tese.append({
+                "tese_id": str(tese.id), "origem": tese.origem, "tema": tese.tema,
+                "split": tese.split, **{m: None for m in METRICAS}, "erro": str(e),
+            })
+            continue
         ganhos, stances = rotulos(tese.id)
         por_tese.append({
             "tese_id": str(tese.id),
@@ -93,7 +108,12 @@ def avaliar(
             grupos.setdefault(linha[chave], []).append(linha)
         return {nome: _agregar(linhas) for nome, linhas in sorted(grupos.items())}
 
-    return {"por_tese": por_tese, "por_split": agrupar("split"), "por_origem": agrupar("origem")}
+    return {
+        "por_tese": por_tese,
+        "por_split": agrupar("split"),
+        "por_origem": agrupar("origem"),
+        "teses_com_erro": teses_com_erro,
+    }
 
 
 # --- concordância e calibração ----------------------------------------------
