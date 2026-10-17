@@ -121,6 +121,37 @@ def test_julgar_lote_pula_falha_e_segue():
     assert {j.par_id for j in vistos} == {i[0] for i in itens if i[2].ementa != "e2"}
 
 
+def test_julgar_lote_grava_sem_esperar_item_lento():
+    import threading
+
+    lento_id, rapido_id = uuid.uuid4(), uuid.uuid4()
+    fast_gravado = threading.Event()
+    thread_principal = threading.current_thread()
+
+    class _JuizLento:
+        nome = "jev:fake"
+
+        def julgar(self, tese, documento, rodada, par_id):
+            if par_id == lento_id:
+                # só termina depois que o item rápido foi gravado (ou estoura o prazo)
+                fast_gravado.wait(timeout=5)
+            return Julgamento(par_id=par_id, juiz=self.nome, rodada=rodada, relevancia=1, stance="neutro")
+
+    gravados = []
+
+    def _grava(j):
+        assert threading.current_thread() is thread_principal
+        gravados.append(j.par_id)
+        if j.par_id == rapido_id:
+            fast_gravado.set()
+
+    itens = [(lento_id, TESE, _doc(id_="d0")), (rapido_id, TESE, _doc(id_="d1"))]
+    ok = julgar_lote(_JuizLento(), itens, rodada=1, ao_julgar=_grava, max_workers=2)
+
+    assert ok == 2
+    assert gravados == [rapido_id, lento_id]
+
+
 def test_atribuir_tema_retorna_item_da_lista():
     client = _FakeClient(
         answers={
