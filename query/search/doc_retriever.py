@@ -7,13 +7,16 @@ documento_id (UUID) que a busca híbrida devolveu.
 import psycopg
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
-# Mesmas colunas do _SELECT de indexing/doc_source.py, filtrando por id (UUID).
-_SELECT_BY_IDS = """
-SELECT id, id_documento, tipo_documento, hierarquia_categoria, data_filtro,
+# Mesmas colunas do _SELECT de indexing/doc_source.py. A ORDEM importa: _row_para_documento
+# lê por índice. Exposta para outros módulos (ex.: avaliacao.geracao) reusarem o mapeamento.
+COLUNAS_DOCUMENTO = """id, id_documento, tipo_documento, hierarquia_categoria, data_filtro,
        numero_processo, tribunal, classe_processo, sigla_classe,
        relator, turma, gabinete, data_julgamento, data_juntada,
        cabecalho, ementa, relatorio, fundamentacao, acordao, votos,
-       possui_ementa, referencia_legislativa, provimento, link_original
+       possui_ementa, referencia_legislativa, provimento, link_original"""
+
+_SELECT_BY_IDS = f"""
+SELECT {COLUNAS_DOCUMENTO}
 FROM documentos
 WHERE id = ANY(%s::uuid[])
 """
