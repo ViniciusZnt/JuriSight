@@ -86,7 +86,7 @@ describe("enrich", () => {
 describe("queryJurisprudencia", () => {
   it("envia JSON com Content-Type correto", async () => {
     mockFetchOnce(200, []);
-    await queryJurisprudencia({ estrutura, provimento: "APROVADO", ordenar_por: "data" });
+    await queryJurisprudencia({ estrutura, provimento: "APROVADO" });
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/query$/);
@@ -95,7 +95,6 @@ describe("queryJurisprudencia", () => {
     const body = JSON.parse(init.body);
     expect(body.estrutura).toEqual(estrutura);
     expect(body.provimento).toBe("APROVADO");
-    expect(body.ordenar_por).toBe("data");
   });
 
   it("retorna a lista de ResultCard", async () => {

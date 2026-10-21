@@ -27,7 +27,6 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from datetime import date
-from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -201,7 +200,6 @@ class QueryRequest(BaseModel):
     provimento: Provimento | None = None
     data_inicio: date | None = None
     data_fim: date | None = None
-    ordenar_por: Literal["relevancia", "data"] = "relevancia"
 
 
 @app.post("/query", response_model=list[ResultCard], dependencies=[Depends(get_current_user)])
@@ -221,7 +219,6 @@ async def query(
             provimento=body.provimento,
             data_inicio=body.data_inicio,
             data_fim=body.data_fim,
-            ordenar_por=body.ordenar_por,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
