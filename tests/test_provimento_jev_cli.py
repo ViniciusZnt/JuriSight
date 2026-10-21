@@ -127,9 +127,8 @@ def test_cancelado_nao_instancia_cliente_real(monkeypatch):
 
 
 def test_excecao_em_gravar_cancela_chamadas_pendentes():
+    import threading
     import time
-
-    import pytest
 
     class _GravarFalha(_FakeStore):
         def gravar(self, *a, **k):
@@ -138,14 +137,75 @@ def test_excecao_em_gravar_cancela_chamadas_pendentes():
     class _Lento(_FakeClassificador):
         def classificar(self, acordao, ementa):
             self.chamadas.append(acordao)
-            time.sleep(0.05)
+            time.sleep(0.02)
             return _classif()
 
-    itens = [_item(i) for i in range(50)]
+    itens = [_item(i) for i in range(200)]
     clf = _Lento()
     with pytest.raises(RuntimeError):
         cli.classificar_pendentes(_GravarFalha(itens), clf, itens, "s", max_workers=2)
-    assert len(clf.chamadas) < 25
+    # Sem cancel_futures a fila inteira (200) seguiria rodando em segundo plano.
+    time.sleep(0.5)
+    assert len(clf.chamadas) < 20
+
+
+def test_item_lento_nao_atrasa_gravacao_dos_rapidos():
+    import threading
+    import time
+
+    liberar = threading.Event()
+    estado = {"lento_terminou": False, "gravou_antes": None}
+
+    class _Misto(_FakeClassificador):
+        def classificar(self, acordao, ementa):
+            if acordao == "texto 0":
+                liberar.wait(timeout=5)
+                estado["lento_terminou"] = True
+            return _classif()
+
+    class _Store(_FakeStore):
+        def gravar(self, *a, **k):
+            if estado["gravou_antes"] is None:
+                estado["gravou_antes"] = not estado["lento_terminou"]
+                liberar.set()
+            super().gravar(*a, **k)
+
+    itens = [_item(i) for i in range(4)]
+    assert cli.classificar_pendentes(_Store(itens), _Misto(), itens, "s", max_workers=4) == (4, 0)
+    assert estado["gravou_antes"] is True
+
+
+def test_modelo_latest_e_recusado_no_cli(monkeypatch, capsys):
+    monkeypatch.setenv("TYPESAFE_MODEL", "jev-latest")
+    assert cli.main(["classificar", "--sim"], store=_FakeStore([_item(1)])) == 2
+    assert "latest" in capsys.readouterr().err
+    assert cli.main(["aplicar"], store=_StoreAplicar([])) == 2
+    assert cli.main(["comparar"], store=_StoreComparar([])) == 2
+
+
+def _csv_ponto_e_virgula(caminho, valor="jev"):
+    caminho.write_text(
+        "documento_id;quem_acertou\ndoc-1;" + valor + "\n", encoding="utf-8-sig"
+    )
+
+
+def test_csv_ponto_e_virgula_e_conferido_e_nao_sobrescrito(tmp_path):
+    caminho = tmp_path / "d.csv"
+    _csv_ponto_e_virgula(caminho)
+    antes = caminho.read_bytes()
+    assert cli.csv_conferido(caminho)
+    store = _StoreComparar([_lc(1, "provido", regex="NEGADO")])
+    assert cli.main(["comparar", "--csv", str(caminho)], store=store) == 1
+    assert caminho.read_bytes() == antes
+    assert cli.resumo_conferencia(caminho)["jev"] == 1
+
+
+def test_csv_sem_coluna_quem_acertou(tmp_path, capsys):
+    caminho = tmp_path / "d.csv"
+    caminho.write_text("documento_id,outra\ndoc-1,x\n", encoding="utf-8")
+    assert cli.csv_conferido(caminho)
+    assert cli.main(["conferir", "--csv", str(caminho)], store=None) == 2
+    assert "quem_acertou" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("flag", ["--lote", "--limite"])
@@ -292,7 +352,20 @@ def test_aplicar_sem_confirmar_nao_escreve(capsys):
     assert store.chamadas == []
     out = capsys.readouterr().out
     assert "NEGADO → APROVADO: 1" in out
-    assert "abaixo do limite" in out
+    assert "abaixo do limite e mudariam: 1" in out
+    assert "abaixo do limite sem mudança: 0" in out
+
+
+def test_aplicar_separa_abaixo_do_limite(capsys):
+    store = _StoreAplicar([
+        _la(1, "provido", "NEGADO", 0.5),       # abaixo e mudaria
+        _la(2, "nao_provido", "NEGADO", 0.5),   # abaixo e sem mudança
+        _la(3, "nao_provido", "NEGADO", 0.9),
+    ])
+    assert cli.main(["aplicar"], store=store) == 0
+    out = capsys.readouterr().out
+    assert "abaixo do limite e mudariam: 1" in out
+    assert "abaixo do limite sem mudança: 1" in out
 
 
 def test_aplicar_com_confirmar_escreve(capsys):

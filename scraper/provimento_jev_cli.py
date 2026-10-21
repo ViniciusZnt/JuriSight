@@ -18,7 +18,7 @@ import os
 import random
 import sys
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from typesafe_sdk import TypeSafeError
@@ -28,6 +28,7 @@ from scraper.provimento_jev import (
     MODELO_PADRAO,
     TOKENS_POR_ACORDAO,
     ClassificadorJev,
+    validar_modelo,
     favorece_por_regra,
     para_provimento,
     perguntas_sha,
@@ -58,7 +59,10 @@ def classificar_pendentes(
     ok = falhas = 0
     pool = ThreadPoolExecutor(max_workers=max_workers)
     try:
-        for item, c, erro in pool.map(_um, itens):
+        futuros = [pool.submit(_um, item) for item in itens]
+        # as_completed grava cada resultado pago assim que chega, sem esperar item lento.
+        for futuro in as_completed(futuros):
+            item, c, erro = futuro.result()
             if erro is not None:
                 falhas += 1
                 logger.warning("Falha em %s: %s", item.documento_id, erro)
@@ -142,27 +146,50 @@ def escrever_csv_divergencias(caminho: Path, linhas: list, trechos: dict) -> Non
             })
 
 
+def _ler_csv(caminho: Path) -> tuple[list[str], list[dict]]:
+    """Lê o CSV aceitando `,` ou `;` (Excel pt-BR salva com `;`). Devolve (cabeçalho, linhas)."""
+    with open(caminho, encoding="utf-8-sig", newline="") as f:
+        amostra = f.read(4096)
+        f.seek(0)
+        try:
+            delimitador = csv.Sniffer().sniff(amostra, delimiters=",;").delimiter
+        except csv.Error:
+            delimitador = ","
+        leitor = csv.DictReader(f, delimiter=delimitador)
+        linhas = list(leitor)
+        return list(leitor.fieldnames or []), linhas
+
+
 def csv_conferido(caminho: Path) -> bool:
-    """True se o arquivo existe e alguma linha tem `quem_acertou` preenchido."""
+    """True se o arquivo existe e alguma linha tem `quem_acertou` preenchido.
+    Arquivo sem a coluna também é True: é melhor recusar do que apagar a conferência."""
     if not Path(caminho).exists():
         return False
-    with open(caminho, encoding="utf-8-sig", newline="") as f:
-        return any((l.get("quem_acertou") or "").strip() for l in csv.DictReader(f))
+    cabecalho, linhas = _ler_csv(caminho)
+    if "quem_acertou" not in cabecalho:
+        return True
+    return any((l.get("quem_acertou") or "").strip() for l in linhas)
 
 
 def resumo_conferencia(caminho: Path) -> dict:
     """Conta `jev`, `regex`, `ambos`, `nenhum`; vazios são ignorados e valores
-    desconhecidos são avisados em stderr e pulados."""
+    desconhecidos são avisados em stderr e pulados. Sem a coluna `quem_acertou`,
+    levanta ValueError."""
     cont = dict.fromkeys(VALORES_QUEM_ACERTOU, 0)
-    with open(caminho, encoding="utf-8-sig", newline="") as f:
-        for l in csv.DictReader(f):
-            v = (l.get("quem_acertou") or "").strip().lower()
-            if not v:
-                continue
-            if v in cont:
-                cont[v] += 1
-            else:
-                print(f"Valor inválido em {l.get('documento_id')}: {v!r} (ignorado)", file=sys.stderr)
+    cabecalho, linhas = _ler_csv(caminho)
+    if "quem_acertou" not in cabecalho:
+        raise ValueError(
+            f"{caminho} não tem a coluna 'quem_acertou' (separador ',' ou ';'); "
+            "confira o arquivo ou rode `comparar` de novo."
+        )
+    for l in linhas:
+        v = (l.get("quem_acertou") or "").strip().lower()
+        if not v:
+            continue
+        if v in cont:
+            cont[v] += 1
+        else:
+            print(f"Valor inválido em {l.get('documento_id')}: {v!r} (ignorado)", file=sys.stderr)
     return cont
 
 
@@ -258,11 +285,14 @@ def _cmd_aplicar(args, store) -> int:
         print(f"Nenhuma classificação para {modelo}; rode `classificar` primeiro.")
         return 1
     muda = mudancas(linhas, args.confianca_min)
-    abaixo = sum(l.confianca_resultado < args.confianca_min for l in linhas)
+    abaixo = [l for l in linhas if l.confianca_resultado < args.confianca_min]
+    abaixo_muda = sum(para_provimento(l.resultado).value != l.provimento_atual for l in abaixo)
     for (atual, novo), n in sorted(Counter((a, n) for _, a, n in muda).items()):
         print(f"{atual or '(vazio)'} → {novo}: {n}")
     print(f"Mudanças: {len(muda)} de {len(linhas)} linhas")
-    print(f"Linhas abaixo do limite de confiança ({args.confianca_min}): {abaixo}")
+    limite = args.confianca_min
+    print(f"Linhas abaixo do limite e mudariam: {abaixo_muda} (confiança < {limite})")
+    print(f"Linhas abaixo do limite sem mudança: {len(abaixo) - abaixo_muda} (confiança < {limite})")
     if not args.confirmar:
         print("Nada foi escrito; use --confirmar para aplicar.")
         return 0
@@ -283,7 +313,11 @@ def _cmd_conferir(args) -> int:
     if not Path(args.csv).exists():
         print(f"CSV não encontrado: {args.csv} (rode `comparar` antes).")
         return 2
-    cont = resumo_conferencia(args.csv)
+    try:
+        cont = resumo_conferencia(args.csv)
+    except ValueError as e:
+        print(e)
+        return 2
     total = sum(cont.values())
     print(f"Conferidas: {total}")
     for k, v in cont.items():
@@ -311,6 +345,11 @@ def main(argv: list[str] | None = None, *, store=None, classificador=None) -> in
 
     if args.comando == "conferir":
         return _cmd_conferir(args)
+    try:
+        validar_modelo(os.getenv("TYPESAFE_MODEL", MODELO_PADRAO))
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
     store = store or _construir_store()
     if args.comando == "comparar":
         return _cmd_comparar(args, store)

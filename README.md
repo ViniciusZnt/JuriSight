@@ -479,13 +479,17 @@ uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--con
 - **Retomável:** o `classificar` pode ser interrompido (Ctrl-C) e rodado de novo. Só
   classifica o que ainda não tem linha com o mesmo modelo e as mesmas perguntas.
 - **`aplicar`:** sem `--confirmar` apenas imprime as transições (`ATUAL → NOVO: n`) e
-  quantas linhas ficaram abaixo do limite de confiança (`--confianca-min`, de 0 a 1).
+  quantas linhas ficaram abaixo do limite de confiança (`--confianca-min`, de 0 a 1), separando as que mudariam das que não mudam.
   Com `--confirmar`, grava só onde a confiança atinge o limite e o valor muda.
 - **Voltar à regex:** `uv run python utils/reclassify.py` recalcula a coluna a partir do texto.
 - **Ainda não usados:** `favorece` e `recorrente` ficam guardados, mas a busca ainda
   não os usa; só o resultado entra em `documentos.provimento`.
-- **Excel em português:** ao salvar o CSV com `;` como separador, o `conferir` não o
-  lê. Edite e salve com LibreOffice ou Google Planilhas (separador `,`).
+- **Excel em português:** o `conferir` aceita o CSV com `,` ou `;` como separador. Se o
+  arquivo não tiver a coluna `quem_acertou`, o `conferir` avisa e sai com código 2.
+- **Conferência protegida:** o `comparar` recusa sobrescrever um CSV que já tenha
+  `quem_acertou` preenchido (ou que não tenha a coluna), para não apagar a conferência manual.
+- **Modelo fixo:** `TYPESAFE_MODEL` terminado em `-latest` é recusado; use uma versão
+  fixa (ex.: `jev-1.13.0`).
 
 ---
 
