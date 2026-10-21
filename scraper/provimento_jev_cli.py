@@ -15,7 +15,12 @@ from pathlib import Path
 from typesafe_sdk import TypeSafeError
 
 from avaliacao.passo_zero import confirmar
-from scraper.provimento_jev import TOKENS_POR_ACORDAO, perguntas_sha
+from scraper.provimento_jev import (
+    MODELO_PADRAO,
+    TOKENS_POR_ACORDAO,
+    ClassificadorJev,
+    perguntas_sha,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 logger = logging.getLogger(__name__)
@@ -34,7 +39,8 @@ def classificar_pendentes(
             return item, None, e
 
     ok = falhas = 0
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    pool = ThreadPoolExecutor(max_workers=max_workers)
+    try:
         for item, c, erro in pool.map(_um, itens):
             if erro is not None:
                 falhas += 1
@@ -45,13 +51,17 @@ def classificar_pendentes(
                 modelo=classificador.model, perguntas_sha=perguntas_sha,
             )
             ok += 1
+    except BaseException:
+        # Não espera chamadas pagas ainda enfileiradas (inclui Ctrl-C).
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown()
     return ok, falhas
 
 
-def _construir_reais():
+def _construir_store():
     from dotenv import load_dotenv
 
-    from scraper.provimento_jev import ClassificadorJev
     from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema
 
     load_dotenv(ROOT / ".env")
@@ -59,11 +69,19 @@ def _construir_reais():
     if not url:
         raise RuntimeError("DATABASE_URL não definida (veja o .env)")
     ensure_schema(url)
-    return ProvimentoJevStore(url), ClassificadorJev()
+    return ProvimentoJevStore(url)
+
+
+def _positivo(valor: str) -> int:
+    n = int(valor)
+    if n <= 0:
+        raise argparse.ArgumentTypeError("deve ser > 0")
+    return n
 
 
 def _cmd_classificar(args, store, classificador) -> int:
-    modelo = classificador.model
+    # O cliente real só é criado depois da confirmação.
+    modelo = classificador.model if classificador else os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
     sha = perguntas_sha()
     n = store.contar_pendentes(modelo, sha)
     if args.limite is not None:
@@ -76,6 +94,7 @@ def _cmd_classificar(args, store, classificador) -> int:
     if not args.sim and not confirmar("Chamar o Jev (custo)? [s/N] "):
         print("Cancelado.")
         return 1
+    classificador = classificador or ClassificadorJev()
 
     ok = falhas = tentados = 0
     cursor = None
@@ -96,16 +115,13 @@ def main(argv: list[str] | None = None, *, store=None, classificador=None) -> in
     parser = argparse.ArgumentParser(prog="provimento_jev_cli")
     sub = parser.add_subparsers(dest="comando", required=True)
     p = sub.add_parser("classificar", help="backfill retomável com o Jev")
-    p.add_argument("--limite", type=int, default=None, help="teto de documentos tentados")
-    p.add_argument("--lote", type=int, default=500)
-    p.add_argument("--max-workers", type=int, default=8)
+    p.add_argument("--limite", type=_positivo, default=None, help="teto de documentos tentados")
+    p.add_argument("--lote", type=_positivo, default=500)
+    p.add_argument("--max-workers", type=_positivo, default=8)
     p.add_argument("--sim", action="store_true", help="pula a confirmação")
     args = parser.parse_args(argv)
 
-    if store is None or classificador is None:
-        store_real, clf_real = _construir_reais()
-        store = store or store_real
-        classificador = classificador or clf_real
+    store = store or _construir_store()
 
     if args.comando == "classificar":
         return _cmd_classificar(args, store, classificador)
