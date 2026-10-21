@@ -5,8 +5,6 @@ trocar o modelo sem tocar no resto do pacote.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import os
 import uuid
@@ -16,6 +14,7 @@ from typing import Callable, Protocol
 from typesafe_sdk import Choice, Score, TypeSafeClient, TypeSafeError
 
 from avaliacao.store import Julgamento
+from scraper.provimento_jev import sha_perguntas
 from scraper.schema import DocumentoJuridico
 
 logger = logging.getLogger(__name__)
@@ -55,9 +54,7 @@ def perguntas_sha() -> str:
     Serializa cada pergunta com `model_dump(mode="json")` e `json.dumps(sort_keys=True)`,
     então só muda quando o texto das perguntas muda. Gravada no cabeçalho do CLI e no
     relatório para saber se dois julgamentos foram feitos com as mesmas perguntas."""
-    dump = {nome: p.model_dump(mode="json") for nome, p in PERGUNTAS.items()}
-    texto = json.dumps(dump, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+    return sha_perguntas(PERGUNTAS)
 
 
 class Juiz(Protocol):
