@@ -64,9 +64,9 @@ class LinhaClassificada:
     provimento_atual: str
 
 
-_PENDENTE_WHERE = """
+_PENDENTE_WHERE = r"""
     d.tipo_documento = 'ACORDAO'
-    AND btrim(coalesce(d.acordao, '')) <> ''
+    AND d.acordao ~ '\S'
     AND NOT EXISTS (
         SELECT 1 FROM public.provimento_jev p
         WHERE p.documento_id = d.id AND p.modelo = %s AND p.perguntas_sha = %s
@@ -110,19 +110,24 @@ class ProvimentoJevStore:
             rows = conn.execute(sql, params).fetchall()
         return [ItemPendente(str(r[0]), r[1], r[2], r[3]) for r in rows]
 
-    def contar_pendentes(self, modelo: str, perguntas_sha: str) -> int:
-        """Quantos documentos `pendentes` devolveria (sem `documento_ids`)."""
+    def contar_pendentes(
+        self, modelo: str, perguntas_sha: str, documento_ids: list[str] | None = None
+    ) -> int:
+        """Quantos documentos `pendentes` devolveria (mesmo filtro)."""
+        sql = "SELECT count(*) FROM documentos d WHERE " + _PENDENTE_WHERE
+        params: list = [modelo, perguntas_sha]
+        if documento_ids is not None:
+            sql += " AND d.id = ANY(%s::uuid[])"
+            params.append(list(documento_ids))
         with self._conn() as conn:
-            return conn.execute(
-                "SELECT count(*) FROM documentos d WHERE " + _PENDENTE_WHERE,
-                (modelo, perguntas_sha),
-            ).fetchone()[0]
+            return conn.execute(sql, params).fetchone()[0]
 
     def contar_sem_texto(self) -> int:
+        """Acórdãos com `acordao` nulo ou só whitespace (nunca vão ao Jev)."""
         with self._conn() as conn:
             return conn.execute(
                 "SELECT count(*) FROM documentos WHERE tipo_documento = 'ACORDAO' "
-                "AND btrim(coalesce(acordao, '')) = ''"
+                r"AND (acordao IS NULL OR acordao !~ '\S')"
             ).fetchone()[0]
 
     def gravar(
@@ -133,6 +138,7 @@ class ProvimentoJevStore:
         modelo: str,
         perguntas_sha: str,
     ) -> None:
+        """Upsert por `documento_id`; renova `criado_em`."""
         with self._conn() as conn:
             conn.execute(
                 """
@@ -162,6 +168,7 @@ class ProvimentoJevStore:
             )
 
     def linhas(self, modelo: str, perguntas_sha: str) -> list[LinhaClassificada]:
+        """Classificações do par modelo/sha, com o `provimento` atual do documento."""
         with self._conn() as conn:
             rows = conn.execute(
                 """

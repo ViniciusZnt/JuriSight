@@ -87,12 +87,32 @@ def test_gravar_e_ler(store, criar_doc):
     assert l.confianca_resultado == pytest.approx(0.9)
 
 
+def _linha_bruta(doc):
+    with psycopg.connect(DATABASE_URL) as conn:
+        return conn.execute(
+            "SELECT criado_em, modelo, perguntas_sha, probs, resultado "
+            "FROM provimento_jev WHERE documento_id = %s", (doc,)
+        ).fetchone()
+
+
 def test_gravar_faz_upsert(store, criar_doc):
     doc = criar_doc()
     store.gravar(doc, _classif("nao_provido"), "NEGADO", MODELO, SHA)
-    store.gravar(doc, _classif("provido"), "NEGADO", MODELO, SHA)
-    linhas = [l for l in store.linhas(MODELO, SHA) if l.documento_id == doc]
-    assert [l.resultado for l in linhas] == ["provido"]
+    antes = _linha_bruta(doc)
+    novo = ClassificacaoProvimento(
+        resultado="provido", recorrente="reclamada", favorece="reclamante",
+        probs={"resultado": {"provido": 0.95}}, confianca_resultado=0.95,
+        confianca_recorrente=0.8, confianca_favorece=0.7,
+    )
+    store.gravar(doc, novo, "NEGADO", "jev-outro", "sha9")
+    depois = _linha_bruta(doc)
+    assert depois[0] > antes[0]
+    assert depois[1:3] == ("jev-outro", "sha9")
+    assert depois[3] == {"resultado": {"provido": 0.95}}
+    assert depois[4] == "provido"
+    assert [l.resultado for l in store.linhas("jev-outro", "sha9") if l.documento_id == doc] == ["provido"]
+    assert [l for l in store.linhas(MODELO, SHA) if l.documento_id == doc] == []
+    assert [i.documento_id for i in store.pendentes(MODELO, SHA, documento_ids=[doc])] == [doc]
 
 
 def test_pendentes_ignora_feito(store, criar_doc):
@@ -132,9 +152,22 @@ def test_pendentes_trunca_texto_e_pagina(store, criar_doc):
 
 def test_contar_pendentes_reflete_gravacao(store, criar_doc):
     doc = criar_doc()
-    antes = store.contar_pendentes(MODELO, SHA)
+    assert store.contar_pendentes(MODELO, SHA, documento_ids=[doc]) == 1
     store.gravar(doc, _classif(), "NEGADO", MODELO, SHA)
-    assert store.contar_pendentes(MODELO, SHA) == antes - 1
+    assert store.contar_pendentes(MODELO, SHA, documento_ids=[doc]) == 0
+
+
+def test_contar_pendentes_paridade_com_pendentes(store, criar_doc):
+    ids = [criar_doc(), criar_doc(acordao="   "), criar_doc(acordao="\n\t\n"), criar_doc()]
+    assert store.contar_pendentes(MODELO, SHA, documento_ids=ids) == len(
+        store.pendentes(MODELO, SHA, documento_ids=ids)
+    ) == 2
+
+
+def test_acordao_so_com_quebras_de_linha_nao_e_pendente(store, criar_doc):
+    doc = criar_doc(acordao="\n\t\r\n")
+    assert store.pendentes(MODELO, SHA, documento_ids=[doc]) == []
+    assert store.contar_sem_texto() >= 1
 
 
 def test_trechos(store, criar_doc):
