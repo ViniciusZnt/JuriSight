@@ -1,195 +1,51 @@
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="pt-BR" xml:lang="pt-BR">
+<!doctype html>
+<html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="generator" content="pandoc" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>JuriSight — Inventário técnico e plano até 20/11</title>
-  <style>
-    html {
-      color: #1a1a1a;
-      background-color: #fdfdfd;
-    }
-    body {
-      margin: 0 auto;
-      max-width: 36em;
-      padding-left: 50px;
-      padding-right: 50px;
-      padding-top: 50px;
-      padding-bottom: 50px;
-      hyphens: auto;
-      overflow-wrap: break-word;
-      text-rendering: optimizeLegibility;
-      font-kerning: normal;
-    }
-    @media (max-width: 600px) {
-      body {
-        font-size: 0.9em;
-        padding: 12px;
-      }
-      h1 {
-        font-size: 1.8em;
-      }
-    }
-    @media print {
-      html {
-        background-color: white;
-      }
-      body {
-        background-color: transparent;
-        color: black;
-        font-size: 12pt;
-      }
-      p, h2, h3 {
-        orphans: 3;
-        widows: 3;
-      }
-      h2, h3, h4 {
-        page-break-after: avoid;
-      }
-    }
-    p {
-      margin: 1em 0;
-    }
-    a {
-      color: #1a1a1a;
-    }
-    a:visited {
-      color: #1a1a1a;
-    }
-    img {
-      max-width: 100%;
-    }
-    svg {
-      height: auto;
-      max-width: 100%;
-    }
-    h1, h2, h3, h4, h5, h6 {
-      margin-top: 1.4em;
-    }
-    h5, h6 {
-      font-size: 1em;
-      font-style: italic;
-    }
-    h6 {
-      font-weight: normal;
-    }
-    ol, ul {
-      padding-left: 1.7em;
-      margin-top: 1em;
-    }
-    li > ol, li > ul {
-      margin-top: 0;
-    }
-    blockquote {
-      margin: 1em 0 1em 1.7em;
-      padding-left: 1em;
-      border-left: 2px solid #e6e6e6;
-      color: #606060;
-    }
-    code {
-      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
-      font-size: 85%;
-      margin: 0;
-      hyphens: manual;
-    }
-    pre {
-      margin: 1em 0;
-      overflow: auto;
-    }
-    pre code {
-      padding: 0;
-      overflow: visible;
-      overflow-wrap: normal;
-    }
-    .sourceCode {
-     background-color: transparent;
-     overflow: visible;
-    }
-    hr {
-      border: none;
-      border-top: 1px solid #1a1a1a;
-      height: 1px;
-      margin: 1em 0;
-    }
-    table {
-      margin: 1em 0;
-      border-collapse: collapse;
-      width: 100%;
-      overflow-x: auto;
-      display: block;
-      font-variant-numeric: lining-nums tabular-nums;
-    }
-    table caption {
-      margin-bottom: 0.75em;
-    }
-    tbody {
-      margin-top: 0.5em;
-      border-top: 1px solid #1a1a1a;
-      border-bottom: 1px solid #1a1a1a;
-    }
-    th {
-      border-top: 1px solid #1a1a1a;
-      padding: 0.25em 0.5em 0.25em 0.5em;
-    }
-    td {
-      padding: 0.125em 0.5em 0.25em 0.5em;
-    }
-    header {
-      margin-bottom: 4em;
-      text-align: center;
-    }
-    #TOC li {
-      list-style: none;
-    }
-    #TOC ul {
-      padding-left: 1.3em;
-    }
-    #TOC > ul {
-      padding-left: 0;
-    }
-    #TOC a:not(:hover) {
-      text-decoration: none;
-    }
-    code{white-space: pre-wrap;}
-    span.smallcaps{font-variant: small-caps;}
-    div.columns{display: flex; gap: min(4vw, 1.5em);}
-    div.column{flex: auto; overflow-x: auto;}
-    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
-    /* The extra [class] is a hack that increases specificity enough to
-       override a similar rule in reveal.js */
-    ul.task-list[class]{list-style: none;}
-    ul.task-list li input[type="checkbox"] {
-      font-size: inherit;
-      width: 0.8em;
-      margin: 0 0.8em 0.2em -1.6em;
-      vertical-align: middle;
-    }
-    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
-  </style>
-  <style>
-  :root{--bg:#fff;--fg:#1f2328;--muted:#59636e;--line:#d1d9e0;--head:#f6f8fa;--link:#0969da}
-  @media (prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#9198a1;--line:#3d444d;--head:#151b23;--link:#4493f8}}
-  body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;max-width:960px;margin:0 auto;padding:32px 16px}
-  a{color:var(--link)} h1,h2,h3{line-height:1.25} h2{border-bottom:1px solid var(--line);padding-bottom:.3em;margin-top:2em}
-  table{border-collapse:collapse;display:block;overflow-x:auto;margin:1em 0} th,td{border:1px solid var(--line);padding:6px 12px;vertical-align:top} th{background:var(--head)}
-  code{background:var(--head);padding:.15em .35em;border-radius:4px;font-size:90%} pre{background:var(--head);padding:12px;border-radius:6px;overflow-x:auto}
-  pre.mermaid{background:transparent;text-align:center} ul.task-list{list-style:none;padding-left:1.2em}
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
-  <script>
-  document.addEventListener('DOMContentLoaded',()=>{
-    document.querySelectorAll('pre.mermaid').forEach(p=>{p.textContent=p.textContent;});
-    mermaid.initialize({startOnLoad:false,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});
-    mermaid.run({querySelector:'pre.mermaid'});
-  });
-  </script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JuriSight — Inventário técnico e plano até 20/11</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400&family=JetBrains+Mono&display=swap">
+<style>
+:root{--bg:#ffffff;--fg:#1f1e1d;--muted:#6b6a66;--line:#e5e3dc;--head:#f5f4ef;--chip:#f0eee6;--code:#f3f2ee;--link:#2b6cd4;
+--cds-text-primary:#1f1e1d;--cds-text-secondary:#6b6a66;--cds-chart-axis:#a3a19b;--cds-chart-grid:#e8e6e0;
+--cds-chart-categorical-1:#2c7be5;--cds-chart-categorical-2:#e2683c;--cds-chart-reference-tint:#f0efea}
+@media (prefers-color-scheme:dark){:root{--bg:#1f1e1d;--fg:#ecebe6;--muted:#a3a19b;--line:#3a3935;--head:#2a2926;--chip:#33322e;--code:#2c2b28;--link:#7aa7ff;
+--cds-text-primary:#ecebe6;--cds-text-secondary:#a3a19b;--cds-chart-axis:#7c7a74;--cds-chart-grid:#3a3935;
+--cds-chart-categorical-1:#5b9cff;--cds-chart-categorical-2:#f08a5d;--cds-chart-reference-tint:#2a2926}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 "Inter",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:784px;margin:0 auto;padding:56px 16px 96px}
+h1,h2,h3{font-family:"Source Serif 4","Tiempos Headline",Georgia,serif;font-weight:400;letter-spacing:-.01em;color:var(--fg)}
+h1{font-size:44px;line-height:1.1;margin:0 0 16px}
+h2{font-size:30px;line-height:1.2;margin:48px 0 12px}
+h3{font-size:22px;line-height:1.25;margin:32px 0 8px}
+p{margin:0 0 14px} ul,ol{margin:0 0 14px;padding-left:24px} li{margin:4px 0}
+a{color:var(--link);text-decoration:underline;text-underline-offset:2px}
+strong{font-weight:600}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em;background:var(--code);border-radius:4px;padding:.12em .36em}
+.byline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 40px}
+.byline .chip{display:inline-block;background:var(--chip);color:var(--fg);border-radius:6px;padding:2px 9px;font-size:14px;text-decoration:none}
+.byline .sep{color:var(--muted)}
+table{width:100%;border-collapse:collapse;margin:8px 0 20px;font-size:15px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+th{background:var(--head);color:var(--muted);font-weight:400}
+td code{overflow-wrap:anywhere;word-break:break-word}
+ul.task-list{list-style:none;padding-left:4px}
+ul.task-list li label{display:flex;gap:10px;align-items:flex-start}
+ul.task-list input{appearance:none;width:16px;height:16px;margin:4px 0 0;border:1.5px solid var(--muted);border-radius:4px;flex:none}
+ul.task-list input:checked{background:var(--fg);border-color:var(--fg);box-shadow:inset 0 0 0 3px var(--bg)}
+figure.diagrama{margin:16px 0 20px}
+figure.diagrama svg{width:100%;height:auto;display:block;font-family:inherit}
+figcaption{color:var(--muted);font-size:13px;text-align:center;margin-top:6px}
+@media (max-width:600px){h1{font-size:34px}h2{font-size:25px}}
+</style>
 </head>
 <body>
+<main>
 <h1 id="jurisight--inventário-técnico-e-plano-até-2011">JuriSight —
 Inventário técnico e plano até 20/11</h1>
-<p>Data: 2026-10-21 · Autor: Vinicius Zanatta · Versão viva: <a
-href="https://claude.ai/artifact/Nxz2uw1skkhKgjjgCsFapp">https://claude.ai/artifact/Nxz2uw1skkhKgjjgCsFapp</a></p>
+<p class="byline"><span class="chip">21 de out. de 2026</span><span class="sep">·</span><span class="chip">@Vinicius</span><span class="sep">·</span><a class="chip" href="https://claude.ai/artifact/Nxz2uw1skkhKgjjgCsFapp">versão viva no Claude</a></p>
 <h2 id="resumo">Resumo</h2>
 <p>O motor de busca está pronto. Falta medir, com gabarito de
 profissionais, qual reranker traz os melhores acórdãos para uma tese, e
@@ -197,15 +53,21 @@ colocar o vencedor em produção.</p>
 <p>Decisões fechadas em 21/10:</p>
 <ul>
 <li>o JUÁ sai;</li>
-<li>o Jev fica só no provimento;</li>
+<li>o Jev fica só no provimento (já saiu do harness no código);</li>
 <li>não há Cohere nem fine-tuning;</li>
 <li>Faithfulness e Answer Relevance saem do escopo;</li>
 <li>cada par é julgado por duas pessoas;</li>
-<li>o reranker de produção só muda depois do benchmark.</li>
+<li>o reranker de produção só muda depois do benchmark;</li>
+<li>o BM25 fica sem tratamento de NLP, e o categorical sort saiu;</li>
+<li>o filtro de provimento passa para antes da busca, com o provimento
+do Jev.</li>
 </ul>
 <p><strong>O que vamos fazer, em ordem:</strong></p>
 <ol type="1">
-<li>Rodar o provimento do Jev no acervo.</li>
+<li>Fechar o provimento do Jev: ajustar as perguntas, refazer a
+conferência, classificar o acervo e aplicar.</li>
+<li>Filtrar por provimento antes da busca: os três canais buscam só
+entre acórdãos do provimento escolhido.</li>
 <li>Montar o gabarito em lotes: cada lote é uma tese completa (~40
 pares), julgada por duas pessoas.</li>
 <li>Plugar 3 rerankers novos (gte, bge e monoPTT5) ao lado do FlashRank,
@@ -220,40 +82,12 @@ intervalos de confiança e testes pareados.</li>
 <h2 id="parte-1--visão-geral-e-arquitetura-c4">Parte 1 — Visão geral e
 arquitetura (C4)</h2>
 <p>O JuriSight recebe o PDF do caso e a intenção do advogado e devolve
-jurisprudência trabalhista do TST ordenada por relevância e pela
-hierarquia das fontes. No nível 1 do C4 há uma pessoa (o advogado) e
-três sistemas externos: Portal do TST, OpenAI e TypeSafe. O desenho
-abaixo junta os níveis 1 e 2.</p>
-<pre class="mermaid"><code>flowchart TB
-    adv([&quot;Advogado&lt;br/&gt;usa pelo navegador&quot;])
-    subgraph js[&quot;JuriSight&quot;]
-        fe[&quot;Frontend&lt;br/&gt;Next.js 16 · React 19&quot;]
-        be[&quot;Backend API&lt;br/&gt;FastAPI · /query&lt;br/&gt;RRF + FlashRank&quot;]
-        ol[&quot;Ollama&lt;br/&gt;Llama 3.2 3B&quot;]
-        pg[(&quot;PostgreSQL&lt;br/&gt;acórdãos, usuários,&lt;br/&gt;rótulos, provimento&quot;)]
-        qd[(&quot;Qdrant&lt;br/&gt;2 coleções, ~470 mil pontos&quot;)]
-        bm[(&quot;Índice BM25&lt;br/&gt;bm25s em disco&quot;)]
-        pi[&quot;Pipeline de ingestão (lote)&lt;br/&gt;scraper → chunks SAC → embeddings&quot;]
-        av[&quot;Avaliação (lote)&lt;br/&gt;harness, eval, provimento Jev&quot;]
-    end
-    oa([&quot;OpenAI API&lt;br/&gt;embeddings 3-small&quot;])
-    ts([&quot;TypeSafe Jev&lt;br/&gt;provimento&quot;])
-    tst([&quot;Portal do TST&quot;])
-    avl([&quot;Avaliadores&lt;br/&gt;Alexia + advogados&quot;])
-
-    adv --&gt;|HTTPS| fe
-    fe --&gt;|REST| be
-    be --&gt; ol
-    be --&gt;|embedding da consulta| oa
-    be --&gt; pg
-    be --&gt; qd
-    be --&gt; bm
-    pi --&gt; pg
-    pi --&gt; qd
-    pi --&gt; bm
-    pi --&gt;|coleta| tst
-    av --&gt;|julga provimento| ts
-    avl --&gt;|planilhas| av</code></pre>
+jurisprudência trabalhista do TST ordenada por relevância. Hoje o acervo
+tem só acórdãos (69.349); súmulas, OJs e precedentes ainda não foram
+coletados. No nível 1 do C4 há uma pessoa (o advogado) e três sistemas
+externos: Portal do TST, OpenAI e TypeSafe. O desenho abaixo junta os
+níveis 1 e 2.</p>
+<figure class="diagrama"><svg viewBox="0 0 760 700" role="img" aria-label="A busca online passa pelo backend; ingestão e avaliação rodam em lote"><defs><marker id="c4-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--cds-chart-axis)"/></marker></defs><text x="24" y="28" font-size="15" fill="var(--cds-text-primary)" font-weight="600">A busca online passa pelo backend; ingestão e avaliação rodam em lote</text><rect x="24" y="120" width="544" height="436" rx="8" fill="var(--cds-chart-reference-tint)" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="40" y="142" font-size="13" fill="var(--cds-text-primary)" font-weight="600">JuriSight</text><g fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"><path d="M296 104V152" marker-end="url(#c4-arrow)"/><path d="M296 224V256" marker-end="url(#c4-arrow)"/><path d="M216 292H200" marker-end="url(#c4-arrow)"/><path d="M376 292H592" marker-end="url(#c4-arrow)"/><path d="M296 328V360" marker-end="url(#c4-arrow)"/><path d="M256 328V344H120V360" marker-end="url(#c4-arrow)"/><path d="M336 328V344H472V360" marker-end="url(#c4-arrow)"/><path d="M120 464V432" marker-end="url(#c4-arrow)"/><path d="M296 464V432" marker-end="url(#c4-arrow)"/><path d="M360 464V448H440V432" marker-end="url(#c4-arrow)"/><path d="M120 536V580" marker-end="url(#c4-arrow)"/><path d="M552 500H592" marker-end="url(#c4-arrow)"/><path d="M472 580V536" marker-end="url(#c4-arrow)"/></g><rect x="216" y="48" width="160" height="56" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25" stroke-dasharray="5 4"/><text x="228" y="72" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Advogado</text><text x="228" y="90" font-size="11.5" fill="var(--cds-text-secondary)">usa pelo navegador</text><rect x="216" y="152" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="228" y="176" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Frontend</text><text x="228" y="194" font-size="11.5" fill="var(--cds-text-secondary)">Next.js 16 · React 19</text><text x="228" y="210" font-size="11.5" fill="var(--cds-text-secondary)">consulta e resultados</text><rect x="216" y="256" width="160" height="72" rx="8" fill="var(--cds-chart-categorical-1)" fill-opacity="0.12" stroke="var(--cds-chart-categorical-1)" stroke-width="2"/><text x="228" y="280" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Backend API</text><text x="228" y="298" font-size="11.5" fill="var(--cds-text-primary)">FastAPI · /query</text><text x="228" y="314" font-size="11.5" fill="var(--cds-text-primary)">RRF + FlashRank</text><rect x="40" y="256" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="52" y="280" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Ollama</text><text x="52" y="298" font-size="11.5" fill="var(--cds-text-secondary)">Llama 3.2 3B</text><text x="52" y="314" font-size="11.5" fill="var(--cds-text-secondary)">estrutura da consulta</text><rect x="592" y="256" width="144" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25" stroke-dasharray="5 4"/><text x="604" y="280" font-size="13" fill="var(--cds-text-primary)" font-weight="600">OpenAI API</text><text x="604" y="298" font-size="11.5" fill="var(--cds-text-secondary)">embeddings 3-small</text><text x="604" y="314" font-size="11.5" fill="var(--cds-text-secondary)">teses sintéticas</text><rect x="40" y="360" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="52" y="384" font-size="13" fill="var(--cds-text-primary)" font-weight="600">PostgreSQL</text><text x="52" y="402" font-size="11.5" fill="var(--cds-text-secondary)">acórdãos, usuários,</text><text x="52" y="418" font-size="11.5" fill="var(--cds-text-secondary)">rótulos, provimento</text><rect x="216" y="360" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="228" y="384" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Qdrant</text><text x="228" y="402" font-size="11.5" fill="var(--cds-text-secondary)">2 coleções de vetores</text><text x="228" y="418" font-size="11.5" fill="var(--cds-text-secondary)">~470 mil pontos</text><rect x="392" y="360" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="404" y="384" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Índice BM25</text><text x="404" y="402" font-size="11.5" fill="var(--cds-text-secondary)">bm25s em disco</text><text x="404" y="418" font-size="11.5" fill="var(--cds-text-secondary)">termos exatos</text><rect x="40" y="464" width="336" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="52" y="488" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Pipeline de ingestão (lote)</text><text x="52" y="506" font-size="11.5" fill="var(--cds-text-secondary)">scraper TST → chunks SAC → embeddings</text><text x="52" y="522" font-size="11.5" fill="var(--cds-text-secondary)">grava Postgres, Qdrant e BM25</text><rect x="392" y="464" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="404" y="488" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Avaliação (lote)</text><text x="404" y="506" font-size="11.5" fill="var(--cds-text-secondary)">harness, eval,</text><text x="404" y="522" font-size="11.5" fill="var(--cds-text-secondary)">provimento Jev</text><rect x="592" y="464" width="144" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25" stroke-dasharray="5 4"/><text x="604" y="488" font-size="13" fill="var(--cds-text-primary)" font-weight="600">TypeSafe Jev</text><text x="604" y="506" font-size="11.5" fill="var(--cds-text-secondary)">provimento</text><text x="604" y="522" font-size="11.5" fill="var(--cds-text-secondary)">jev-1.13.0</text><rect x="40" y="580" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25" stroke-dasharray="5 4"/><text x="52" y="604" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Portal do TST</text><text x="52" y="622" font-size="11.5" fill="var(--cds-text-secondary)">jurisprudência</text><text x="52" y="638" font-size="11.5" fill="var(--cds-text-secondary)">pública</text><rect x="392" y="580" width="160" height="72" rx="8" fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25" stroke-dasharray="5 4"/><text x="404" y="604" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Avaliadores</text><text x="404" y="622" font-size="11.5" fill="var(--cds-text-secondary)">Alexia + advogados</text><text x="404" y="638" font-size="11.5" fill="var(--cds-text-secondary)">planilha .xlsx</text><text x="304" y="140" font-size="11.5" fill="var(--cds-text-secondary)">HTTPS</text><text x="304" y="245" font-size="11.5" fill="var(--cds-text-secondary)">REST</text><text x="484" y="284" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">embedding da consulta</text><text x="128" y="572" font-size="11.5" fill="var(--cds-text-secondary)">coleta</text><text x="480" y="572" font-size="11.5" fill="var(--cds-text-secondary)">planilhas</text><text x="572" y="490" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">julga</text><text x="24" y="684" font-size="11.5" fill="var(--cds-text-secondary)">Tracejado: pessoas e serviços fora do JuriSight. Em cor: o backend, onde roda a busca.</text></svg><figcaption>C4 níveis 1 e 2 · containers e sistemas externos</figcaption></figure>
 <p>A busca do usuário vai do frontend ao backend, que consulta o Ollama,
 a OpenAI e os três índices. Ingestão e avaliação são processos em lote
 que leem e escrevem nos mesmos bancos; a avaliação roda o mesmo pipeline
@@ -268,10 +102,11 @@ o usuário revisa.</li>
 <li>Hybrid Search: BM25, Qdrant completo e Qdrant ementa em paralelo,
 fundidos por RRF.</li>
 <li>Doc Retriever busca os documentos no Postgres; filtros de provimento
-e período.</li>
+e período, aplicados depois da busca (o de provimento vai passar para
+dentro dos canais; veja a Parte 2).</li>
 <li>Reranker (FlashRank) reordena o pool de 30 e corta em 20.</li>
-<li>Categorical Sort ordena por hierarquia (súmula, OJ, precedente,
-acórdão) e Result Formatter monta os cartões.</li>
+<li>Result Formatter monta os cartões na ordem do reranker. O
+Categorical Sort saiu em 21/10, porque o acervo só tem acórdãos.</li>
 </ol>
 <h2 id="parte-1--componentes-e-artefatos">Parte 1 — Componentes e
 artefatos</h2>
@@ -344,8 +179,7 @@ normas, tese central)</td>
 <td>LLM como juiz</td>
 <td>Um modelo dá nota de relevância a pares (consulta, documento) no
 lugar de um humano</td>
-<td>O harness tem um juiz Jev, que deixou de ser usado como
-gabarito</td>
+<td>Saiu do harness em 21/10; o gabarito agora é só humano</td>
 </tr>
 </tbody>
 </table>
@@ -382,9 +216,10 @@ dispositivo</td>
 <td>Resultado do recurso, quem recorreu e a quem favorece, com
 probabilidades</td>
 <td>3 perguntas Choice ao Jev; tabela <code>provimento_jev</code>; CLI
-classificar, comparar, conferir, aplicar</td>
-<td>Ferramentas de avaliação (lote)</td>
-<td><code>scraper/provimento_jev*.py</code> (branch)</td>
+<code>classificar</code>, <code>comparar</code>, <code>conferir</code>,
+<code>aplicar</code>; não depende de <code>avaliacao/</code></td>
+<td>Pipeline de ingestão (lote)</td>
+<td><code>scraper/provimento_jev*.py</code></td>
 </tr>
 <tr>
 <td>Chunker SAC</td>
@@ -410,7 +245,7 @@ US$ 8 para o acervo</td>
 </tr>
 <tr>
 <td>Índice BM25</td>
-<td>Busca lexical</td>
+<td>Busca lexical, sem stemming nem stopwords do domínio</td>
 <td><code>bm25s</code>, matriz esparsa via mmap (RAM do backend de 7,4
 GB para 300 MB)</td>
 <td>Índice BM25 (arquivos)</td>
@@ -441,8 +276,8 @@ cada resultado pedido</td>
 </tr>
 <tr>
 <td>Pipeline de busca</td>
-<td>Busca, filtros, rerank, corte em 20, normalização, ordenação por
-hierarquia</td>
+<td>Busca, filtros, rerank, corte em 20 e normalização; a ordem final é
+a do reranker</td>
 <td>Função <code>buscar()</code> reusada pelo <code>/query</code> e pelo
 <code>eval</code></td>
 <td>Backend</td>
@@ -481,18 +316,13 @@ rotulação</td>
 </tr>
 <tr>
 <td>Harness de avaliação</td>
-<td>Conjunto-ouro, juiz, pooling, amostra, <code>eval</code></td>
-<td>Schema <code>avaliacao</code> no Postgres, CLIs
-<code>passo_zero</code>, <code>construir</code>, <code>eval</code></td>
+<td>Teses (reais e sintéticas), tema e split, pooling, fila de rotulação
+e <code>eval</code>; rótulos só humanos</td>
+<td>Schema <code>avaliacao</code> no Postgres; CLIs
+<code>construir</code> e <code>eval</code>; tela
+<code>/avaliacao</code></td>
 <td>Ferramentas de avaliação (lote)</td>
 <td><code>avaliacao/</code></td>
-</tr>
-<tr>
-<td>Avaliação antiga de KPIs</td>
-<td>Precision@K e latência sobre <code>golden.toml</code></td>
-<td>Ainda importa ChromaDB; está desatualizada</td>
-<td>Ferramentas de avaliação</td>
-<td><code>evaluation/</code></td>
 </tr>
 </tbody>
 </table>
@@ -556,7 +386,7 @@ são pagas por uso: OpenAI e TypeSafe.</p>
 <tr>
 <td>IA externa</td>
 <td>OpenAI <code>gpt-4o-mini</code></td>
-<td>Escreve teses sintéticas</td>
+<td>Escreve teses sintéticas e atribui o tema de cada uma</td>
 <td>Só no harness</td>
 </tr>
 <tr>
@@ -602,9 +432,20 @@ produzido</h3>
 </thead>
 <tbody>
 <tr>
+<td>21/10/2026</td>
+<td>Limpeza (branch <code>refactor/limpeza-projeto</code>): o Jev sai do
+harness; saem o categorical sort, <code>evaluation/</code> e
+<code>utils/import_acordaos.py</code>; decisão de BM25 sem NLP; spec do
+filtro de provimento antes da busca</td>
+</tr>
+<tr>
+<td>21/10/2026</td>
+<td>Provimento com o Jev mesclado em
+<code>feat/harness-avaliacao</code></td>
+</tr>
+<tr>
 <td>20/10/2026</td>
-<td>Classificador de provimento com o Jev e primeira conferência (branch
-<code>feat/provimento-jev</code>)</td>
+<td>Classificador de provimento com o Jev e primeira conferência</td>
 </tr>
 <tr>
 <td>17/10/2026</td>
@@ -648,8 +489,8 @@ versionadas</td>
 </tr>
 <tr>
 <td>06/08/2026</td>
-<td>Primeira avaliação de KPIs de recuperação
-(<code>evaluation/</code>)</td>
+<td>Primeira avaliação de KPIs de recuperação (<code>evaluation/</code>,
+removida em 21/10)</td>
 </tr>
 <tr>
 <td>13/07/2026</td>
@@ -697,7 +538,7 @@ não sua, isso está marcado.</p>
 </tr>
 <tr>
 <td>Jev</td>
-<td>Só classificador de provimento</td>
+<td>Só classificador de provimento; saiu do harness em 21/10</td>
 <td>Acurácia "English-first"; juízes LLM tiveram kappa de 0,32 a 0,53
 contra humanos no NormasTCU. No provimento, acertou 96% contra 62% da
 regex</td>
@@ -733,8 +574,31 @@ os pares</td>
 </tr>
 <tr>
 <td>BM25 sem tratamento de NLP</td>
-<td>Nenhum: sem stemming, lematização, stopwords do domínio ou corte de seções; o tokenizer fica como está</td>
-<td>O BM25 existe para termos exatos (NRs, artigos, súmulas), e o canal denso já cobre as variações de forma. Stemming e lematização mexem nas palavras comuns, não nas referências; as stopwords do domínio já têm IDF perto de zero. Limitação conhecida: “NR-15” vira <code>nr</code> + <code>15</code>. Só revisitar se o benchmark mostrar o problema</td>
+<td>Nenhum: sem stemming, lematização, stopwords do domínio ou corte de
+seções; o tokenizer fica como está</td>
+<td>O BM25 existe para termos exatos (NRs, artigos, súmulas), e o canal
+denso já cobre as variações de forma. Stemming e lematização mexem nas
+palavras comuns, não nas referências; as stopwords do domínio já têm IDF
+perto de zero. Limitação conhecida: "NR-15" vira <code>nr</code> +
+<code>15</code>. Só revisitar se o benchmark mostrar o problema</td>
+</tr>
+<tr>
+<td>Ordenação por hierarquia</td>
+<td>Removida (categorical sort e <code>ordenar_por</code>)</td>
+<td>O acervo só tem acórdãos, então a ordem final já era a do reranker;
+a ordenação por data continua na tela</td>
+</tr>
+<tr>
+<td>Filtro de provimento</td>
+<td>Antes da busca, nos três canais, usando o provimento do Jev</td>
+<td>Hoje ele roda depois da busca, sobre 80 candidatos, e usa a regex,
+que acertou 62%</td>
+</tr>
+<tr>
+<td>Perguntas do provimento (proposta, a confirmar)</td>
+<td>Embargos acolhidos só para esclarecer e "nenhum recurso provido"
+contam como <code>nao_provido</code></td>
+<td>São os dois buracos da conferência de 20/10</td>
 </tr>
 </tbody>
 </table>
@@ -1064,34 +928,71 @@ texto em 256 tokens</td>
 </table>
 <p>Em qualquer caso, medir a latência p95 no servidor antes de trocar. A
 meta do RFC é a busca inteira abaixo de 15 s.</p>
+<h2 id="parte-2--provimento-com-o-jev-e-filtro-antes-da-busca">Parte 2 —
+Provimento com o Jev e filtro antes da busca</h2>
+<p>O provimento que o advogado escolhe passa a valer dentro da busca, e
+não depois dela, e passa a vir do Jev. O detalhe está em
+<code>docs/superpowers/specs/2026-10-21-provimento-jev-filtro-design.md</code>.
+O benchmark de rerankers roda sem filtro, então as duas frentes não se
+atrapalham.</p>
+<p><strong>Por quê.</strong> Hoje o híbrido traz 80 candidatos e só
+depois descarta os de outro provimento. Se o provimento pedido é raro
+entre eles, sobra pouco resultado, e o reranker ainda pontua tudo. Além
+disso, o filtro usa a regex, que acertou 62% contra 96% do Jev.</p>
+<p><strong>Parte A — fechar o provimento do Jev</strong> (operação,
+quase sem código):</p>
+<ol type="1">
+<li>Ajustar as perguntas nos dois casos da conferência. Isso muda o
+<code>perguntas_sha</code>, e os 90 já classificados voltam a ficar
+pendentes.</li>
+<li>Nova conferência em 50 acórdãos. Seguir só com ≥ 90% de acerto no
+provimento e nenhum erro nos dois casos.</li>
+<li>Lote cronometrado de 500 e depois <code>classificar</code> no acervo
+(69.349 acórdãos, ~110 M tokens).</li>
+<li><code>comparar</code>, <code>conferir</code> e
+<code>aplicar --confianca-min 0.8 --confirmar</code>. Abaixo de 0,8,
+fica o valor da regex.</li>
+</ol>
+<p><strong>Parte B — filtrar antes da busca</strong> (código):</p>
+<ol type="1">
+<li>Subcomando <code>sincronizar</code>: leva
+<code>documentos.provimento</code> ao payload das duas coleções do
+Qdrant e a um array paralelo aos chunks do BM25. Usa
+<code>set_payload</code>, sem reindexar nem chamar a OpenAI, e cria
+índices <code>keyword</code> em <code>provimento</code> e
+<code>documento_id</code>.</li>
+<li>BM25 com máscara (<code>weight_mask</code> do <code>bm25s</code>),
+descartando os resultados de score 0.</li>
+<li><code>HybridSearch.search</code> passa o provimento aos três
+canais.</li>
+<li>Em <code>buscar()</code>, com só o filtro de provimento o pool volta
+a 30; <code>aplicar_filtros</code> continua como rede de segurança.</li>
+<li>Sem filtro, resultado e latência ficam iguais aos de hoje.</li>
+</ol>
+<p><strong>Como medir.</strong> Para as teses do conjunto-ouro, buscar
+com cada provimento (APROVADO, PARCIAL, NEGADO), antes e depois, e
+comparar três coisas: quantos resultados voltam (meta: 10 sempre que a
+base tiver 10), a latência e se 100% dos resultados têm o provimento
+pedido.</p>
 <h2 id="parte-2--cronograma-até-2011">Parte 2 — Cronograma até
 20/11</h2>
 <p>O caminho crítico é o julgamento humano. Por isso o piloto sai no
 primeiro fim de semana, antes de qualquer reranker novo estar pronto: o
 pool só depende dos 30 candidatos do híbrido e do BM25 e denso, que já
 existem.</p>
-<pre class="mermaid"><code>gantt
-    title O gabarito humano é o caminho crítico: ele volta em 11/11
-    dateFormat YYYY-MM-DD
-    axisFormat %d/%m
-    section Você
-    Provimento Jev + rubrica            :a1, 2026-10-21, 3d
-    FDS1 rerankers, pool, planilhas     :a2, 2026-10-24, 2d
-    FDS2 analisar piloto, fechar teses  :a3, 2026-10-31, 3d
-    FDS3 deploy e latência              :a4, 2026-11-07, 2d
-    FDS4 métricas e testes              :a5, 2026-11-14, 2d
-    Escrita, C4 e RFC                   :a6, 2026-11-16, 4d
-    Entrega tranquila                   :milestone, m1, 2026-11-20, 0d
-    FDS5 folga e ensaio                 :a7, 2026-11-21, 2d
-    section Avaliadores
-    Piloto 8 teses                      :b1, 2026-10-26, 7d
-    Julgamento em lotes, 2 por par      :b2, 2026-11-02, 10d</code></pre>
+<figure class="diagrama"><svg viewBox="0 0 760 440" role="img" aria-label="O gabarito humano é o caminho crítico: ele volta em 11/11"><text x="24" y="28" font-size="15" fill="var(--cds-text-primary)" font-weight="600">O gabarito humano é o caminho crítico: ele volta em 11/11</text><text x="24" y="48" font-size="11.5" fill="var(--cds-text-secondary)">Plano de 21/10 a 22/11/2026, por dia</text><line x1="300.0" x2="300.0" y1="84" y2="392" stroke="var(--cds-chart-grid)"/><text x="300.0" y="74" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">21/10</text><line x1="372.2" x2="372.2" y1="84" y2="392" stroke="var(--cds-chart-grid)"/><text x="372.2" y="74" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">28/10</text><line x1="444.4" x2="444.4" y1="84" y2="392" stroke="var(--cds-chart-grid)"/><text x="444.4" y="74" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">04/11</text><line x1="516.6" x2="516.6" y1="84" y2="392" stroke="var(--cds-chart-grid)"/><text x="516.6" y="74" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">11/11</text><line x1="588.8" x2="588.8" y1="84" y2="392" stroke="var(--cds-chart-grid)"/><text x="588.8" y="74" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">18/11</text><line x1="300" x2="630" y1="84" y2="84" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><line x1="300" x2="300.0" y1="104" y2="104" stroke="var(--cds-chart-grid)"/><rect x="300.0" y="97" width="20.6" height="14" rx="7" fill="var(--cds-chart-axis)" fill-opacity="0.18" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="334.6" y="108" font-size="11.5" fill="var(--cds-text-secondary)">21/10 a 23/10</text><text x="24" y="108" font-size="13" fill="var(--cds-text-primary)">Provimento Jev + rubrica</text><line x1="300" x2="330.9" y1="134" y2="134" stroke="var(--cds-chart-grid)"/><rect x="330.9" y="127" width="10.3" height="14" rx="7" fill="var(--cds-chart-axis)" fill-opacity="0.18" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="355.2" y="138" font-size="11.5" fill="var(--cds-text-secondary)">24/10 a 25/10</text><text x="24" y="138" font-size="13" fill="var(--cds-text-primary)">FDS1: rerankers, pool, planilhas</text><line x1="300" x2="351.6" y1="164" y2="164" stroke="var(--cds-chart-grid)"/><rect x="351.6" y="157" width="61.9" height="14" rx="7" fill="var(--cds-chart-categorical-2)" fill-opacity="0.18" stroke="var(--cds-chart-categorical-2)" stroke-width="1.25"/><text x="427.4" y="168" font-size="11.5" fill="var(--cds-text-secondary)">26/10 a 01/11</text><text x="24" y="168" font-size="13" fill="var(--cds-text-primary)">Piloto: 8 teses julgadas</text><line x1="300" x2="403.1" y1="194" y2="194" stroke="var(--cds-chart-grid)"/><rect x="403.1" y="187" width="20.6" height="14" rx="7" fill="var(--cds-chart-axis)" fill-opacity="0.18" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="437.8" y="198" font-size="11.5" fill="var(--cds-text-secondary)">31/10 a 02/11</text><text x="24" y="198" font-size="13" fill="var(--cds-text-primary)">FDS2: piloto e filtro de provimento</text><line x1="300" x2="423.8" y1="224" y2="224" stroke="var(--cds-chart-grid)"/><rect x="423.8" y="217" width="92.8" height="14" rx="7" fill="var(--cds-chart-categorical-2)" fill-opacity="0.18" stroke="var(--cds-chart-categorical-2)" stroke-width="1.25"/><text x="530.6" y="228" font-size="11.5" fill="var(--cds-text-secondary)">02/11 a 11/11</text><text x="24" y="228" font-size="13" fill="var(--cds-text-primary)">Julgamento em lotes, 2 por par</text><line x1="300" x2="475.3" y1="254" y2="254" stroke="var(--cds-chart-grid)"/><rect x="475.3" y="247" width="10.3" height="14" rx="7" fill="var(--cds-chart-axis)" fill-opacity="0.18" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="499.6" y="258" font-size="11.5" fill="var(--cds-text-secondary)">07/11 a 08/11</text><text x="24" y="258" font-size="13" fill="var(--cds-text-primary)">FDS3: deploy e latência</text><line x1="300" x2="547.5" y1="284" y2="284" stroke="var(--cds-chart-grid)"/><rect x="547.5" y="277" width="10.3" height="14" rx="7" fill="var(--cds-chart-axis)" fill-opacity="0.18" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="571.8" y="288" font-size="11.5" fill="var(--cds-text-secondary)">14/11 a 15/11</text><text x="24" y="288" font-size="13" fill="var(--cds-text-primary)">FDS4: métricas e testes</text><line x1="300" x2="568.1" y1="314" y2="314" stroke="var(--cds-chart-grid)"/><rect x="568.1" y="307" width="30.9" height="14" rx="7" fill="var(--cds-chart-axis)" fill-opacity="0.18" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="613.1" y="318" font-size="11.5" fill="var(--cds-text-secondary)">16/11 a 19/11</text><text x="24" y="318" font-size="13" fill="var(--cds-text-primary)">Escrita, C4 e RFC</text><line x1="300" x2="609.4" y1="344" y2="344" stroke="var(--cds-chart-grid)"/><path d="M609.4 336l8 8l-8 8l-8 -8z" fill="var(--cds-chart-categorical-1)"/><text x="623.4" y="348" font-size="11.5" fill="var(--cds-text-primary)" font-weight="600">20/11</text><text x="24" y="348" font-size="13" fill="var(--cds-text-primary)" font-weight="600">Entrega tranquila</text><line x1="300" x2="619.7" y1="374" y2="374" stroke="var(--cds-chart-grid)"/><rect x="619.7" y="367" width="10.3" height="14" rx="7" fill="var(--cds-chart-axis)" fill-opacity="0.18" stroke="var(--cds-chart-axis)" stroke-width="1.25"/><text x="644.0" y="378" font-size="11.5" fill="var(--cds-text-secondary)">21/11 a 22/11</text><text x="24" y="378" font-size="13" fill="var(--cds-text-primary)">FDS5: folga e ensaio</text><text x="24" y="420" font-size="11.5" fill="var(--cds-text-secondary)">Em cor: trabalho dos avaliadores. Cinza: seu trabalho. Losango: marco.</text></svg><figcaption>cronograma · 21/10 a 22/11</figcaption></figure>
 <h3 id="hoje-2110">Hoje (21/10)</h3>
 <ul class="task-list">
-<li><label><input type="checkbox" />Mesclar
-<code>feat/provimento-jev</code>, ajustar as perguntas nos dois casos
-que erraram na conferência e rodar <code>classificar</code> no
-acervo.</label></li>
+<li><label><input type="checkbox" checked="" />Mesclar
+<code>feat/provimento-jev</code> em <code>feat/harness-avaliacao</code>
+(feito em 21/10).</label></li>
+<li><label><input type="checkbox" checked="" />Limpeza do projeto e spec
+do filtro de provimento (branch
+<code>refactor/limpeza-projeto</code>).</label></li>
+<li><label><input type="checkbox" />Ajustar as perguntas do provimento e
+refazer a conferência com 50 acórdãos novos.</label></li>
+<li><label><input type="checkbox" />Lote cronometrado de 500 e
+<code>classificar</code> no acervo.</label></li>
 <li><label><input type="checkbox" />Escrever a rubrica de 0 a 3 com um
 exemplo por nota.</label></li>
 <li><label><input type="checkbox" />Convidar os avaliadores e pedir de 5
@@ -1102,6 +1003,9 @@ a 10 teses escritas por advogados.</label></li>
 <li><label><input type="checkbox" />Provimento: <code>comparar</code>,
 <code>conferir</code> e
 <code>aplicar --confianca-min 0.8 --confirmar</code>.</label></li>
+<li><label><input type="checkbox" />Ajustar o pooling para os 30
+candidatos do híbrido + top-10 do BM25 + top-10 do denso (hoje é o
+top-20 de três corredores).</label></li>
 <li><label><input type="checkbox" />Congelar índice e candidatos; gerar
 as runs de S0 a S3; montar o pool de cada tese.</label></li>
 <li><label><input type="checkbox" /><code>planilha.py exportar</code>
@@ -1118,6 +1022,9 @@ todas as métricas, saída por tese, latência.</label></li>
 concordância; ajustar a rubrica.</label></li>
 <li><label><input type="checkbox" />Enviar os lotes restantes, com prazo
 até 11/11.</label></li>
+<li><label><input type="checkbox" />Filtro de provimento antes da busca
+(Parte B): <code>sincronizar</code>, índices no Qdrant, máscara no BM25,
+<code>buscar()</code> e a medição com e sem filtro.</label></li>
 </ul>
 <h3 id="fds3-070811">FDS3 (07–08/11)</h3>
 <ul class="task-list">
@@ -1229,8 +1136,20 @@ também é resultado</td>
 produção em Sistemas</td>
 </tr>
 <tr>
-<td>Acervo ou índice mudam no meio</td>
-<td>Congelar e registrar contagens e commit antes de montar o pool</td>
+<td>Nova conferência do provimento abaixo de 90%</td>
+<td>Parar antes do <code>classificar</code> e rever as perguntas; o
+filtro continua com a regex até lá</td>
+</tr>
+<tr>
+<td>Índices dessincronizados do Postgres</td>
+<td><code>sincronizar</code> idempotente depois de cada
+<code>aplicar</code>; <code>aplicar_filtros</code> como rede de
+segurança</td>
+</tr>
+<tr>
+<td>Acervo ou índice mudam no meio do benchmark</td>
+<td>Congelar e registrar contagens e commit antes de montar o pool;
+rodar o <code>sincronizar</code> antes disso</td>
 </tr>
 </tbody>
 </table>
@@ -1241,13 +1160,14 @@ teses (5 a 10 seria o ideal)?</label></li>
 <li><label><input type="checkbox" />Você concorda com a regra do rótulo
 final (diferença de 1 ponto: vale a menor nota; 2 ou mais: a Alexia
 decide)?</label></li>
+<li><label><input type="checkbox" />Você confirma as duas mudanças nas
+perguntas do provimento (embargos só para esclarecer e "nenhum recurso
+provido" como <code>nao_provido</code>)?</label></li>
 <li><label><input type="checkbox" />Qual provedor de VPS, e se há
 domínio próprio?</label></li>
 <li><label><input type="checkbox" />Onde estão o banco e os índices? O
 clone usado nesta análise não tem <code>.env</code> nem
 <code>data/</code>.</label></li>
-<li><label><input type="checkbox" />A Alexia já respondeu o CSV do passo
-0?</label></li>
 </ul>
 <h2 id="parte-2--trabalho-futuro">Parte 2 — Trabalho futuro</h2>
 <p>Nada disto entra até 20/11. Cada item traz uma razão para ficar de
@@ -1292,6 +1212,17 @@ dispositivo)</td>
 <td>Usar o <code>favorece</code> do Jev para ordenar ou filtrar</td>
 <td>Precisa do lado que o advogado representa na tese</td>
 <td>Fortalece@10 baixo no benchmark</td>
+</tr>
+<tr>
+<td>Filtro de período antes da busca</td>
+<td>O Qdrant suporta, mas o período continua depois da busca por
+ora</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Colapsar resultados do mesmo processo no top-10</td>
+<td>É outro trabalho; foi discutido no design do filtro</td>
+<td>Top-10 com vários acórdãos do mesmo processo</td>
 </tr>
 <tr>
 <td>Rerankers com raciocínio (ReasonRank)</td>
@@ -1557,6 +1488,40 @@ de 150M ajustado no LegalBench-RAG</a></td>
 </tr>
 </tbody>
 </table>
+<h3 id="documentos-do-projeto">Documentos do projeto</h3>
+<table>
+<thead>
+<tr>
+<th>Documento</th>
+<th>Caminho</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Este documento (cópia no repositório)</td>
+<td><code>docs/superpowers/specs/2026-10-21-inventario-e-plano-design.md</code>
+e <code>.html</code></td>
+</tr>
+<tr>
+<td>Provimento com o Jev e filtro antes da busca</td>
+<td><code>docs/superpowers/specs/2026-10-21-provimento-jev-filtro-design.md</code></td>
+</tr>
+<tr>
+<td>Provimento com o Jev: design, plano e conferência de 20/10</td>
+<td><code>docs/superpowers/specs/2026-10-20-provimento-jev-design.md</code>,
+<code>docs/superpowers/plans/2026-10-20-provimento-jev.md</code>,
+<code>docs/superpowers/specs/2026-10-20-provimento-jev-conferencia.md</code></td>
+</tr>
+<tr>
+<td>Harness de avaliação (versão de 17/10, antes da saída do Jev)</td>
+<td><code>docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md</code></td>
+</tr>
+<tr>
+<td>RFC e diagramas</td>
+<td><code>docs/RFC 4.2.md</code>, <code>docs/Diagramas/</code></td>
+</tr>
+</tbody>
+</table>
 <p><strong>Removidos do material recebido</strong> por estarem errados
 ou não carregarem:</p>
 <ul>
@@ -1570,5 +1535,7 @@ revisão de Joseph e Ravana não carregaram.</li>
 <li>BAGEL e HALT, citados no material sobre RAG agêntico, não foram
 conferidos.</li>
 </ul>
+
+</main>
 </body>
 </html>

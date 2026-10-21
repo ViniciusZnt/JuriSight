@@ -9,26 +9,29 @@ O motor de busca está pronto. Falta medir, com gabarito de profissionais, qual 
 Decisões fechadas em 21/10:
 
 - o JUÁ sai;
-- o Jev fica só no provimento;
+- o Jev fica só no provimento (já saiu do harness no código);
 - não há Cohere nem fine-tuning;
 - Faithfulness e Answer Relevance saem do escopo;
 - cada par é julgado por duas pessoas;
-- o reranker de produção só muda depois do benchmark.
+- o reranker de produção só muda depois do benchmark;
+- o BM25 fica sem tratamento de NLP, e o categorical sort saiu;
+- o filtro de provimento passa para antes da busca, com o provimento do Jev.
 
 **O que vamos fazer, em ordem:**
 
-1. Rodar o provimento do Jev no acervo.
-2. Montar o gabarito em lotes: cada lote é uma tese completa (~40 pares), julgada por duas pessoas.
-3. Plugar 3 rerankers novos (gte, bge e monoPTT5) ao lado do FlashRank, e um `eval` que compara todos.
-4. Rodar o benchmark: nDCG@10 como métrica principal, as secundárias, intervalos de confiança e testes pareados.
-5. Trocar o reranker de produção pelo vencedor.
-6. Publicar o app numa VPS com painel de deploy.
+1. Fechar o provimento do Jev: ajustar as perguntas, refazer a conferência, classificar o acervo e aplicar.
+2. Filtrar por provimento antes da busca: os três canais buscam só entre acórdãos do provimento escolhido.
+3. Montar o gabarito em lotes: cada lote é uma tese completa (~40 pares), julgada por duas pessoas.
+4. Plugar 3 rerankers novos (gte, bge e monoPTT5) ao lado do FlashRank, e um `eval` que compara todos.
+5. Rodar o benchmark: nDCG@10 como métrica principal, as secundárias, intervalos de confiança e testes pareados.
+6. Trocar o reranker de produção pelo vencedor.
+7. Publicar o app numa VPS com painel de deploy.
 
 **Prazo.** 4 fins de semana até 20/11 (sexta, feriado) e 21–22/11 de folga.
 
 ## Parte 1 — Visão geral e arquitetura (C4)
 
-O JuriSight recebe o PDF do caso e a intenção do advogado e devolve jurisprudência trabalhista do TST ordenada por relevância e pela hierarquia das fontes. No nível 1 do C4 há uma pessoa (o advogado) e três sistemas externos: Portal do TST, OpenAI e TypeSafe. O desenho abaixo junta os níveis 1 e 2.
+O JuriSight recebe o PDF do caso e a intenção do advogado e devolve jurisprudência trabalhista do TST ordenada por relevância. Hoje o acervo tem só acórdãos (69.349); súmulas, OJs e precedentes ainda não foram coletados. No nível 1 do C4 há uma pessoa (o advogado) e três sistemas externos: Portal do TST, OpenAI e TypeSafe. O desenho abaixo junta os níveis 1 e 2.
 
 ```mermaid
 flowchart TB
@@ -71,9 +74,9 @@ A busca do usuário vai do frontend ao backend, que consulta o Ollama, a OpenAI 
 2. Query Enrichment (Llama 3.2 3B) gera a estrutura argumentativa, que o usuário revisa.
 3. Query Builder monta a consulta BM25 e a frase-tese.
 4. Hybrid Search: BM25, Qdrant completo e Qdrant ementa em paralelo, fundidos por RRF.
-5. Doc Retriever busca os documentos no Postgres; filtros de provimento e período.
+5. Doc Retriever busca os documentos no Postgres; filtros de provimento e período, aplicados depois da busca (o de provimento vai passar para dentro dos canais; veja a Parte 2).
 6. Reranker (FlashRank) reordena o pool de 30 e corta em 20.
-7. Categorical Sort ordena por hierarquia (súmula, OJ, precedente, acórdão) e Result Formatter monta os cartões.
+7. Result Formatter monta os cartões na ordem do reranker. O Categorical Sort saiu em 21/10, porque o acervo só tem acórdãos.
 
 ## Parte 1 — Componentes e artefatos
 
@@ -91,7 +94,7 @@ O JuriSight é, tecnicamente, um sistema de **recuperação** com entendimento d
 | SAC (Summary-Augmented Chunking) | Cada pedaço do texto recebe a ementa como prefixo, para não se confundir com acórdãos parecidos | Chunks de 400 a 700 palavras, sobreposição de 80; sem ementa, usa o dispositivo |
 | Poly-vector | Mais de um vetor por documento, cada um para um aspecto | Vetor do chunk completo e vetor só da ementa |
 | Query enrichment | LLM extrai do PDF e da intenção do advogado uma estrutura (pedido, normas, tese central) | Llama 3.2 3B local via Ollama; o usuário revisa antes da busca |
-| LLM como juiz | Um modelo dá nota de relevância a pares (consulta, documento) no lugar de um humano | O harness tem um juiz Jev, que deixou de ser usado como gabarito |
+| LLM como juiz | Um modelo dá nota de relevância a pares (consulta, documento) no lugar de um humano | Saiu do harness em 21/10; o gabarito agora é só humano |
 
 ### Componentes
 
@@ -99,21 +102,20 @@ O JuriSight é, tecnicamente, um sistema de **recuperação** com entendimento d
 | --- | --- | --- | --- | --- |
 | Scraper | Coleta acórdãos, súmulas, OJs e precedentes do portal do TST | `requests` com delay adaptativo (mín. 2 s), estado retomável em `scraper_state`, parser HTML por seção | Pipeline de ingestão | `scraper/` |
 | Classificador de provimento (regex) | Marca APROVADO, PARCIAL, NEGADO ou NAO_APLICAVEL pelo dispositivo | Regex sobre marcadores do dispositivo | Pipeline de ingestão | `scraper/provimento.py` |
-| Classificador de provimento (Jev) | Resultado do recurso, quem recorreu e a quem favorece, com probabilidades | 3 perguntas Choice ao Jev; tabela `provimento_jev`; CLI classificar, comparar, conferir, aplicar | Ferramentas de avaliação (lote) | `scraper/provimento_jev*.py` (branch) |
+| Classificador de provimento (Jev) | Resultado do recurso, quem recorreu e a quem favorece, com probabilidades | 3 perguntas Choice ao Jev; tabela `provimento_jev`; CLI `classificar`, `comparar`, `conferir`, `aplicar`; não depende de `avaliacao/` | Pipeline de ingestão (lote) | `scraper/provimento_jev*.py` |
 | Chunker SAC | Divide o texto e prefixa a ementa | Janela por palavras | Pipeline de ingestão | `processing/chunking/sac_chunker.py` |
 | Embedder poly-vector | Gera os 2 vetores por chunk | OpenAI `text-embedding-3-small`, 1536 dimensões, cerca de US$ 8 para o acervo | Pipeline de ingestão | `processing/embeddings/poly_vector.py` |
 | Vector store | Guarda e busca vetores | Qdrant 1.19, vetores em disco, HNSW em RAM, quantização int8 | Banco vetorial | `indexing/vector_store/qdrant_store.py` |
-| Índice BM25 | Busca lexical | `bm25s`, matriz esparsa via mmap (RAM do backend de 7,4 GB para 300 MB) | Índice BM25 (arquivos) | `indexing/lexical/bm25_builder.py` |
+| Índice BM25 | Busca lexical, sem stemming nem stopwords do domínio | `bm25s`, matriz esparsa via mmap (RAM do backend de 7,4 GB para 300 MB) | Índice BM25 (arquivos) | `indexing/lexical/bm25_builder.py` |
 | PDF extractor e query enrichment | Extrai texto do PDF e a estrutura argumentativa | `pdfplumber` em memória + Llama 3.2 3B | Backend + Ollama | `query/enrichment/` |
 | Query builder | Monta a consulta BM25 (termos exatos) e a frase-tese (densa), sem LLM | Funções determinísticas | Backend | `query/enrichment/query_builder.py` |
 | Hybrid search | 3 canais em paralelo e fusão RRF | `ThreadPoolExecutor`, k = 60, 5 candidatos por canal para cada resultado pedido | Backend | `query/search/hybrid_search.py` |
-| Pipeline de busca | Busca, filtros, rerank, corte em 20, normalização, ordenação por hierarquia | Função `buscar()` reusada pelo `/query` e pelo `eval` | Backend | `query/search/pipeline.py` |
+| Pipeline de busca | Busca, filtros, rerank, corte em 20 e normalização; a ordem final é a do reranker | Função `buscar()` reusada pelo `/query` e pelo `eval` | Backend | `query/search/pipeline.py` |
 | Reranker | Reordena o pool de 30 | FlashRank ONNX, 8 threads, ementa truncada em 1.200 caracteres | Backend | `query/search/reranker.py` |
 | API | `/enrich`, `/query`, `/document/{id}`, `/auth/*`, `/conversas`, `/avaliacao/*` | FastAPI + Uvicorn | Backend | `query/api/` |
 | Autenticação e conversas | Cadastro, login, histórico versionado (V1, V2…) | Argon2id, JWT em cookie httpOnly, Postgres | Backend + Postgres | `auth/`, `conversations/` |
 | Frontend | Consulta, revisão, resultados, decisão, salvos, configurações, rotulação | Next.js 16, React 19, Tailwind 4; Jest e Cypress | Frontend | `frontend/` |
-| Harness de avaliação | Conjunto-ouro, juiz, pooling, amostra, `eval` | Schema `avaliacao` no Postgres, CLIs `passo_zero`, `construir`, `eval` | Ferramentas de avaliação (lote) | `avaliacao/` |
-| Avaliação antiga de KPIs | Precision@K e latência sobre `golden.toml` | Ainda importa ChromaDB; está desatualizada | Ferramentas de avaliação | `evaluation/` |
+| Harness de avaliação | Teses (reais e sintéticas), tema e split, pooling, fila de rotulação e `eval`; rótulos só humanos | Schema `avaliacao` no Postgres; CLIs `construir` e `eval`; tela `/avaliacao` | Ferramentas de avaliação (lote) | `avaliacao/` |
 
 Artefatos de documentação: RFC 4.1 e 4.2 (`docs/`), diagramas C4 níveis 1, 2 e 3 e casos de uso (`docs/Diagramas/`), specs e planos do harness e do provimento (`docs/superpowers/`). **Os diagramas C4 estão desatualizados**: ainda mostram ChromaDB, `nomic-embed-text`, `rank_bm25` e Playwright.
 
@@ -129,7 +131,7 @@ A stack é Python 3.13 no backend e na ingestão, Next.js no frontend, e três s
 | IA local | Ollama + Llama 3.2 3B | Query enrichment e resumo de PDF longo | Roda na CPU |
 | IA local | FlashRank (ONNX) | Reranking | Sem PyTorch, por causa da RAM |
 | IA externa | OpenAI `text-embedding-3-small` | Embeddings do acervo e da consulta | Contraria a RNF03 (tudo local); registrar como desvio |
-| IA externa | OpenAI `gpt-4o-mini` | Escreve teses sintéticas | Só no harness |
+| IA externa | OpenAI `gpt-4o-mini` | Escreve teses sintéticas e atribui o tema de cada uma | Só no harness |
 | IA externa | TypeSafe Jev `jev-1.13.0` | Classificador de provimento (não é mais juiz de relevância) | Versão fixada; acesso antecipado |
 | Backend | FastAPI, Uvicorn, Pydantic v2, psycopg 3 | API REST e pipeline | Gerenciado com `uv` |
 | Frontend | Next.js 16.3, React 19, Tailwind 4 | Interface | pnpm |
@@ -140,7 +142,9 @@ A stack é Python 3.13 no backend e na ingestão, Next.js no frontend, e três s
 
 | Data | Marco |
 | --- | --- |
-| 20/10/2026 | Classificador de provimento com o Jev e primeira conferência (branch `feat/provimento-jev`) |
+| 21/10/2026 | Limpeza (branch `refactor/limpeza-projeto`): o Jev sai do harness; saem o categorical sort, `evaluation/` e `utils/import_acordaos.py`; decisão de BM25 sem NLP; spec do filtro de provimento antes da busca |
+| 21/10/2026 | Provimento com o Jev mesclado em `feat/harness-avaliacao` |
+| 20/10/2026 | Classificador de provimento com o Jev e primeira conferência |
 | 17/10/2026 | Harness de avaliação: métricas, juiz Jev, teses, pooling, passo 0, `eval`, tela `/avaliacao` |
 | 04/10/2026 | Reranking FlashRank após o RRF; conversas persistidas e versionadas |
 | 28/09/2026 | Otimização: busca de 80–330 s para 3–5 s (HNSW em RAM, int8, `bm25s`) |
@@ -150,7 +154,7 @@ A stack é Python 3.13 no backend e na ingestão, Next.js no frontend, e três s
 | 06/09/2026 | Backend FastAPI com pipeline completo de busca e LLM |
 | 30/08/2026 | Testes Jest e Cypress no frontend |
 | 17/08/2026 | Scaffold do frontend Next.js |
-| 06/08/2026 | Primeira avaliação de KPIs de recuperação (`evaluation/`) |
+| 06/08/2026 | Primeira avaliação de KPIs de recuperação (`evaluation/`, removida em 21/10) |
 | 13/07/2026 | Pipeline de indexação completo (Chroma + BM25) com delta |
 | 08/07/2026 | SAC Chunker com testes |
 | 03/07/2026 | Provimento PARCIAL como categoria própria |
@@ -165,13 +169,16 @@ Todas as decisões abaixo estão fechadas. Onde a escolha foi minha, e não sua,
 | Tema | Decisão | Por quê |
 | --- | --- | --- |
 | Embedding JUÁ-4B | Fora | O índice já usa a OpenAI; trocar exigiria reindexar e GPU |
-| Jev | Só classificador de provimento | Acurácia "English-first"; juízes LLM tiveram kappa de 0,32 a 0,53 contra humanos no NormasTCU. No provimento, acertou 96% contra 62% da regex |
+| Jev | Só classificador de provimento; saiu do harness em 21/10 | Acurácia "English-first"; juízes LLM tiveram kappa de 0,32 a 0,53 contra humanos no NormasTCU. No provimento, acertou 96% contra 62% da regex |
 | Métricas | Só de recuperação: nDCG@10 (principal), MRR@10, P@5, P@10, Recall@10/20, MAP@10 | Faithfulness e Answer Relevance medem resposta gerada, e o JuriSight não gera resposta. Saíram do escopo |
 | Rerankers testados | gte, bge-v2-m3 e monoPTT5, contra o FlashRank e contra o sistema sem reranker | Cohere fora por privacidade; mMiniLM fora para enxugar |
 | Gabarito | Profissionais, **duas pessoas por par** | Gabarito independente dos sistemas, com concordância medida em todos os pares |
 | Reranker em produção | O vencedor do benchmark, trocado depois dele | Decisão baseada em dado, não em literatura de outro domínio |
 | Fine-tuning | Não; fica como trabalho futuro | Veja abaixo |
 | BM25 sem tratamento de NLP | Nenhum: sem stemming, lematização, stopwords do domínio ou corte de seções; o tokenizer fica como está | O BM25 existe para termos exatos (NRs, artigos, súmulas), e o canal denso já cobre as variações de forma. Stemming e lematização mexem nas palavras comuns, não nas referências; as stopwords do domínio já têm IDF perto de zero. Limitação conhecida: "NR-15" vira `nr` + `15`. Só revisitar se o benchmark mostrar o problema |
+| Ordenação por hierarquia | Removida (categorical sort e `ordenar_por`) | O acervo só tem acórdãos, então a ordem final já era a do reranker; a ordenação por data continua na tela |
+| Filtro de provimento | Antes da busca, nos três canais, usando o provimento do Jev | Hoje ele roda depois da busca, sobre 80 candidatos, e usa a regex, que acertou 62% |
+| Perguntas do provimento (proposta, a confirmar) | Embargos acolhidos só para esclarecer e "nenhum recurso provido" contam como `nao_provido` | São os dois buracos da conferência de 20/10 |
 
 **Por que não há fine-tuning.** Os três rerankers são pré-treinados: baixa e usa. O ajuste fino é o que mais muda o resultado na literatura. No LegalBench-RAG, um reranker pequeno foi de 0,385 para 0,742 de nDCG@10 depois do ajuste. Mas ele exige milhares de pares rotulados, separados dos pares da prova. O único dado rotulado que teremos é o próprio gabarito, com 600 a 1.100 pares. Usar esses pares para treinar e para medir invalida a medição.
 
@@ -288,6 +295,29 @@ Por isso a linha de base sem reranker (S2) é essencial: o resultado pode ser qu
 
 Em qualquer caso, medir a latência p95 no servidor antes de trocar. A meta do RFC é a busca inteira abaixo de 15 s.
 
+## Parte 2 — Provimento com o Jev e filtro antes da busca
+
+O provimento que o advogado escolhe passa a valer dentro da busca, e não depois dela, e passa a vir do Jev. O detalhe está em `docs/superpowers/specs/2026-10-21-provimento-jev-filtro-design.md`. O benchmark de rerankers roda sem filtro, então as duas frentes não se atrapalham.
+
+**Por quê.** Hoje o híbrido traz 80 candidatos e só depois descarta os de outro provimento. Se o provimento pedido é raro entre eles, sobra pouco resultado, e o reranker ainda pontua tudo. Além disso, o filtro usa a regex, que acertou 62% contra 96% do Jev.
+
+**Parte A — fechar o provimento do Jev** (operação, quase sem código):
+
+1. Ajustar as perguntas nos dois casos da conferência. Isso muda o `perguntas_sha`, e os 90 já classificados voltam a ficar pendentes.
+2. Nova conferência em 50 acórdãos. Seguir só com ≥ 90% de acerto no provimento e nenhum erro nos dois casos.
+3. Lote cronometrado de 500 e depois `classificar` no acervo (69.349 acórdãos, ~110 M tokens).
+4. `comparar`, `conferir` e `aplicar --confianca-min 0.8 --confirmar`. Abaixo de 0,8, fica o valor da regex.
+
+**Parte B — filtrar antes da busca** (código):
+
+1. Subcomando `sincronizar`: leva `documentos.provimento` ao payload das duas coleções do Qdrant e a um array paralelo aos chunks do BM25. Usa `set_payload`, sem reindexar nem chamar a OpenAI, e cria índices `keyword` em `provimento` e `documento_id`.
+2. BM25 com máscara (`weight_mask` do `bm25s`), descartando os resultados de score 0.
+3. `HybridSearch.search` passa o provimento aos três canais.
+4. Em `buscar()`, com só o filtro de provimento o pool volta a 30; `aplicar_filtros` continua como rede de segurança.
+5. Sem filtro, resultado e latência ficam iguais aos de hoje.
+
+**Como medir.** Para as teses do conjunto-ouro, buscar com cada provimento (APROVADO, PARCIAL, NEGADO), antes e depois, e comparar três coisas: quantos resultados voltam (meta: 10 sempre que a base tiver 10), a latência e se 100% dos resultados têm o provimento pedido.
+
 ## Parte 2 — Cronograma até 20/11
 
 O caminho crítico é o julgamento humano. Por isso o piloto sai no primeiro fim de semana, antes de qualquer reranker novo estar pronto: o pool só depende dos 30 candidatos do híbrido e do BM25 e denso, que já existem.
@@ -300,7 +330,7 @@ gantt
     section Você
     Provimento Jev + rubrica            :a1, 2026-10-21, 3d
     FDS1 rerankers, pool, planilhas     :a2, 2026-10-24, 2d
-    FDS2 analisar piloto, fechar teses  :a3, 2026-10-31, 3d
+    FDS2 piloto e filtro de provimento  :a3, 2026-10-31, 3d
     FDS3 deploy e latência              :a4, 2026-11-07, 2d
     FDS4 métricas e testes              :a5, 2026-11-14, 2d
     Escrita, C4 e RFC                   :a6, 2026-11-16, 4d
@@ -313,13 +343,17 @@ gantt
 
 ### Hoje (21/10)
 
-- [ ] Mesclar `feat/provimento-jev`, ajustar as perguntas nos dois casos que erraram na conferência e rodar `classificar` no acervo.
+- [x] Mesclar `feat/provimento-jev` em `feat/harness-avaliacao` (feito em 21/10).
+- [x] Limpeza do projeto e spec do filtro de provimento (branch `refactor/limpeza-projeto`).
+- [ ] Ajustar as perguntas do provimento e refazer a conferência com 50 acórdãos novos.
+- [ ] Lote cronometrado de 500 e `classificar` no acervo.
 - [ ] Escrever a rubrica de 0 a 3 com um exemplo por nota.
 - [ ] Convidar os avaliadores e pedir de 5 a 10 teses escritas por advogados.
 
 ### FDS1 (24–25/10)
 
 - [ ] Provimento: `comparar`, `conferir` e `aplicar --confianca-min 0.8 --confirmar`.
+- [ ] Ajustar o pooling para os 30 candidatos do híbrido + top-10 do BM25 + top-10 do denso (hoje é o top-20 de três corredores).
 - [ ] Congelar índice e candidatos; gerar as runs de S0 a S3; montar o pool de cada tese.
 - [ ] `planilha.py exportar` (um lote por tese, para duas pessoas) e `importar`; enviar os 3 ou 4 lotes do piloto.
 - [ ] Adaptadores do gte e do bge (ONNX) e script do monoPTT5 (PyTorch).
@@ -329,6 +363,7 @@ gantt
 
 - [ ] Importar o piloto; medir a concordância; ajustar a rubrica.
 - [ ] Enviar os lotes restantes, com prazo até 11/11.
+- [ ] Filtro de provimento antes da busca (Parte B): `sincronizar`, índices no Qdrant, máscara no BM25, `buscar()` e a medição com e sem filtro.
 
 ### FDS3 (07–08/11)
 
@@ -374,15 +409,17 @@ Por que não uma nuvem gerenciada "mais simples", como Render, Railway, Fly.io o
 | Concordância baixa no piloto | Revisar a rubrica com a Alexia; se precisar, juntar as notas 1 e 2 |
 | Diferenças pequenas demais para medir | Reportar a diferença com intervalo de confiança; "não resolvido" também é resultado |
 | Vencedor lento ou pesado em produção | Medir a p95 no servidor; top-20 ou 256 tokens; ver a tabela de produção em Sistemas |
-| Acervo ou índice mudam no meio | Congelar e registrar contagens e commit antes de montar o pool |
+| Nova conferência do provimento abaixo de 90% | Parar antes do `classificar` e rever as perguntas; o filtro continua com a regex até lá |
+| Índices dessincronizados do Postgres | `sincronizar` idempotente depois de cada `aplicar`; `aplicar_filtros` como rede de segurança |
+| Acervo ou índice mudam no meio do benchmark | Congelar e registrar contagens e commit antes de montar o pool; rodar o `sincronizar` antes disso |
 
 ### O que ainda falta decidir
 
 - [ ] Quantos advogados topam escrever teses (5 a 10 seria o ideal)?
 - [ ] Você concorda com a regra do rótulo final (diferença de 1 ponto: vale a menor nota; 2 ou mais: a Alexia decide)?
+- [ ] Você confirma as duas mudanças nas perguntas do provimento (embargos só para esclarecer e "nenhum recurso provido" como `nao_provido`)?
 - [ ] Qual provedor de VPS, e se há domínio próprio?
 - [ ] Onde estão o banco e os índices? O clone usado nesta análise não tem `.env` nem `data/`.
-- [ ] A Alexia já respondeu o CSV do passo 0?
 
 ## Parte 2 — Trabalho futuro
 
@@ -395,6 +432,8 @@ Nada disto entra até 20/11. Cada item traz uma razão para ficar de fora e, qua
 | Busca por aspecto da tese (pedido, tese central e normas) fundida por RRF | Muda o conjunto de candidatos, então exige julgamento novo | Idem |
 | Busca separada por seção do acórdão (ementa, fundamentação, dispositivo) | Exige índices novos e julgamento novo | Idem |
 | Usar o `favorece` do Jev para ordenar ou filtrar | Precisa do lado que o advogado representa na tese | Fortalece@10 baixo no benchmark |
+| Filtro de período antes da busca | O Qdrant suporta, mas o período continua depois da busca por ora | — |
+| Colapsar resultados do mesmo processo no top-10 | É outro trabalho; foi discutido no design do filtro | Top-10 com vários acórdãos do mesmo processo |
 | Rerankers com raciocínio (ReasonRank) | 10 a 20 min por consulta nesta CPU; avaliados só em inglês | — |
 | Geração de resposta com citações, medida com Faithfulness e Answer Relevance | O JuriSight hoje só recupera documentos | — |
 
@@ -442,6 +481,16 @@ Links conferidos em 21/10/2026. Na coluna Status: "Aberto" = a página foi lida;
 | Fine-tuning | [Reranker de 150M ajustado no LegalBench-RAG](https://huggingface.co/lxyuan/LegalBenchRAG-Ettin-150M-Reranker) | Aberto |
 | Atalho de categoria | [Auditoria do LeCaRDv2 (2026)](https://arxiv.org/abs/2606.12993) | Aberto |
 | Deploy | [Coolify](https://coolify.io) | Não aberto |
+
+### Documentos do projeto
+
+| Documento | Caminho |
+| --- | --- |
+| Este documento (cópia no repositório) | `docs/superpowers/specs/2026-10-21-inventario-e-plano-design.md` e `.html` |
+| Provimento com o Jev e filtro antes da busca | `docs/superpowers/specs/2026-10-21-provimento-jev-filtro-design.md` |
+| Provimento com o Jev: design, plano e conferência de 20/10 | `docs/superpowers/specs/2026-10-20-provimento-jev-design.md`, `docs/superpowers/plans/2026-10-20-provimento-jev.md`, `docs/superpowers/specs/2026-10-20-provimento-jev-conferencia.md` |
+| Harness de avaliação (versão de 17/10, antes da saída do Jev) | `docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md` |
+| RFC e diagramas | `docs/RFC 4.2.md`, `docs/Diagramas/` |
 
 **Removidos do material recebido** por estarem errados ou não carregarem:
 
