@@ -102,10 +102,19 @@ class ClassificacaoProvimento:
     confianca_favorece: float
 
 
+def validar_modelo(modelo: str) -> str:
+    """Recusa aliases móveis: o modelo precisa ficar fixo para a comparação valer."""
+    if modelo.endswith("-latest"):
+        raise ValueError(
+            f"Modelo {modelo!r} termina em '-latest'; fixe a versão (ex.: {MODELO_PADRAO})."
+        )
+    return modelo
+
+
 class ClassificadorJev:
     def __init__(self, client: TypeSafeClient | None = None, model: str | None = None):
         self.client = client or TypeSafeClient()
-        self.model = model or os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
+        self.model = validar_modelo(model or os.getenv("TYPESAFE_MODEL", MODELO_PADRAO))
 
     def classificar(self, acordao: str | None, ementa: str | None) -> ClassificacaoProvimento:
         if not acordao or not acordao.strip():

@@ -120,3 +120,12 @@ def test_sha_juiz_inalterado():
     assert juiz.perguntas_sha() == sha_perguntas(juiz.PERGUNTAS)
     assert len(juiz.perguntas_sha()) == 64
     int(juiz.perguntas_sha(), 16)
+    assert juiz.perguntas_sha() == "2d020d436636bf714e70f051fe7aa611b1e5101f36d69419c098240ab82bd639"
+
+
+def test_modelo_latest_e_recusado(monkeypatch):
+    with pytest.raises(ValueError, match="jev-1.13.0"):
+        ClassificadorJev(client=_FakeClient(), model="jev-latest")
+    monkeypatch.setenv("TYPESAFE_MODEL", "jev-latest")
+    with pytest.raises(ValueError, match="latest"):
+        ClassificadorJev(client=_FakeClient())
