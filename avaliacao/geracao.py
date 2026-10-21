@@ -8,19 +8,16 @@ import itertools
 import json
 import os
 import random
-import uuid
 from typing import Literal
 
 import psycopg
 from openai import OpenAI
 
-from avaliacao.juiz import Juiz
 from query.enrichment.schema import EstruturaArgumentativa
 from query.search.doc_retriever import COLUNAS_DOCUMENTO, _row_para_documento
 from scraper.schema import DocumentoJuridico
 
 MODELO_GERACAO_PADRAO = "gpt-4o-mini"
-LIMIAR_FILTRO = 0.5
 
 _SQL_SORTEIO = f"""
 SELECT {COLUNAS_DOCUMENTO}
@@ -110,14 +107,16 @@ def gerar_tese(
     return tese
 
 
-def passa_filtro(juiz: Juiz, tese: dict, documento: DocumentoJuridico) -> bool:
-    """Filtro de qualidade da tese sintética: P(relevância >= 2) do acórdão de origem.
+def uuids_origem(database_url: str, docs) -> dict[str, str]:
+    """id_documento (chave natural do portal) -> UUID em `documentos`.
 
-    A chamada não é persistida (par_id descartável, rodada 0).
-    """
-    julgamento = juiz.julgar(tese, documento, rodada=0, par_id=uuid.uuid4())
-    probs = julgamento.relevancia_probs or {}
-    return probs.get("2", 0) + probs.get("3", 0) >= LIMIAR_FILTRO
+    `sortear_acordaos` devolve DocumentoJuridico sem o UUID, e os pares usam UUID."""
+    with psycopg.connect(database_url) as conn:
+        rows = conn.execute(
+            "SELECT id_documento, id::text FROM documentos WHERE id_documento = ANY(%s)",
+            ([d.id_documento for d in docs],),
+        ).fetchall()
+    return dict(rows)
 
 
 def deduplicar_estruturas(estruturas: list[dict]) -> list[dict]:
