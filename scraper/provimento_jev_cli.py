@@ -1,11 +1,13 @@
 """
 CLI do provimento com o Jev. Subcomandos: `classificar` (backfill retomável),
-`comparar` (regex x Jev, gera CSV de divergências) e `conferir` (resume o CSV preenchido).
+`comparar` (regex x Jev, gera CSV de divergências), `conferir` (resume o CSV preenchido)
+e `aplicar` (escreve o Jev em `documentos.provimento`, só com --confirmar).
 Ver docs/superpowers/specs/2026-10-20-provimento-jev-design.md.
 
 Uso: uv run python -m scraper.provimento_jev_cli classificar [--limite N] [--sim]
      uv run python -m scraper.provimento_jev_cli comparar [--amostra 100] [--csv CAMINHO]
      uv run python -m scraper.provimento_jev_cli conferir [--csv CAMINHO]
+     uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--confirmar]
 """
 from __future__ import annotations
 
@@ -239,6 +241,44 @@ def _cmd_comparar(args, store) -> int:
     return 0
 
 
+def mudancas(linhas: list, confianca_min: float) -> list[tuple[str, str, str]]:
+    """`(documento_id, atual, novo)` onde a confiança atinge o mínimo e o valor muda."""
+    r = []
+    for l in linhas:
+        novo = para_provimento(l.resultado).value
+        if l.confianca_resultado >= confianca_min and novo != l.provimento_atual:
+            r.append((l.documento_id, l.provimento_atual, novo))
+    return r
+
+
+def _cmd_aplicar(args, store) -> int:
+    modelo = os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
+    linhas = store.linhas(modelo, perguntas_sha())
+    if not linhas:
+        print(f"Nenhuma classificação para {modelo}; rode `classificar` primeiro.")
+        return 1
+    muda = mudancas(linhas, args.confianca_min)
+    abaixo = sum(l.confianca_resultado < args.confianca_min for l in linhas)
+    for (atual, novo), n in sorted(Counter((a, n) for _, a, n in muda).items()):
+        print(f"{atual or '(vazio)'} → {novo}: {n}")
+    print(f"Mudanças: {len(muda)} de {len(linhas)} linhas")
+    print(f"Linhas abaixo do limite de confiança ({args.confianca_min}): {abaixo}")
+    if not args.confirmar:
+        print("Nada foi escrito; use --confirmar para aplicar.")
+        return 0
+    mudou = store.aplicar([(d, novo) for d, _, novo in muda])
+    print(f"Linhas alteradas em documentos.provimento: {mudou}")
+    print("Para restaurar a regex: uv run python utils/reclassify.py")
+    return 0
+
+
+def _fracao(valor: str) -> float:
+    x = float(valor)
+    if not 0.0 <= x <= 1.0:
+        raise argparse.ArgumentTypeError("deve estar entre 0 e 1")
+    return x
+
+
 def _cmd_conferir(args) -> int:
     if not Path(args.csv).exists():
         print(f"CSV não encontrado: {args.csv} (rode `comparar` antes).")
@@ -264,6 +304,9 @@ def main(argv: list[str] | None = None, *, store=None, classificador=None) -> in
     p.add_argument("--csv", type=Path, default=CSV_DIVERGENCIAS)
     p = sub.add_parser("conferir", help="resume o CSV de divergências preenchido")
     p.add_argument("--csv", type=Path, default=CSV_DIVERGENCIAS)
+    p = sub.add_parser("aplicar", help="escreve o provimento do Jev em documentos (só com --confirmar)")
+    p.add_argument("--confianca-min", type=_fracao, default=0.8)
+    p.add_argument("--confirmar", action="store_true", help="grava de fato")
     args = parser.parse_args(argv)
 
     if args.comando == "conferir":
@@ -271,6 +314,8 @@ def main(argv: list[str] | None = None, *, store=None, classificador=None) -> in
     store = store or _construir_store()
     if args.comando == "comparar":
         return _cmd_comparar(args, store)
+    if args.comando == "aplicar":
+        return _cmd_aplicar(args, store)
 
     if args.comando == "classificar":
         return _cmd_classificar(args, store, classificador)

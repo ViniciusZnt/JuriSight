@@ -256,3 +256,57 @@ def test_resumo_conferencia(tmp_path, capsys):
 
 def test_conferir_csv_inexistente(tmp_path, capsys):
     assert cli.main(["conferir", "--csv", str(tmp_path / "nada.csv")], store=None) == 2
+
+
+# --- aplicar ---
+
+def _la(i, resultado, atual, conf=0.9):
+    return LinhaClassificada(f"doc-{i}", resultado, "reclamante", "reclamante", conf, "", atual)
+
+
+class _StoreAplicar:
+    def __init__(self, linhas):
+        self._linhas = linhas
+        self.chamadas: list = []
+
+    def linhas(self, modelo, perguntas_sha):
+        return self._linhas
+
+    def aplicar(self, mudancas):
+        self.chamadas.append(mudancas)
+        return len(mudancas)
+
+
+def test_mudancas_respeita_confianca():
+    linhas = [_la(1, "provido", "NEGADO", 0.79), _la(2, "provido", "NEGADO", 0.8)]
+    assert cli.mudancas(linhas, 0.8) == [("doc-2", "NEGADO", "APROVADO")]
+
+
+def test_mudancas_ignora_iguais():
+    assert cli.mudancas([_la(1, "nao_provido", "NEGADO")], 0.0) == []
+
+
+def test_aplicar_sem_confirmar_nao_escreve(capsys):
+    store = _StoreAplicar([_la(1, "provido", "NEGADO"), _la(2, "provido", "NEGADO", 0.5)])
+    assert cli.main(["aplicar"], store=store) == 0
+    assert store.chamadas == []
+    out = capsys.readouterr().out
+    assert "NEGADO → APROVADO: 1" in out
+    assert "abaixo do limite" in out
+
+
+def test_aplicar_com_confirmar_escreve(capsys):
+    store = _StoreAplicar([_la(1, "provido", "NEGADO")])
+    assert cli.main(["aplicar", "--confirmar"], store=store) == 0
+    assert store.chamadas == [[("doc-1", "APROVADO")]]
+    assert "reclassify.py" in capsys.readouterr().out
+
+
+def test_aplicar_sem_linhas_avisa(capsys):
+    assert cli.main(["aplicar"], store=_StoreAplicar([])) == 1
+
+
+@pytest.mark.parametrize("valor", ["-0.1", "1.5", "abc"])
+def test_confianca_min_fora_de_0_1(valor):
+    with pytest.raises(SystemExit):
+        cli.main(["aplicar", "--confianca-min", valor], store=_StoreAplicar([]))

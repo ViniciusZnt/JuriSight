@@ -58,6 +58,7 @@ jurisight/
 │   ├── core.py             ← loop de coleta com delay adaptativo
 │   ├── db_writer.py        ← PostgresStore + estado da coleta (scraper_state)
 │   ├── html_parser.py      ← extração de seções do HTML dos acórdãos
+│   ├── provimento_jev*.py  ← provimento com o Jev: classificador, store e CLI (ver §Provimento com o Jev)
 │   ├── items/
 │   ├── pipelines/
 │   └── settings.py         ← configurações Scrapy (uso futuro)
@@ -328,6 +329,7 @@ uv run pytest
 | `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
 | `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
 | `avaliacao` / `/avaliacao/*` | Métricas (nDCG, Recall, kappa), juiz Jev com cliente fake, pooling, amostra estratificada, `construir`/`eval`/passo 0, rotas de rotulação via `TestClient`; o store contra Postgres real só roda com `DATABASE_URL` |
+| `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `comparar`/`conferir`/`aplicar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
 
 > Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
 > clientes externos são substituídos por fakes injetados. Um smoke test manual de
@@ -439,6 +441,51 @@ stance contra a Alexia — **aprovado** se os dois forem **>= 0,6** — e o limi
 confiança a partir do qual o Jev acerta >= 80%. Use `dev` para iterar; o split
 `teste` deve ser usado **só na medição final**, senão deixa de ser uma medida
 independente.
+
+---
+
+## Provimento com o Jev
+
+A coluna `documentos.provimento` vem de uma regex sobre o dispositivo, que diz se o
+recurso foi aceito, mas não quem ganhou: "recurso negado" é vitória do trabalhador
+quando quem recorreu foi a empresa. Esta etapa pergunta ao Jev, para cada acórdão, o
+**resultado** do recurso, o **recorrente** e **quem é favorecido**, guarda as respostas
+com probabilidades na tabela `provimento_jev` e, depois de uma conferência manual, pode
+passar a usar o resultado do Jev em `documentos.provimento`. A regex continua gravada
+ao lado (`provimento_regex`). Racional e decisões: [`docs/superpowers/specs/2026-10-20-provimento-jev-design.md`](docs/superpowers/specs/2026-10-20-provimento-jev-design.md).
+
+Usa `TYPESAFE_API_KEY` e `TYPESAFE_MODEL` (padrão `jev-1.13.0`), como a avaliação, e
+precisa do Postgres no ar. Os comandos, na ordem de uso:
+
+```bash
+# 1. Classifica os acórdãos pendentes (mostra a estimativa e pede confirmação)
+uv run python -m scraper.provimento_jev_cli classificar [--limite N] [--lote 500] [--max-workers 8] [--sim]
+
+# 2. Compara regex x Jev e escreve o CSV de divergências (data/eval/provimento_divergencias.csv)
+uv run python -m scraper.provimento_jev_cli comparar [--amostra 100] [--csv CAMINHO]
+
+# 3. Preencha a coluna quem_acertou do CSV: jev, regex, ambos ou nenhum
+
+# 4. Resume a conferência
+uv run python -m scraper.provimento_jev_cli conferir [--csv CAMINHO]
+
+# 5. Mostra o que mudaria; só escreve em documentos.provimento com --confirmar
+uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--confirmar]
+```
+
+- **Custo:** ~1.600 tokens por acórdão, cerca de **110 M tokens** para o acervo inteiro
+  (~69 mil). O `classificar` imprime a estimativa e pergunta `s/N` antes de chamar o
+  Jev; `--sim` pula a pergunta.
+- **Retomável:** o `classificar` pode ser interrompido (Ctrl-C) e rodado de novo. Só
+  classifica o que ainda não tem linha com o mesmo modelo e as mesmas perguntas.
+- **`aplicar`:** sem `--confirmar` apenas imprime as transições (`ATUAL → NOVO: n`) e
+  quantas linhas ficaram abaixo do limite de confiança (`--confianca-min`, de 0 a 1).
+  Com `--confirmar`, grava só onde a confiança atinge o limite e o valor muda.
+- **Voltar à regex:** `uv run python utils/reclassify.py` recalcula a coluna a partir do texto.
+- **Ainda não usados:** `favorece` e `recorrente` ficam guardados, mas a busca ainda
+  não os usa; só o resultado entra em `documentos.provimento`.
+- **Excel em português:** ao salvar o CSV com `;` como separador, o `conferir` não o
+  lê. Edite e salve com LibreOffice ou Google Planilhas (separador `,`).
 
 ---
 
