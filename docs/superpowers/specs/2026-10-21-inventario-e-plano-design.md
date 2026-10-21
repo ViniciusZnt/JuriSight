@@ -91,8 +91,8 @@ O JuriSight é, tecnicamente, um sistema de **recuperação** com entendimento d
 | Busca densa (embeddings) | Texto vira vetor; documentos próximos no espaço vetorial têm sentido parecido (cosseno) | Dois canais no Qdrant: chunk completo e ementa |
 | RRF (Reciprocal Rank Fusion) | Funde rankings somando 1/(60 + posição) de cada lista; usa só a posição, não o score | Funde os 3 canais em um pool de 30 documentos |
 | Cross-encoder (reranker) | Modelo que lê consulta e documento juntos e dá uma nota de relevância | FlashRank `ms-marco-MultiBERT-L-12` reordena o pool do RRF |
-| SAC (Summary-Augmented Chunking) | Cada pedaço do texto recebe a ementa como prefixo, para não se confundir com acórdãos parecidos | Chunks de 400 a 700 palavras, sobreposição de 80; sem ementa, usa o dispositivo |
-| Poly-vector | Mais de um vetor por documento, cada um para um aspecto | Vetor do chunk completo e vetor só da ementa |
+| SAC (Summary-Augmented Chunking) | Cada pedaço do texto recebe a ementa como prefixo, para não se confundir com acórdãos parecidos | Janelas de 500 palavras com sobreposição de 80 (o último chunk pode chegar a ~900). O prefixo é a ementa cortada em 150 palavras ou, sem ementa, o dispositivo. O BM25 indexa a janela sem o prefixo |
+| Poly-vector | Mais de um vetor por documento, cada um para um aspecto | Um vetor por chunk (ementa + trecho juntos) e um vetor por acórdão só da ementa, em coleções separadas |
 | Query enrichment | LLM extrai do PDF e da intenção do advogado uma estrutura (pedido, normas, tese central) | Llama 3.2 3B local via Ollama; o usuário revisa antes da busca |
 | LLM como juiz | Um modelo dá nota de relevância a pares (consulta, documento) no lugar de um humano | Saiu do harness em 21/10; o gabarito agora é só humano |
 
@@ -428,6 +428,8 @@ Nada disto entra até 20/11. Cada item traz uma razão para ficar de fora e, qua
 | Ideia | Por que fica para depois | O que no benchmark justificaria |
 | --- | --- | --- |
 | Fine-tuning do reranker (gte) com pares tese × ementa | Exige milhares de pares rotulados, separados da prova. No LegalBench-RAG, um reranker pequeno ajustado foi de 0,385 para 0,742 de nDCG@10 | Rerankers prontos ficarem longe do teto dos 30 candidatos |
+| Ementa inteira no SAC e na coleção `ementa` | Hoje a ementa é cortada em 150 palavras (herança do `nomic`; o `text-embedding-3-small` aceita 8.191 tokens), então o canal `ementa` só vê o começo das ementas longas. Corrigir exige reembutir as coleções, e fazer isso depois do gabarito invalida a comparação | Relevantes com ementa longa ficarem fora dos 30 candidatos |
+| Medir o prefixo SAC (com e sem a ementa no chunk) | A ementa ocupa até 150 das ~650 palavras de cada chunk, e o RRF pode contar duas vezes o sinal da ementa. Medir exige reembutir os ~400 mil chunks e julgar os acórdãos novos que aparecerem | — |
 | Loop agêntico: decompor a tese, checar se cada aspecto tem acórdão relevante e buscar de novo quando faltar | Traz acórdãos de fora do pool (julgamento novo), precisa de um crítico confiável e tem pouca evidência em jurisprudência | Muitos relevantes perdidos pela busca inicial |
 | Busca por aspecto da tese (pedido, tese central e normas) fundida por RRF | Muda o conjunto de candidatos, então exige julgamento novo | Idem |
 | Busca separada por seção do acórdão (ementa, fundamentação, dispositivo) | Exige índices novos e julgamento novo | Idem |

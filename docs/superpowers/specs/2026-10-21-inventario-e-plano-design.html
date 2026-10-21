@@ -161,13 +161,15 @@ RRF</td>
 <td>SAC (Summary-Augmented Chunking)</td>
 <td>Cada pedaço do texto recebe a ementa como prefixo, para não se
 confundir com acórdãos parecidos</td>
-<td>Chunks de 400 a 700 palavras, sobreposição de 80; sem ementa, usa o
-dispositivo</td>
+<td>Janelas de 500 palavras com sobreposição de 80 (o último chunk pode
+chegar a ~900). O prefixo é a ementa cortada em 150 palavras ou, sem
+ementa, o dispositivo. O BM25 indexa a janela sem o prefixo</td>
 </tr>
 <tr>
 <td>Poly-vector</td>
 <td>Mais de um vetor por documento, cada um para um aspecto</td>
-<td>Vetor do chunk completo e vetor só da ementa</td>
+<td>Um vetor por chunk (ementa + trecho juntos) e um vetor por acórdão
+só da ementa, em coleções separadas</td>
 </tr>
 <tr>
 <td>Query enrichment</td>
@@ -1188,6 +1190,22 @@ retomá-lo.</p>
 LegalBench-RAG, um reranker pequeno ajustado foi de 0,385 para 0,742 de
 nDCG@10</td>
 <td>Rerankers prontos ficarem longe do teto dos 30 candidatos</td>
+</tr>
+<tr>
+<td>Ementa inteira no SAC e na coleção <code>ementa</code></td>
+<td>Hoje a ementa é cortada em 150 palavras (herança do
+<code>nomic</code>; o <code>text-embedding-3-small</code> aceita 8.191
+tokens), então o canal <code>ementa</code> só vê o começo das ementas
+longas. Corrigir exige reembutir as coleções, e fazer isso depois do
+gabarito invalida a comparação</td>
+<td>Relevantes com ementa longa ficarem fora dos 30 candidatos</td>
+</tr>
+<tr>
+<td>Medir o prefixo SAC (com e sem a ementa no chunk)</td>
+<td>A ementa ocupa até 150 das ~650 palavras de cada chunk, e o RRF pode
+contar duas vezes o sinal da ementa. Medir exige reembutir os ~400 mil
+chunks e julgar os acórdãos novos que aparecerem</td>
+<td>—</td>
 </tr>
 <tr>
 <td>Loop agêntico: decompor a tese, checar se cada aspecto tem acórdão
