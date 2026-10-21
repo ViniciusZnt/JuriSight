@@ -155,7 +155,8 @@ class ProvimentoJevStore:
                     confianca_resultado = EXCLUDED.confianca_resultado,
                     confianca_recorrente = EXCLUDED.confianca_recorrente,
                     confianca_favorece = EXCLUDED.confianca_favorece,
-                    provimento_regex = EXCLUDED.provimento_regex,
+                    provimento_regex = coalesce(
+                        public.provimento_jev.provimento_regex, EXCLUDED.provimento_regex),
                     modelo = EXCLUDED.modelo,
                     perguntas_sha = EXCLUDED.perguntas_sha,
                     criado_em = NOW()

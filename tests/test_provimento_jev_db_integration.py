@@ -193,3 +193,13 @@ def test_cascade(store, criar_doc):
         conn.execute("DELETE FROM documentos WHERE id = %s", (doc,))
         n = conn.execute("SELECT count(*) FROM provimento_jev WHERE documento_id = %s", (doc,)).fetchone()[0]
     assert n == 0
+
+
+def test_regex_preservada_apos_aplicar(store, criar_doc):
+    doc = criar_doc()
+    store.gravar(doc, _classif(), "NEGADO", MODELO, SHA)
+    store.aplicar([(doc, "PARCIAL")])
+    # Simula `pendentes` lendo documentos.provimento (já com o valor do Jev).
+    store.gravar(doc, _classif(), "PARCIAL", "outro-modelo", "outro-sha")
+    linhas = store.linhas("outro-modelo", "outro-sha")
+    assert [l.provimento_regex for l in linhas if l.documento_id == doc] == ["NEGADO"]
