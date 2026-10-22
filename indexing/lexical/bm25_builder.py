@@ -23,18 +23,37 @@ Mantém um array paralelo ao corpus:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import unicodedata
 from pathlib import Path
 
 import bm25s
+import numpy as np
 from stop_words import get_stop_words
 
 from processing.chunking.sac_chunker import Chunk
 
 BM25_INDEX_PATH = Path(os.getenv("BM25_INDEX_PATH", "./data/index/bm25s_index"))
 _CHUNK_IDS_FILENAME = "chunk_ids.json"
+PROVIMENTOS_FILENAME = "provimentos.json"
+
+logger = logging.getLogger(__name__)
+
+
+def gravar_provimentos(index_path: Path, provimentos: list[str]) -> None:
+    """Grava provimentos.json de forma atômica (.tmp + os.replace).
+
+    Input:  index_path — diretório do índice; provimentos — um valor por chunk,
+            na mesma ordem de chunk_ids.json.
+    Returns: None.
+    """
+    destino = index_path / PROVIMENTOS_FILENAME
+    tmp = destino.with_name(destino.name + ".tmp")
+    with open(tmp, "w") as f:
+        json.dump(provimentos, f)
+    os.replace(tmp, destino)
 
 
 def _strip_accents(text: str) -> str:
@@ -86,6 +105,7 @@ class BM25Builder:
         self.index_path = index_path
         self._corpus_tokens: list[list[str]] = []
         self._chunk_ids: list[str] = []
+        self._provimentos: list[str] = []
 
     def add(self, chunks: list[Chunk]) -> None:
         """Acumula chunks no corpus (tokeniza texto_bruto e guarda chunk_id).
@@ -96,6 +116,7 @@ class BM25Builder:
         for c in chunks:
             self._corpus_tokens.append(_tokenize(c.texto_bruto))
             self._chunk_ids.append(c.chunk_id)
+            self._provimentos.append(c.provimento)
 
     def build_and_save(self) -> None:
         """Constrói o índice bm25s sobre o corpus e persiste em self.index_path.
@@ -115,6 +136,7 @@ class BM25Builder:
         retriever.save(str(self.index_path))
         with open(self.index_path / _CHUNK_IDS_FILENAME, "w") as f:
             json.dump(self._chunk_ids, f)
+        gravar_provimentos(self.index_path, self._provimentos)
 
     @staticmethod
     def load(index_path: Path = BM25_INDEX_PATH) -> "LoadedBM25":
@@ -130,7 +152,18 @@ class BM25Builder:
         retriever = bm25s.BM25.load(str(index_path), mmap=True, load_corpus=False, show_progress=False)
         with open(index_path / _CHUNK_IDS_FILENAME) as f:
             chunk_ids = json.load(f)
-        return LoadedBM25(retriever, chunk_ids)
+        provimentos = None
+        arq_prov = index_path / PROVIMENTOS_FILENAME
+        if arq_prov.exists():
+            with open(arq_prov) as f:
+                provimentos = json.load(f)
+            if len(provimentos) != len(chunk_ids):
+                raise ValueError(
+                    f"{PROVIMENTOS_FILENAME} tem {len(provimentos)} entradas e "
+                    f"{_CHUNK_IDS_FILENAME} tem {len(chunk_ids)}: rode `sincronizar` "
+                    "para regenerar os provimentos do índice."
+                )
+        return LoadedBM25(retriever, chunk_ids, provimentos)
 
 
 class LoadedBM25:
@@ -140,30 +173,70 @@ class LoadedBM25:
     query/search/hybrid_search.py.
     """
 
-    def __init__(self, retriever: bm25s.BM25, chunk_ids: list[str]) -> None:
-        """Guarda o índice e o mapeamento posição → chunk_id.
+    def __init__(
+        self,
+        retriever: bm25s.BM25,
+        chunk_ids: list[str],
+        provimentos: list[str] | None = None,
+    ) -> None:
+        """Guarda o índice, o mapeamento posição → chunk_id e as máscaras de provimento.
 
         Input:  retriever — bm25s.BM25 carregado; chunk_ids — ids na ordem do corpus
-                (mesma ordem usada na indexação — bm25s indexa por posição inteira).
-        Returns: None.
+                (mesma ordem usada na indexação — bm25s indexa por posição inteira);
+                provimentos — provimento de cada chunk, na mesma ordem (opcional).
+        Returns: None. Monta uma máscara float32 por provimento distinto (1.0 onde
+        o chunk tem aquele valor, 0.0 no resto), uma vez.
         """
         self._retriever = retriever
         self._chunk_ids = chunk_ids
+        self._mascaras: dict[str, np.ndarray] | None = None
+        self._avisou_sem_provimentos = False
+        if provimentos is not None:
+            arr = np.asarray(provimentos)
+            self._mascaras = {
+                str(v): (arr == v).astype(np.float32) for v in np.unique(arr)
+            }
 
-    def search(self, query: str, n: int = 20) -> list[tuple[str, float]]:
+    def search(
+        self, query: str, n: int = 20, provimento: str | None = None
+    ) -> list[tuple[str, float]]:
         """Busca lexical: pontua a query contra o corpus e devolve os top-n.
 
-        Input:  query — texto da busca; n — quantos resultados.
+        Com `provimento`, aplica a máscara do bm25s (score x 0 fora do provimento)
+        e descarta score <= 0: com poucos chunks do provimento, o top-k seria
+        completado com documentos de score zero.
+
+        Input:  query — texto da busca; n — quantos resultados; provimento —
+                valor a filtrar (None = sem filtro).
         Returns: lista [(chunk_id, score)] ordenada por score desc.
         """
         tokens = _tokenize(query)
         if not tokens or not self._chunk_ids:
             return []
+        mascara = None
+        if provimento is not None:
+            if self._mascaras is None:
+                if not self._avisou_sem_provimentos:
+                    logger.warning(
+                        "Índice BM25 sem %s: filtro de provimento ignorado "
+                        "(rode `sincronizar`).", PROVIMENTOS_FILENAME,
+                    )
+                    self._avisou_sem_provimentos = True
+                provimento = None
+            else:
+                mascara = self._mascaras.get(provimento)
+                if mascara is None:
+                    return []
         n = min(n, len(self._chunk_ids))
         # corpus=self._chunk_ids: o bm25s devolve o chunk_id diretamente (em vez
         # do índice numérico interno), então não precisamos traduzir na mão.
         resultado = self._retriever.retrieve(
-            [tokens], corpus=self._chunk_ids, k=n, show_progress=False
+            [tokens], corpus=self._chunk_ids, k=n, show_progress=False,
+            **({"weight_mask": mascara} if mascara is not None else {}),
         )
         docs, scores = resultado.documents[0], resultado.scores[0]
-        return [(docs[i], float(scores[i])) for i in range(len(docs))]
+        return [
+            (docs[i], float(scores[i]))
+            for i in range(len(docs))
+            if provimento is None or scores[i] > 0
+        ]
