@@ -216,3 +216,36 @@ def test_cli_exportar_filtra_corredores_e_pula_tese_vazia(cenario, tmp_path, mon
     assert len(arquivos) == 1
     assert len(_linhas(_avaliacao(arquivos[0]))) == 12
     assert "sem pares do pool" in capsys.readouterr().err
+
+
+def _lote_preenchido(cenario, tmp_path, email):
+    tese, pares, docs, store = cenario
+    caminho = tmp_path / "lote.xlsx"
+    pj.exportar_lote(tese, pares, docs, caminho, seed=1)
+    ids = _preencher(caminho, {0: 3}, email=email, stances={0: "fortalece"})
+    return store, caminho, ids
+
+
+def test_importar_adjudicacao_grava_rodada_2(cenario, tmp_path):
+    store, caminho, ids = _lote_preenchido(cenario, tmp_path, "Alexia@x.com")
+    assert pj.importar_arquivo(store, caminho, rodada=2, adjudicador=" alexia@X.com ")[0] == 1
+    assert list(store.julgamentos) == [(uuid.UUID(ids[0]), "humano:alexia@x.com", 2)]
+
+
+def test_importar_adjudicacao_com_outro_email_falha(cenario, tmp_path):
+    store, caminho, _ = _lote_preenchido(cenario, tmp_path, "ana@x.com")
+    with pytest.raises(ValueError, match="AVALIACAO_ADJUDICADOR"):
+        pj.importar_arquivo(store, caminho, rodada=2, adjudicador="alexia@x.com")
+    with pytest.raises(ValueError, match="AVALIACAO_ADJUDICADOR"):
+        pj.importar_arquivo(store, caminho, rodada=2, adjudicador=None)
+    assert store.julgamentos == {}
+
+
+def test_cli_adjudicacao(cenario, tmp_path, monkeypatch, capsys):
+    store, caminho, ids = _lote_preenchido(cenario, tmp_path, "alexia@x.com")
+    monkeypatch.setenv("AVALIACAO_ADJUDICADOR", "alexia@x.com")
+    assert pj.main(["importar", "--adjudicacao", str(caminho)], store=store) == 0
+    assert [k[2] for k in store.julgamentos] == [2]
+    monkeypatch.setenv("AVALIACAO_ADJUDICADOR", "outra@x.com")
+    assert pj.main(["importar", "--adjudicacao", str(caminho)], store=store) == 1
+    assert "AVALIACAO_ADJUDICADOR" in capsys.readouterr().err

@@ -162,11 +162,13 @@ class AvaliacaoStore:
             rows = conn.execute(sql, params).fetchall()
         return [_julgamento(r) for r in rows]
 
-    def _humanos_por_par(self, tese_id: uuid.UUID | None) -> dict[uuid.UUID, tuple[uuid.UUID, str, list[tuple[str, int, str]]]]:
-        """par_id -> (tese_id, documento_id, [(juiz, relevância, stance)]), com o
-        julgamento humano mais recente de cada juiz. Sem `tese_id`, todas as teses."""
+    def _humanos_por_par(self, tese_id: uuid.UUID | None) -> dict[uuid.UUID, tuple[uuid.UUID, str, list[tuple[str, int, str, int]]]]:
+        """par_id -> (tese_id, documento_id, [(juiz, relevância, stance, rodada)]),
+        com um julgamento humano por (juiz, rodada), em ordem de rodada. Sem
+        `tese_id`, todas as teses."""
         sql = (
-            "SELECT DISTINCT ON (p.id, j.juiz) p.id, p.tese_id, p.documento_id, j.juiz, j.relevancia, j.stance "
+            "SELECT DISTINCT ON (p.id, j.juiz, j.rodada) p.id, p.tese_id, p.documento_id, j.juiz, j.relevancia, "
+            "j.stance, j.rodada "
             "FROM avaliacao.pares p JOIN avaliacao.julgamentos j ON j.par_id = p.id "
             "WHERE starts_with(j.juiz, 'humano:')"
         )
@@ -174,12 +176,14 @@ class AvaliacaoStore:
         if tese_id is not None:
             sql += " AND p.tese_id = %s"
             params = (tese_id,)
-        sql += " ORDER BY p.id, j.juiz, j.criado_em DESC"
+        sql += " ORDER BY p.id, j.juiz, j.rodada"
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         por_par: dict = {}
-        for par_id, t_id, doc, juiz, rel, stance in rows:
-            por_par.setdefault(par_id, (t_id, doc, []))[2].append((juiz, int(rel), stance))
+        for par_id, t_id, doc, juiz, rel, stance, rodada in rows:
+            por_par.setdefault(par_id, (t_id, doc, []))[2].append((juiz, int(rel), stance, int(rodada)))
+        for _, _, julgs in por_par.values():
+            julgs.sort(key=lambda j: j[3])  # rodada crescente; a mais alta de cada juiz vale por último
         return por_par
 
     def rotulos_finais(
@@ -195,13 +199,24 @@ class AvaliacaoStore:
                 relevancia[doc], stance[doc] = rotulo
         return relevancia, stance
 
+    def pendentes_detalhe(self, adjudicador: str | None = None) -> list[dict]:
+        """Pares com 2+ avaliadores e sem rótulo final, ordenados por (tese, par):
+        {tese_id, par_id, documento_id, julgamentos: [{juiz, nota, stance}]}, com o
+        último julgamento de cada juiz (a adjudicação de rodada 2 resolve o par,
+        então nunca aparece aqui)."""
+        saida = []
+        for par_id, (t_id, doc, julgs) in self._humanos_por_par(None).items():
+            ultimo = {juiz: (rel, st) for juiz, rel, st, _ in julgs}
+            if len(ultimo) >= 2 and rotulo_final(julgs, adjudicador) is None:
+                saida.append({
+                    "tese_id": t_id, "par_id": par_id, "documento_id": doc,
+                    "julgamentos": [{"juiz": j, "nota": rel, "stance": st} for j, (rel, st) in sorted(ultimo.items())],
+                })
+        return sorted(saida, key=lambda d: (d["tese_id"], d["par_id"]))
+
     def pendentes(self, adjudicador: str | None = None) -> list[tuple[uuid.UUID, uuid.UUID]]:
         """(tese_id, par_id) dos pares com 2+ humanos e sem rótulo final."""
-        return sorted(
-            (t_id, par_id)
-            for par_id, (t_id, _, julgs) in self._humanos_por_par(None).items()
-            if len(julgs) >= 2 and rotulo_final(julgs, adjudicador) is None
-        )
+        return [(d["tese_id"], d["par_id"]) for d in self.pendentes_detalhe(adjudicador)]
 
     # --- amostra e fila de rotulação ---
 

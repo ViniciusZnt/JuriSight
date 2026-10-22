@@ -121,25 +121,25 @@ def test_sem_rotulos_metricas_none():
     assert rel["teto"]["ndcg_10_medio"] is None
 
 
-def _j(par, juiz, rel):
-    return SimpleNamespace(par_id=par, juiz=juiz, relevancia=rel)
+def _j(par, juiz, rel, rodada=1):
+    return SimpleNamespace(par_id=par, juiz=juiz, relevancia=rel, rodada=rodada)
 
 
-def test_concordancia_sem_adjudicador_e_mais_recente():
+def test_concordancia_so_rodada_1_com_todos_os_avaliadores():
     p1, p2, p3 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     julgs = [
         _j(p1, "humano:ana@x.com", 0), _j(p1, "humano:ana@x.com", 3),  # vale a mais recente
         _j(p1, "humano:bia@x.com", 2),
-        _j(p1, "humano:adj@x.com", 1),  # adjudicador fora
-        _j(p2, "humano:ana@x.com", 1), _j(p2, "humano:adj@x.com", 0),  # só um avaliador: fora
+        _j(p1, "humano:adj@x.com", 1, rodada=2),  # adjudicação: fora da concordância
+        _j(p2, "humano:ana@x.com", 1), _j(p2, "humano:adj@x.com", 0),  # o adjudicador avaliou na rodada 1: entra
         _j(p3, "humano:ana@x.com", 1), _j(p3, "humano:bia@x.com", 1), _j(p3, "humano:caio@x.com", 3),
         _j(p3, "llm:jev", 0),
     ]
-    assert pares_de_avaliadores(julgs, " ADJ@x.com ") == [(3, 2), (1, 1)]
+    assert pares_de_avaliadores(julgs) == [(3, 2), (0, 1), (1, 1)]
     rel = avaliar_runs(_runs([], []), _rotulos({}), julgamentos=julgs, pendentes=[(1, 2)], adjudicador="adj@x.com")
-    assert rel["concordancia"]["n_pares"] == 2
+    assert rel["concordancia"]["n_pares"] == 3
     assert rel["concordancia"]["alfa_krippendorff"] is not None
-    assert rel["pendentes"] == 1
+    assert rel["pendentes"] == 1 and rel["adjudicador"] == "adj@x.com"
 
 
 def test_teto_valor_exato():
@@ -333,3 +333,21 @@ def test_checar_s6_sem_torch_falha_cedo(monkeypatch):
     with pytest.raises(RuntimeError, match="uv run --group benchmark"):
         bm._checar_dependencias(["S2", "S6"])
     bm._checar_dependencias(["S2", "S3"])  # sem S6 não checa nada
+
+
+def test_relatorio_medias_por_origem_adjudicador_e_pendentes(capsys):
+    linhas = [_linha(T1, {"S2": (["a", "d", "b"], 1.0)}), _linha(T2, {"S2": (["b", "a"], 3.0)})]
+    linhas[1]["origem"] = "advogado"
+    pend = [{"tese_id": uuid.UUID(T1), "par_id": uuid.uuid4(), "documento_id": "d9", "numero_processo": "0001-00",
+             "julgamentos": [{"juiz": "humano:a@x", "nota": 0, "stance": "neutro"},
+                             {"juiz": "humano:b@x", "nota": 3, "stance": "fortalece"}]}]
+    rel = avaliar_runs(_runs(linhas, ["S2"]), _rotulos({T1: GANHOS, T2: GANHOS}), pendentes=pend, adjudicador="adj@x")
+    assert set(rel["por_origem"]) == {"advogado", "sintetica"}
+    assert rel["por_origem"]["advogado"]["S2"]["n_teses"] == 1
+    assert rel["por_sistema"]["S2"]["n_teses"] == 2
+    assert rel["pendentes_detalhe"][0]["documento_id"] == "d9"
+    json.dumps(rel)  # serializável (UUIDs viram texto)
+    bm.imprimir_relatorio(rel)
+    out = capsys.readouterr().out
+    assert "adj@x" in out and "Origem advogado" in out and "Origem sintetica" in out
+    assert "doc=d9" in out and "processo=0001-00" in out and "a@x=0/neutro" in out

@@ -2,7 +2,7 @@
 
 Uso:
     python -m avaliacao.planilha_julgamento exportar [--teses id,id | --todas] [--pasta data/eval/lotes] [--seed 42]
-    python -m avaliacao.planilha_julgamento importar ARQUIVO [ARQUIVO ...]
+    python -m avaliacao.planilha_julgamento importar [--adjudicacao] ARQUIVO [ARQUIVO ...]
 
 A tese do lote fica no nome definido `tese_id` do .xlsx (constante de texto,
 sem célula nem aba extra); o `par_id` de cada linha fica na coluna A, oculta.
@@ -279,12 +279,20 @@ def ler_lote(caminho) -> tuple[str, list[tuple[uuid.UUID, int, str]]]:
     return email, validas
 
 
-def importar_arquivo(store, caminho) -> tuple[int, dict[str, int]]:
+def importar_arquivo(store, caminho, rodada: int = 1, adjudicador: str | None = None) -> tuple[int, dict[str, int]]:
     """Grava os julgamentos do arquivo. Devolve (gravadas, {motivo: puladas}).
-    Idempotente: o store faz upsert por (par, juiz, rodada)."""
+    Idempotente: o store faz upsert por (par, juiz, rodada).
+
+    `rodada=2` é a adjudicação: o e-mail do arquivo tem de ser o `adjudicador`
+    (AVALIACAO_ADJUDICADOR), senão ValueError e nada é gravado."""
     from avaliacao.store import Julgamento
 
     email, tese_id, validas, puladas = _ler(caminho)
+    if rodada == 2 and email != (adjudicador or "").strip().lower():
+        raise ValueError(
+            f"{Path(caminho).name}: adjudicação exige o e-mail de AVALIACAO_ADJUDICADOR "
+            f"({adjudicador or 'não definido'}); o arquivo é de {email}."
+        )
     _avisar(caminho, puladas)
     if not any(t.id == tese_id for t in store.listar_teses()):
         raise ValueError(f"{Path(caminho).name}: a tese {tese_id} não existe no banco.")
@@ -296,7 +304,7 @@ def importar_arquivo(store, caminho) -> tuple[int, dict[str, int]]:
             motivos["par fora da tese"] += 1
             print(f"{Path(caminho).name}: par {par_id} não pertence à tese do lote; ignorado", file=sys.stderr)
             continue
-        store.gravar_julgamento(Julgamento(par_id, f"humano:{email}", 1, nota, stance))
+        store.gravar_julgamento(Julgamento(par_id, f"humano:{email}", rodada, nota, stance))
         gravadas += 1
     return gravadas, dict(motivos)
 
@@ -340,6 +348,8 @@ def main(argv=None, store=None) -> int:
     exp.add_argument("--seed", type=int, default=42, help="semente da ordem das linhas (padrão 42)")
     imp = sub.add_parser("importar", help="grava os julgamentos dos arquivos devolvidos")
     imp.add_argument("arquivos", nargs="+", metavar="ARQUIVO")
+    imp.add_argument("--adjudicacao", action="store_true",
+                     help="grava como rodada 2 (adjudicação); o e-mail do arquivo tem de ser o de AVALIACAO_ADJUDICADOR")
     args = parser.parse_args(argv)
 
     if store is None:
@@ -348,10 +358,12 @@ def main(argv=None, store=None) -> int:
     if args.cmd == "exportar":
         return _exportar(args, store)
 
+    rodada = 2 if args.adjudicacao else 1
+    adjudicador = os.getenv("AVALIACAO_ADJUDICADOR") if args.adjudicacao else None
     falhou = False
     for arquivo in args.arquivos:
         try:
-            gravadas, puladas = importar_arquivo(store, arquivo)
+            gravadas, puladas = importar_arquivo(store, arquivo, rodada, adjudicador)
         except (ValueError, OSError) as e:
             print(f"{arquivo}: FALHOU ({e})", file=sys.stderr)
             falhou = True

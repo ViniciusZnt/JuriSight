@@ -201,7 +201,26 @@ def test_pendente_fica_fora(store, teses_criadas):
 
     # o adjudicador resolve (e-mail em qualquer caixa)
     store.gravar_julgamento(Julgamento(pares[d1].id, "humano:b@x.invalid", 2, 3, "fortalece"))
-    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:c@x.invalid", 1, 1, "neutro"))
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:c@x.invalid", 2, 1, "neutro"))  # rodada 2
     rel, _ = store.rotulos_finais(tese.id, adjudicador=" C@X.invalid")
     assert rel[d1] == 1
     assert (tese.id, pares[d1].id) not in store.pendentes(adjudicador="c@x.invalid")
+
+
+def test_pendentes_detalhe_e_adjudicador_na_rodada_1(store, teses_criadas):
+    tese = _tese(store, teses_criadas)
+    d1, d2 = _doc(), _doc()
+    pares = {p.documento_id: p for p in store.adicionar_pares(tese.id, {d1: ["bm25"], d2: ["bm25"]})}
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:a@x.invalid", 1, 0, "neutro"))
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:b@x.invalid", 1, 3, "fortalece"))
+    # d2: a adjudicadora também avaliou na rodada 1, diferença de 1: vale a menor
+    store.gravar_julgamento(Julgamento(pares[d2].id, "humano:a@x.invalid", 1, 2, "fortalece"))
+    store.gravar_julgamento(Julgamento(pares[d2].id, "humano:c@x.invalid", 1, 1, "neutro"))
+
+    det = [d for d in store.pendentes_detalhe("c@x.invalid") if d["par_id"] == pares[d1].id]
+    assert len(det) == 1 and det[0]["documento_id"] == d1 and det[0]["tese_id"] == tese.id
+    assert sorted((j["juiz"], j["nota"], j["stance"]) for j in det[0]["julgamentos"]) == [
+        ("humano:a@x.invalid", 0, "neutro"), ("humano:b@x.invalid", 3, "fortalece")]
+    assert not any(d["par_id"] == pares[d2].id for d in store.pendentes_detalhe("c@x.invalid"))
+    rel, _ = store.rotulos_finais(tese.id, "c@x.invalid")
+    assert rel == {d2: 1}

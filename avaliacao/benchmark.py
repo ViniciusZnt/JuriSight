@@ -294,18 +294,17 @@ def calcular_contrastes(ndcg: dict[str, dict[str, float | None]]) -> tuple[list[
 # --- concordância -----------------------------------------------------------
 
 
-def pares_de_avaliadores(julgamentos: list, adjudicador: str | None = None) -> list[tuple[int, int]]:
+def pares_de_avaliadores(julgamentos: list) -> list[tuple[int, int]]:
     """Notas brutas (antes do consenso) de dois avaliadores por par.
 
-    Considera só juízes humanos, sem o adjudicador (`humano:<email>` normalizado).
-    Por par com 2+ avaliadores, usa o julgamento mais recente de cada um (a lista
-    vem em ordem de criação); com mais de dois, os dois primeiros juízes em ordem
-    alfabética.
+    Só a rodada 1 e só juízes humanos, todos (o adjudicador também conta, se
+    avaliou na rodada 1; a adjudicação de rodada 2 fica de fora). Por par com 2+
+    avaliadores, usa o julgamento mais recente de cada um (a lista vem em ordem
+    de criação); com mais de dois, os dois primeiros juízes em ordem alfabética.
     """
-    excluido = f"humano:{adjudicador.strip().lower()}" if adjudicador else None
     por_par: dict = {}
     for j in julgamentos:
-        if j.juiz.startswith("humano:") and j.juiz != excluido:
+        if j.juiz.startswith("humano:") and getattr(j, "rodada", 1) == 1:
             por_par.setdefault(j.par_id, {})[j.juiz] = j.relevancia  # o último vence
     return [
         (notas[juizes[0]], notas[juizes[1]])
@@ -314,8 +313,8 @@ def pares_de_avaliadores(julgamentos: list, adjudicador: str | None = None) -> l
     ]
 
 
-def concordancia(julgamentos: list, adjudicador: str | None = None) -> dict:
-    pares = pares_de_avaliadores(julgamentos, adjudicador)
+def concordancia(julgamentos: list) -> dict:
+    pares = pares_de_avaliadores(julgamentos)
     return {
         "n_pares": len(pares),
         "kappa_ponderado": kappa_ponderado_quadratico([a for a, _ in pares], [b for _, b in pares]) if pares else None,
@@ -345,6 +344,13 @@ def _media(valores: list[float | None]) -> tuple[float | None, int]:
     return (float(np.mean(presentes)) if presentes else None), len(valores) - len(presentes)
 
 
+def _pendente_json(p) -> dict | list:
+    """Pendente como veio do store: dict (com notas) ou o par (tese_id, par_id)."""
+    if isinstance(p, dict):
+        return {k: str(v) if isinstance(v, uuid.UUID) else v for k, v in p.items()}
+    return [str(x) for x in p]
+
+
 def avaliar_runs(
     runs: dict,
     rotulos: Callable[[uuid.UUID], tuple[dict[str, int], dict[str, str]]],
@@ -356,7 +362,8 @@ def avaliar_runs(
     contrastes e concordância.
 
     Input:  runs (saída de `rodar`); rotulos(tese_id) -> (ganhos, stances);
-            julgamentos (todos, para a concordância); pendentes (store.pendentes).
+            julgamentos (todos, para a concordância); pendentes (store.pendentes_detalhe
+            ou store.pendentes); adjudicador (e-mail, só informativo no relatório).
     """
     sistemas = [s for s in SISTEMAS if s in runs["sistemas"]]
     por_tese, tetos, perdidos = [], [], []
@@ -379,18 +386,23 @@ def avaliar_runs(
         )
         perdidos.append({"tese_id": linha["tese_id"], "n": len(achados), "documentos": achados})
 
-    por_sistema = {}
-    for s in sistemas:
-        linhas = [t["sistemas"][s] for t in por_tese if s in t["sistemas"]]
-        medias, excluidas = {}, {}
-        for m in METRICAS:
-            medias[m], excluidas[m] = _media([l[m] for l in linhas])
-        lat = [l["latencia_s"] for l in linhas]
-        por_sistema[s] = {
-            "n_teses": len(linhas), "medias": medias, "excluidas": excluidas,
-            "latencia_mediana_s": float(np.median(lat)) if lat else None,
-            "latencia_p95_s": float(np.percentile(lat, 95)) if lat else None,
-        }
+    def agregar(origem: str | None) -> dict:
+        saida = {}
+        for s in sistemas:
+            linhas = [t["sistemas"][s] for t in por_tese if s in t["sistemas"] and origem in (None, t["origem"])]
+            medias, excluidas = {}, {}
+            for m in METRICAS:
+                medias[m], excluidas[m] = _media([l[m] for l in linhas])
+            lat = [l["latencia_s"] for l in linhas]
+            saida[s] = {
+                "n_teses": len(linhas), "medias": medias, "excluidas": excluidas,
+                "latencia_mediana_s": float(np.median(lat)) if lat else None,
+                "latencia_p95_s": float(np.percentile(lat, 95)) if lat else None,
+            }
+        return saida
+
+    por_sistema = agregar(None)
+    por_origem = {o: agregar(o) for o in sorted({t["origem"] for t in por_tese})}
 
     ndcg = {s: {t["tese_id"]: t["sistemas"][s]["ndcg_10"] for t in por_tese if s in t["sistemas"]} for s in sistemas}
     contrastes, avisos, omitidos = calcular_contrastes(ndcg)
@@ -398,7 +410,7 @@ def avaliar_runs(
     return {
         "data": runs.get("data"), "commit": runs.get("commit"), "modelos": runs.get("modelos", {}),
         "sistemas": sistemas, "n_teses": len(por_tese),
-        "por_tese": por_tese, "por_sistema": por_sistema,
+        "por_tese": por_tese, "por_sistema": por_sistema, "por_origem": por_origem,
         "contrastes": contrastes, "avisos": avisos,
         "estatistica": {
             "m_holm": len(contrastes), "m_bh": len(contrastes),
@@ -408,8 +420,10 @@ def avaliar_runs(
         },
         "teto": {"ndcg_10_medio": teto_medio, "excluidas": teto_excluidas, "por_tese": tetos},
         "perdidos": {"total": sum(p["n"] for p in perdidos), "por_tese": perdidos},
-        "concordancia": concordancia(julgamentos or [], adjudicador),
+        "concordancia": concordancia(julgamentos or []),
+        "adjudicador": adjudicador,
         "pendentes": len(pendentes or []),
+        "pendentes_detalhe": [_pendente_json(p) for p in pendentes or []],
     }
 
 
@@ -420,11 +434,10 @@ def _f(v: float | None, casas: int = 3) -> str:
     return "-" if v is None else f"{v:.{casas}f}"
 
 
-def imprimir_relatorio(rel: dict) -> None:
-    print(f"commit={rel['commit']} teses={rel['n_teses']} modelos={rel['modelos']}")
+def _imprimir_tabela(por_sistema: dict) -> None:
     cab = ("sist", "nDCG@10", "MRR@10", "P@5", "P@10", "Rec@10", "MAP@10", "Judg@10", "lat med s", "lat p95 s")
     print("".join(f"{c:>11}" for c in cab))
-    for s, g in rel["por_sistema"].items():
+    for s, g in por_sistema.items():
         m = g["medias"]
         cel = [m[k] for k in ("ndcg_10", "mrr_10", "p_5", "p_10", "recall_10", "map_10", "judged_10")]
         print(f"{s:>11}" + "".join(f"{_f(v):>11}" for v in cel)
@@ -432,6 +445,17 @@ def imprimir_relatorio(rel: dict) -> None:
         exc = {k: v for k, v in g["excluidas"].items() if v}
         if exc:
             print(f"{'':>11}teses excluídas por métrica: {exc}")
+
+
+def imprimir_relatorio(rel: dict) -> None:
+    print(f"commit={rel['commit']} teses={rel['n_teses']} modelos={rel['modelos']}")
+    print(f"Adjudicador (AVALIACAO_ADJUDICADOR): {rel.get('adjudicador') or 'não definido'}")
+    print("Todas as origens")
+    _imprimir_tabela(rel["por_sistema"])
+    for origem, tabela in rel.get("por_origem", {}).items():
+        n = max((g["n_teses"] for g in tabela.values()), default=0)
+        print(f"\nOrigem {origem} ({n} teses)")
+        _imprimir_tabela(tabela)
     if all(g["medias"]["ndcg_10"] is None for g in rel["por_sistema"].values()):
         print("(sem rótulos: métricas de ranking indisponíveis)")
     print("\nContrastes em nDCG@10 (tratamento - controle)")
@@ -449,7 +473,13 @@ def imprimir_relatorio(rel: dict) -> None:
     c = rel["concordancia"]
     print(f"Concordância ({c['n_pares']} pares): kappa={_f(c['kappa_ponderado'])} "
           f"alfa={_f(c['alfa_krippendorff'])} AC2={_f(c['ac2_gwet'])}")
-    print(f"Pares pendentes: {rel['pendentes']}")
+    print(f"Pares pendentes: {rel['pendentes']} (fora das métricas; adjudique com `planilha_julgamento importar --adjudicacao`)")
+    for p in rel.get("pendentes_detalhe", []):
+        if not isinstance(p, dict):
+            continue
+        notas = "; ".join(f"{j['juiz'].removeprefix('humano:')}={j['nota']}/{j['stance']}" for j in p["julgamentos"])
+        print(f"  tese={p['tese_id']} par={p['par_id']} doc={p['documento_id']} "
+              f"processo={p.get('numero_processo') or '-'}: {notas}")
 
 
 def _cmd_rodar(args) -> int:
@@ -480,15 +510,34 @@ def _cmd_rodar(args) -> int:
     return 0
 
 
+def _numeros_de_processo(pendentes: list[dict]) -> None:
+    """Acrescenta `numero_processo` a cada pendente (DocRetriever); sem acesso
+    ao banco de documentos, os pendentes ficam só com o documento_id."""
+    if not pendentes:
+        return
+    try:
+        from query.search.doc_retriever import DocRetriever
+
+        docs = DocRetriever(os.environ["DATABASE_URL"]).fetch(sorted({p["documento_id"] for p in pendentes}))
+    except Exception as e:  # noqa: BLE001 — o número do processo é só conveniência
+        print(f"Aviso: sem número de processo nos pendentes ({e})", file=sys.stderr)
+        return
+    for p in pendentes:
+        doc = docs.get(p["documento_id"])
+        p["numero_processo"] = doc.numero_processo if doc else None
+
+
 def _cmd_relatorio(args) -> int:
     from avaliacao.contexto import carregar_store
 
     runs = json.loads(args.runs.read_text(encoding="utf-8"))
     adjudicador = (os.getenv("AVALIACAO_ADJUDICADOR") or "").strip().lower() or None
     store = carregar_store()
+    pendentes = store.pendentes_detalhe(adjudicador)
+    _numeros_de_processo(pendentes)
     rel = avaliar_runs(
         runs, lambda tid: store.rotulos_finais(tid, adjudicador),
-        julgamentos=store.julgamentos("humano:"), pendentes=store.pendentes(adjudicador),
+        julgamentos=store.julgamentos("humano:"), pendentes=pendentes,
         adjudicador=adjudicador,
     )
     destino = args.runs.with_name(args.runs.name.removesuffix("_runs.json").removesuffix(".json") + "_relatorio.json")
