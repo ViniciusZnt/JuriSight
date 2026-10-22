@@ -66,11 +66,13 @@ Acórdão com `acordao` vazio ou só espaços não é enviado ao Jev.
 **Perguntas** — texto fixo, versionado por um `perguntas_sha` como no harness:
 
 - `resultado` (Choice) — instruções: "Qual foi o resultado do recurso julgado neste
-  acórdão (`acordao`)? Se houver mais de um recurso com resultados diferentes, escolha
-  parcialmente_provido."
+  acórdão (`acordao`)? Se houver mais de um recurso, escolha parcialmente_provido só quando
+  pelo menos um deles foi provido, no todo ou em parte; se nenhum foi provido, escolha
+  nao_provido. Embargos de declaração acolhidos apenas para esclarecer, sem mudar o
+  resultado, contam como nao_provido." (revisado em 22/10, depois da conferência de 20/10)
   - `provido`: "O recurso foi provido (aceito) integralmente."
-  - `parcialmente_provido`: "O recurso foi provido em parte, ou há mais de um recurso com resultados diferentes."
-  - `nao_provido`: "O recurso foi conhecido, mas o provimento foi negado."
+  - `parcialmente_provido`: "O recurso foi provido em parte, ou, havendo mais de um recurso, pelo menos um foi provido e outro não."
+  - `nao_provido`: "O recurso foi conhecido, mas o provimento foi negado; havendo mais de um recurso, nenhum foi provido; ou embargos acolhidos só para esclarecer, sem efeito modificativo."
   - `nao_conhecido`: "O recurso não foi conhecido (não foi admitido para julgamento do mérito)."
   - `sem_recurso`: "O texto não julga um recurso (por exemplo, incidente, ação originária ou homologação)."
 - `recorrente` (Choice) — instruções: "Quem interpôs o recurso julgado neste acórdão (`acordao`)?"
@@ -80,7 +82,10 @@ Acórdão com `acordao` vazio ou só espaços não é enviado ao Jev.
   - `outro`: "Outra parte (Ministério Público do Trabalho, União, terceiro)."
   - `indefinido`: "O texto não permite saber quem recorreu."
 - `favorece` (Choice) — instruções: "Considerando o resultado final deste acórdão
-  (`acordao`), a decisão favorece o trabalhador (reclamante) ou a empresa (reclamada)?"
+  (`acordao`), a decisão favorece o trabalhador (reclamante) ou a empresa (reclamada)?
+  Atenção a quem recorreu: negar provimento ao recurso da reclamada favorece o reclamante, e
+  negar provimento ao recurso do reclamante favorece a reclamada. Recurso provido só em parte
+  significa que cada parte ganhou em algum ponto." (dica de negação acrescentada em 22/10)
   - `reclamante`: "O resultado favorece o trabalhador."
   - `reclamada`: "O resultado favorece a empresa."
   - `ambos_em_parte`: "Cada parte ganhou em algum ponto."

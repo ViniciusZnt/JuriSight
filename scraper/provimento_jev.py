@@ -25,15 +25,22 @@ PERGUNTAS_PROVIMENTO: dict[str, Choice] = {
     "resultado": Choice(
         instructions=(
             "Qual foi o resultado do recurso julgado neste acórdão (`acordao`)? "
-            "Se houver mais de um recurso com resultados diferentes, escolha "
-            "parcialmente_provido."
+            "Se houver mais de um recurso, escolha parcialmente_provido só quando pelo "
+            "menos um deles foi provido, no todo ou em parte; se nenhum foi provido, "
+            "escolha nao_provido. Embargos de declaração acolhidos apenas para "
+            "esclarecer, sem mudar o resultado, contam como nao_provido."
         ),
         criteria={
             "provido": "O recurso foi provido (aceito) integralmente.",
             "parcialmente_provido": (
-                "O recurso foi provido em parte, ou há mais de um recurso com resultados diferentes."
+                "O recurso foi provido em parte, ou, havendo mais de um recurso, pelo menos "
+                "um foi provido e outro não."
             ),
-            "nao_provido": "O recurso foi conhecido, mas o provimento foi negado.",
+            "nao_provido": (
+                "O recurso foi conhecido, mas o provimento foi negado; havendo mais de um "
+                "recurso, nenhum foi provido; ou embargos acolhidos só para esclarecer, "
+                "sem efeito modificativo."
+            ),
             "nao_conhecido": (
                 "O recurso não foi conhecido (não foi admitido para julgamento do mérito)."
             ),
@@ -55,7 +62,10 @@ PERGUNTAS_PROVIMENTO: dict[str, Choice] = {
     "favorece": Choice(
         instructions=(
             "Considerando o resultado final deste acórdão (`acordao`), a decisão favorece "
-            "o trabalhador (reclamante) ou a empresa (reclamada)?"
+            "o trabalhador (reclamante) ou a empresa (reclamada)? Atenção a quem recorreu: "
+            "negar provimento ao recurso da reclamada favorece o reclamante, e negar "
+            "provimento ao recurso do reclamante favorece a reclamada. Recurso provido só "
+            "em parte significa que cada parte ganhou em algum ponto."
         ),
         criteria={
             "reclamante": "O resultado favorece o trabalhador.",
