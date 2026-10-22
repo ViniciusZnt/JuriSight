@@ -45,6 +45,7 @@ METRICAS = ("ndcg_10", "mrr_10", "p_5", "p_10", "recall_10", "map_10", "recall_2
 CONTRASTES = (("S3", "S2"), ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S0", "S2"), ("S1", "S2"))
 N_BOOTSTRAP = 10_000
 SEED_BOOTSTRAP = 42
+WILCOXON_ZERO_METHOD = "pratt"
 
 
 # --- rodar ------------------------------------------------------------------
@@ -101,6 +102,8 @@ def rodar(
             usados = rerankers
         else:
             usados = construir_rerankers([sistema])
+        if teses:  # aquecimento sem cronometrar (cache de modelo, conexões, primeira chamada)
+            rodar_sistema(sistema, EstruturaArgumentativa(**teses[0].estrutura), deps, usados)
         for tese, linha in zip(teses, linhas):
             est = EstruturaArgumentativa(**tese.estrutura)
             t0 = time.perf_counter()
@@ -172,37 +175,39 @@ def _contraste(a: list[float], b: list[float]) -> dict:
     rng = np.random.default_rng(SEED_BOOTSTRAP)
     medias = dif[rng.integers(0, n, size=(N_BOOTSTRAP, n))].mean(axis=1)
     saida["ic95"] = [float(np.percentile(medias, 2.5)), float(np.percentile(medias, 97.5))]
-    if np.all(dif == 0):  # t dá nan e Wilcoxon levanta erro
+    if np.all(dif == 0):  # Wilcoxon levanta erro com todas as diferenças zero
         return saida
-    saida["p_t"] = _p_valido(stats.ttest_rel(a, b).pvalue)
+    if np.ptp(dif) > 1e-12:  # diferença constante (com folga de ponto flutuante): t indefinido
+        saida["p_t"] = _p_valido(stats.ttest_rel(a, b).pvalue)
     try:
-        saida["p_wilcoxon"] = _p_valido(stats.wilcoxon(a, b).pvalue)
+        saida["p_wilcoxon"] = _p_valido(stats.wilcoxon(a, b, zero_method=WILCOXON_ZERO_METHOD).pvalue)
     except ValueError:
         pass
     return saida
 
 
 def _ajustar(contrastes: list[dict], chave: str, destino: str, ajuste: Callable) -> None:
-    """Ajusta, entre os contrastes que têm p, o p `chave` e grava em `destino`.
-    O m do ajuste é o número de contrastes com p calculável."""
-    com_p = [c for c in contrastes if c[chave] is not None]
-    for c, p in zip(com_p, ajuste([c[chave] for c in com_p])):
+    """Ajusta o p `chave` de todos os contrastes rodados e grava em `destino`.
+    Contraste rodado sem p (degenerado) entra com p = 1,0; o p bruto fica None.
+    Assim o m é sempre o número de contrastes rodados."""
+    ps = [1.0 if c[chave] is None else c[chave] for c in contrastes]
+    for c, p in zip(contrastes, ajuste(ps)):
         c[destino] = p
-    for c in contrastes:
-        c.setdefault(destino, None)
 
 
-def calcular_contrastes(ndcg: dict[str, dict[str, float | None]]) -> tuple[list[dict], list[str]]:
+def calcular_contrastes(ndcg: dict[str, dict[str, float | None]]) -> tuple[list[dict], list[str], list[dict]]:
     """Contrastes registrados sobre o nDCG@10 por tese.
 
     Input:  ndcg — sistema -> (tese_id -> nDCG@10 ou None).
-    Returns: (contrastes, avisos). Entram só as teses em que os dois sistemas têm
-    valor; contraste de sistema ausente é omitido com aviso.
+    Returns: (contrastes, avisos, omitidos). Entram só as teses em que os dois
+    sistemas têm valor. Contraste de sistema ausente é omitido (com aviso) e
+    fica fora da família do Holm/BH; os rodados contam todos no m.
     """
-    contrastes, avisos = [], []
+    contrastes, avisos, omitidos = [], [], []
     for trat, ctrl in CONTRASTES:
         if trat not in ndcg or ctrl not in ndcg:
             ausentes = [s for s in (trat, ctrl) if s not in ndcg]
+            omitidos.append({"tratamento": trat, "controle": ctrl, "ausentes": ausentes})
             avisos.append(f"contraste {trat} x {ctrl} omitido: sistema(s) ausente(s) nas runs: {', '.join(ausentes)}")
             continue
         ids = [t for t in ndcg[trat] if ndcg[trat][t] is not None and ndcg[ctrl].get(t) is not None]
@@ -210,7 +215,7 @@ def calcular_contrastes(ndcg: dict[str, dict[str, float | None]]) -> tuple[list[
         contrastes.append({"tratamento": trat, "controle": ctrl, **c})
     _ajustar(contrastes, "p_t", "p_t_holm", _holm)
     _ajustar(contrastes, "p_wilcoxon", "p_wilcoxon_bh", _benjamini_hochberg)
-    return contrastes, avisos
+    return contrastes, avisos, omitidos
 
 
 # --- concordância -----------------------------------------------------------
@@ -315,13 +320,19 @@ def avaliar_runs(
         }
 
     ndcg = {s: {t["tese_id"]: t["sistemas"][s]["ndcg_10"] for t in por_tese if s in t["sistemas"]} for s in sistemas}
-    contrastes, avisos = calcular_contrastes(ndcg)
+    contrastes, avisos, omitidos = calcular_contrastes(ndcg)
     teto_medio, teto_excluidas = _media(tetos)
     return {
         "data": runs.get("data"), "commit": runs.get("commit"), "modelos": runs.get("modelos", {}),
         "sistemas": sistemas, "n_teses": len(por_tese),
         "por_tese": por_tese, "por_sistema": por_sistema,
         "contrastes": contrastes, "avisos": avisos,
+        "estatistica": {
+            "m_holm": len(contrastes), "m_bh": len(contrastes),
+            "contrastes_omitidos": omitidos,
+            "wilcoxon_zero_method": WILCOXON_ZERO_METHOD,
+            "bootstrap": {"reamostragens": N_BOOTSTRAP, "seed": SEED_BOOTSTRAP},
+        },
         "teto": {"ndcg_10_medio": teto_medio, "excluidas": teto_excluidas, "por_tese": tetos},
         "perdidos": {"total": sum(p["n"] for p in perdidos), "por_tese": perdidos},
         "concordancia": concordancia(julgamentos or [], adjudicador),
@@ -355,6 +366,8 @@ def imprimir_relatorio(rel: dict) -> None:
         ic = "-" if c["ic95"] is None else f"[{c['ic95'][0]:+.3f}, {c['ic95'][1]:+.3f}]"
         print(f"  {c['tratamento']} x {c['controle']}: n={c['n_teses']} dif={_f(c['diferenca_media'])} IC95={ic} "
               f"t(Holm)={_f(c['p_t_holm'], 4)} Wilcoxon(BH)={_f(c['p_wilcoxon_bh'], 4)}")
+    est = rel["estatistica"]
+    print(f"  m(Holm)={est['m_holm']} m(BH)={est['m_bh']} Wilcoxon zero_method={est['wilcoxon_zero_method']}")
     for aviso in rel["avisos"]:
         print(f"  aviso: {aviso}")
     print(f"\nTeto (nDCG@10 ideal dos 30 candidatos): {_f(rel['teto']['ndcg_10_medio'])} "

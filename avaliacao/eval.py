@@ -109,7 +109,14 @@ def _commit_git() -> str | None:
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
             check=True, cwd=Path(__file__).resolve().parent.parent,
         )
-        return saida.stdout.strip() or None
+        commit = saida.stdout.strip()
+        if not commit:
+            return None
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True,
+            check=True, cwd=Path(__file__).resolve().parent.parent,
+        )
+        return commit + "-dirty" if status.stdout.strip() else commit
     except (OSError, subprocess.CalledProcessError):
         return None
 
