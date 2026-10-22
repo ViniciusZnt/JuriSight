@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from avaliacao.metricas import (
@@ -6,8 +8,13 @@ from avaliacao.metricas import (
     ac2_gwet,
     alfa_krippendorff_ordinal,
     kappa_cohen,
+    judged_at_k,
     kappa_ponderado_quadratico,
+    map_at_k,
+    mrr_at_k,
     ndcg_at_k,
+    ndcg_teto,
+    precisao_at_k,
     recall_at_k,
 )
 
@@ -102,3 +109,65 @@ def test_ac2_entrada_invalida():
     with pytest.raises(ValueError):
         ac2_gwet([(0, 4)])
     assert ac2_gwet([]) is None
+
+
+# Fixture à mão: relevantes (ganho >= 2) = a, c, e.
+GANHOS_RANK = {"a": 3, "b": 0, "c": 2, "d": 1, "e": 2}
+RANKING_RANK = ["b", "a", "x", "c", "d"]  # "x" não julgado
+
+
+def test_mrr_primeiro_relevante_na_posicao_2():
+    assert mrr_at_k(RANKING_RANK, GANHOS_RANK, k=10) == pytest.approx(0.5)
+
+
+def test_mrr_sem_relevante_no_topk_vale_zero():
+    assert mrr_at_k(RANKING_RANK, GANHOS_RANK, k=1) == 0.0
+
+
+def test_precisao_at_k():
+    # top-5 tem a e c -> 2/5; k fixo mesmo com ranking de 5 itens
+    assert precisao_at_k(RANKING_RANK, GANHOS_RANK, k=5) == pytest.approx(0.4)
+    assert precisao_at_k(RANKING_RANK, GANHOS_RANK, k=10) == pytest.approx(0.2)
+
+
+def test_map_at_k():
+    # a na pos 2 (P=1/2), c na pos 4 (P=2/4); soma 1.0 / min(5, 3) = 1/3
+    assert map_at_k(RANKING_RANK, GANHOS_RANK, k=5) == pytest.approx(1 / 3)
+    # k=3: só a (1/2) / min(3, 3) = 1/6
+    assert map_at_k(RANKING_RANK, GANHOS_RANK, k=3) == pytest.approx(1 / 6)
+
+
+def test_map_denominador_limitado_por_k():
+    # 3 relevantes mas k=1: ranking [a] -> AP = 1 / min(1, 3) = 1
+    assert map_at_k(["a"], GANHOS_RANK, k=1) == pytest.approx(1.0)
+
+
+def test_judged_e_nao_julgado_vale_zero():
+    # b, a, c, d julgados; x não -> 4/5
+    assert judged_at_k(RANKING_RANK, GANHOS_RANK, k=5) == pytest.approx(0.8)
+    # denominador = min(k, len(ranking)) = 5
+    assert judged_at_k(RANKING_RANK, GANHOS_RANK, k=10) == pytest.approx(0.8)
+    assert judged_at_k(["x", "y"], GANHOS_RANK, k=10) == 0.0
+    assert judged_at_k([], GANHOS_RANK, k=10) == 0.0
+
+
+def test_ndcg_teto():
+    # melhor ordem dos candidatos: c(2), d(1), b(0)
+    dcg = 3 / 1 + 1 / math.log2(3)
+    # ideal de todos os julgados: a(3), c(2), e(2), d(1)
+    idcg = 7 + 3 / math.log2(3) + 3 / 2 + 1 / math.log2(5)
+    assert ndcg_teto(["b", "c", "d"], GANHOS_RANK, k=10) == pytest.approx(dcg / idcg)
+    assert ndcg_teto(["b", "c", "d"], GANHOS_RANK, k=10) < 1.0
+
+
+def test_ndcg_teto_com_todos_os_julgados_e_1():
+    assert ndcg_teto(list(GANHOS_RANK), GANHOS_RANK, k=10) == pytest.approx(1.0)
+
+
+def test_tese_sem_relevante_excluida():
+    ganhos = {"a": 1, "b": 0}
+    assert mrr_at_k(["a", "b"], ganhos) is None
+    assert precisao_at_k(["a", "b"], ganhos, k=5) is None
+    assert map_at_k(["a", "b"], ganhos) is None
+    assert ndcg_teto(["a", "b"], {"a": 0, "b": 0}) is None
+    assert recall_at_k(["a", "b"], ganhos) is None
