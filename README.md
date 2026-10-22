@@ -422,6 +422,10 @@ rótulos de duas pessoas. A ordem:
    `uv run python -m avaliacao.planilha_julgamento importar ARQUIVO...`
    (grava `humano:<email>`, rodada 1; linhas inválidas são avisadas e ignoradas;
    reimportar não duplica).
+   **Adjudicação:** os pares pendentes (ver "Rótulo final") vão para o adjudicador
+   (`AVALIACAO_ADJUDICADOR`) num lote exportado de novo; ele devolve o arquivo e você
+   importa com `... importar --adjudicacao ARQUIVO`, que grava **rodada 2**. Se o
+   e-mail do arquivo não for o do adjudicador, o comando falha sem gravar nada.
 5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos] [--saida DIR]`
    grava `data/eval/runs/<data>_runs.json`.
 6. **Relatório:** `uv run python -m avaliacao.benchmark relatorio data/eval/runs/<data>_runs.json`
@@ -433,15 +437,25 @@ problema e mesmo fato decisivo ("eu citaria na peça"). O **stance** (fortalece,
 enfraquece, neutro) só vale para nota 2 ou 3; com 0 ou 1 grava-se `neutro`.
 
 **Rótulo final** de um par com vários humanos: se o adjudicador
-(`AVALIACAO_ADJUDICADOR`) julgou, vale o dele. Senão, notas iguais valem a nota;
-diferença de 1 fica com a **menor**; diferença de 2 ou mais (ou stance diferente com
-as duas notas >= 2) fica **pendente** e sai das métricas, listada no relatório. Com
-um só humano, vale o dele.
+(`AVALIACAO_ADJUDICADOR`) julgou na **rodada 2** (`--adjudicacao`), vale o dele. A
+rodada 1 de todos, inclusive a do adjudicador se ele também for avaliador, segue a
+regra normal: notas iguais valem a nota; diferença de 1 fica com a **menor**;
+diferença de 2 ou mais (ou stance diferente com as duas notas >= 2) fica
+**pendente** e sai das métricas. Com um só humano, vale o dele. O relatório lista cada
+pendente (tese, par, documento, número do processo, nota e stance de cada avaliador).
+A concordância (kappa, alfa, AC2) usa só a rodada 1, com todos os avaliadores.
+**Zere os pendentes antes da medição final**, adjudicando todos.
 
-**Sistemas.** Todos devolvem o top-20. S3 a S6 reordenam os mesmos 30 candidatos do
+**Sistemas.** Todos devolvem o top-20. S0 e S1 consultam sempre a mesma profundidade
+(100 chunks por canal), então o top-10 usado no pool é prefixo do top-20 deles. S3 a S6 reordenam os mesmos 30 candidatos do
 S2, com a mesma entrada (tese contra a ementa cortada em 1.200 caracteres). A latência
 é a mediana/p95, em segundos, de um smoke em 5 teses; inclui a busca inteira, medida
-nesta máquina, sem GPU.
+nesta máquina, sem GPU. **Na execução do benchmark o embedding da OpenAI é calculado
+uma vez por texto e reaproveitado** (a API não é determinística e os sistemas S2 a S6
+têm de reordenar os mesmos 30 candidatos), então a latência medida **exclui** o
+embedding repetido e é menor que a da tabela. Cada tese/sistema S2 a S6 grava
+`fora_dos_candidatos` (ids do top-20 fora dos 30 de referência; deve vir vazio) e
+falhas isoladas ficam em `teses_com_erro` sem abortar a run.
 
 | Sistema | O que é | Latência (mediana / p95) |
 |---------|---------|--------------------------|
@@ -460,6 +474,8 @@ uv sync --group benchmark
 uv run --group benchmark python -m avaliacao.benchmark rodar
 ```
 
+Sem o grupo, `rodar` com S6 falha logo no início (antes de carregar o índice).
+
 **Métricas.** A principal é o **nDCG@10** (ganho 2^nota − 1). As demais: MRR@10, P@5,
 P@10, Recall@10, Recall@20 e MAP@10 (relevante = nota >= 2) e **Judged@10** (fração do
 top-10 que tem rótulo; não julgado vale 0). Tese sem nenhum relevante fica fora das
@@ -467,6 +483,13 @@ médias das métricas que dependem disso (a contagem de excluídas vai no relat�
 **teto** é o nDCG@10 da melhor ordem possível dos 30 candidatos: quanto um reranker
 poderia ganhar no máximo. Os **perdidos** são os relevantes que o BM25 ou o denso
 trouxeram no top-10 e o híbrido deixou fora dos 30.
+
+**Limitação: Recall@20 de S0 e S1 é enviesado para baixo.** O pool julga os 30 do
+híbrido e o top-10 de BM25 e do denso; as posições 11 a 20 de S0 e S1 só têm rótulo
+se por acaso caírem nos 30 do híbrido. O resto conta como não julgado (não relevante),
+então o Recall@20 desses dois sistemas subestima o real. Use Judged@10 e nDCG@10 para
+compará-los. O relatório mostra as médias no total e por origem (advogado, sintética,
+real) e o adjudicador em uso.
 
 **Estatística.** Diferenças pareadas por tese, nos contrastes S3×S2, S4×S3, S5×S3,
 S6×S3, S0×S2 e S1×S2: teste t pareado com correção de **Holm**, Wilcoxon (`pratt`)

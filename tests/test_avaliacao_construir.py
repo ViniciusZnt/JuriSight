@@ -1,3 +1,4 @@
+import pytest
 """Testes do CLI de construção do conjunto-ouro (fakes; sem OpenAI nem banco)."""
 import uuid
 from types import SimpleNamespace
@@ -112,3 +113,12 @@ def test_sinteticas_recebem_texto_original_dos_advogados(monkeypatch):
 
 def test_sinteticas_sem_advogados_passam_none(monkeypatch):
     assert _rodar_sinteticas(monkeypatch, []) == [None]
+
+
+def test_doc_e_help_descrevem_o_pool_novo(capsys):
+    from avaliacao import construir
+
+    assert "híbrido" in construir.__doc__ and "vetorial e pipeline" not in construir.__doc__
+    with pytest.raises(SystemExit):
+        construir.main(["--help"])
+    assert "híbrido" in capsys.readouterr().out

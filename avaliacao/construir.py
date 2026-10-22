@@ -3,7 +3,7 @@ Construção do conjunto-ouro do harness, em três etapas idempotentes (cada uma
 pula o que já existe, então pode ser interrompida e retomada):
 
   1. teses: completa até --teses (reais das conversas + sintéticas)
-  2. pool:  une o top-k de bm25, vetorial e pipeline para cada tese
+  2. pool:  une os 30 candidatos do híbrido e o top-10 de BM25 e do denso por tese
   3. fila:  coloca os pares do pool na fila de rotulação humana
 
     python -m avaliacao.construir [--teses 100] [--sim]
