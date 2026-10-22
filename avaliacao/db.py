@@ -20,12 +20,18 @@ _DDL = [
     CREATE TABLE IF NOT EXISTS avaliacao.teses (
         id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
         estrutura            JSONB       NOT NULL,
-        origem               TEXT        NOT NULL CHECK (origem IN ('sintetica', 'real')),
+        origem               TEXT        NOT NULL CHECK (origem IN ('sintetica', 'real', 'advogado')),
         tema                 TEXT        NOT NULL,
         split                TEXT        NOT NULL CHECK (split IN ('dev', 'teste')),
         documento_origem_id  TEXT,
         criado_em            TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    """,
+    # Bancos criados antes da origem 'advogado' têm o CHECK antigo: troca idempotente.
+    "ALTER TABLE avaliacao.teses DROP CONSTRAINT IF EXISTS teses_origem_check;",
+    """
+    ALTER TABLE avaliacao.teses ADD CONSTRAINT teses_origem_check
+        CHECK (origem IN ('sintetica', 'real', 'advogado'));
     """,
     """
     CREATE TABLE IF NOT EXISTS avaliacao.pares (

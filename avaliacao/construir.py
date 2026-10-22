@@ -119,6 +119,12 @@ def _completar_sinteticas(store, deps, cliente, alvo, seed, splits) -> None:
     teses = store.listar_teses()
     faltam = alvo - len(teses)
     usados = {t.documento_origem_id for t in teses if t.documento_origem_id}
+    # Estilo dos advogados: sem nenhuma tese deles, None mantém o prompt de sempre.
+    exemplos = [
+        t.estrutura["_texto_original"]
+        for t in teses
+        if t.origem == "advogado" and t.estrutura.get("_texto_original")
+    ] or None
     # Sorteia a mais: alguma geração pode falhar. Aumentar n estende cada metade,
     # então os primeiros candidatos são sempre os mesmos entre execuções.
     acordaos = sortear_acordaos(deps.database_url, len(usados) + 2 * faltam, seed)
@@ -128,7 +134,7 @@ def _completar_sinteticas(store, deps, cliente, alvo, seed, splits) -> None:
         if faltam <= 0:
             break
         try:
-            dados = gerar_tese(acordao, lado, client=cliente).model_dump()
+            dados = gerar_tese(acordao, lado, client=cliente, exemplos=exemplos).model_dump()
             tema = atribuir_tema(dados, client=cliente)
         except Exception as e:  # noqa: BLE001
             _aviso(f"Acórdão {acordao.id_documento} descartado: {e}")

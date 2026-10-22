@@ -176,3 +176,21 @@ def test_sortear_acordaos_integracao():
     assert len(docs) <= 6
     assert all(d.tipo_documento == TipoDocumento.ACORDAO and d.possui_ementa for d in docs)
     assert [d.id_documento for d in docs] == [d.id_documento for d in sortear_acordaos(url, n=6, seed=42)]
+
+
+def test_gerar_tese_sem_exemplos_nao_menciona_estilo():
+    fake = _FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
+    gerar_tese(_doc(), "favoravel", client=fake)
+    prompt = " ".join(m["content"] for m in fake.chamadas[0]["messages"])
+    assert "Exemplos de estilo" not in prompt
+
+
+def test_gerar_tese_com_exemplos_limita_a_cinco_e_pede_para_nao_copiar():
+    fake = _FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
+    exemplos = [f"EXEMPLO-{i}" for i in range(7)]
+    gerar_tese(_doc(), "favoravel", client=fake, exemplos=exemplos)
+    prompt = " ".join(m["content"] for m in fake.chamadas[0]["messages"])
+    assert "Exemplos de estilo" in prompt
+    assert all(f"EXEMPLO-{i}" in prompt for i in range(5))
+    assert "EXEMPLO-5" not in prompt
+    assert "não copie o conteúdo" in prompt

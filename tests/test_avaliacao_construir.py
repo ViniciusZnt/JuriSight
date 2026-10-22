@@ -77,3 +77,38 @@ def test_candidatos_sinteticos_alternam_lados_e_pulam_usados():
     assert [(a.id_documento, lado) for a, _, lado in resultado] == [
         ("f1", "favoravel"), ("c1", "contrario"), ("f3", "favoravel"), ("c2", "contrario"),
     ]
+
+
+def _rodar_sinteticas(monkeypatch, teses):
+    """Roda _completar_sinteticas com fakes; devolve os `exemplos` passados a gerar_tese."""
+    from types import SimpleNamespace
+
+    from avaliacao import construir, geracao, temas
+
+    visto = []
+    acordao = SimpleNamespace(id_documento="d1", provimento="APROVADO")
+    monkeypatch.setattr(geracao, "sortear_acordaos", lambda url, n, seed: [acordao])
+    monkeypatch.setattr(construir, "uuids_origem", lambda url, docs: {"d1": "u1"})
+
+    def fake_gerar(doc, lado, client=None, exemplos=None):
+        visto.append(exemplos)
+        return SimpleNamespace(model_dump=lambda: {"pedido_principal": "x"})
+
+    monkeypatch.setattr(geracao, "gerar_tese", fake_gerar)
+    monkeypatch.setattr(temas, "atribuir_tema", lambda e, client=None: "outro")
+    store = SimpleNamespace(listar_teses=lambda: teses, criar_tese=lambda *a, **k: None)
+    construir._completar_sinteticas(store, SimpleNamespace(database_url="db"), None, len(teses) + 1, 42, {"outro": "dev"})
+    return visto
+
+
+def test_sinteticas_recebem_texto_original_dos_advogados(monkeypatch):
+    import uuid
+
+    from avaliacao.store import Tese
+
+    adv = Tese(uuid.uuid4(), {"_texto_original": "texto do advogado"}, "advogado", "outro", "dev", "u0")
+    assert _rodar_sinteticas(monkeypatch, [adv]) == [["texto do advogado"]]
+
+
+def test_sinteticas_sem_advogados_passam_none(monkeypatch):
+    assert _rodar_sinteticas(monkeypatch, []) == [None]

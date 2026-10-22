@@ -42,6 +42,8 @@ _PROMPT_SISTEMA = (
     "não copie a ementa literalmente. Deixe vazio (ou nulo) o que a ementa não permitir inferir."
 )
 
+_MAX_EXEMPLOS = 5
+
 _LADOS = {
     "favoravel": "FAVORÁVEL",
     "contrario": "CONTRÁRIA",
@@ -82,8 +84,11 @@ def gerar_tese(
     documento: DocumentoJuridico,
     lado: Literal["favoravel", "contrario"],
     client: OpenAI | None = None,
+    exemplos: list[str] | None = None,
 ) -> EstruturaArgumentativa:
-    """Gera a tese de um advogado para quem o acórdão é favorável ou contrário."""
+    """Gera a tese de um advogado para quem o acórdão é favorável ou contrário.
+
+    `exemplos`: teses escritas por advogados (até 5), usadas só como amostra de estilo."""
     if lado not in _LADOS:
         raise ValueError(f"lado inválido: {lado!r} (esperado 'favoravel' ou 'contrario')")
     client = client or OpenAI()
@@ -92,10 +97,18 @@ def gerar_tese(
         f"Ementa do acórdão:\n{documento.ementa}\n\n"
         f"Escreva a tese de um advogado para quem esta decisão é {_LADOS[lado]}."
     )
+    sistema = _PROMPT_SISTEMA
+    if exemplos:
+        amostra = "\n".join(f"- {e}" for e in exemplos[:_MAX_EXEMPLOS])
+        sistema += (
+            "\n\nExemplos de estilo — teses escritas por advogados de verdade. Escreva como "
+            "estes advogados escrevem (vocabulário, nível de detalhe, tom); não copie o "
+            f"conteúdo nem os temas deles:\n{amostra}"
+        )
     resposta = client.chat.completions.parse(
         model=modelo,
         messages=[
-            {"role": "system", "content": _PROMPT_SISTEMA},
+            {"role": "system", "content": sistema},
             {"role": "user", "content": usuario},
         ],
         response_format=EstruturaArgumentativa,
