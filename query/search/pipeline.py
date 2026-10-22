@@ -89,7 +89,7 @@ def buscar(
     *,
     hybrid: HybridSearch,
     retriever: DocRetriever,
-    reranker: Reranker,
+    reranker: Reranker | None = None,
     provimento: Provimento | None = None,
     data_inicio: date | None = None,
     data_fim: date | None = None,
@@ -117,7 +117,8 @@ def buscar(
     # BRUTO do cross-encoder (reordenar por score bruto ou normalizado dá a
     # MESMA ordem — min-max é uma transformação monótona — então normalizar
     # antes não muda quem entra no corte, só a escala).
-    if triplos:
+    # reranker=None: sem reordenar, mantém a ordem do RRF (benchmark, sistema S2).
+    if triplos and reranker is not None:
         scores_rerank = reranker.rerank_scores(frase_tese, [doc.ementa for _, doc, _ in triplos])
         triplos = [
             (doc_id, doc, score_bruto)

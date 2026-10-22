@@ -71,3 +71,19 @@ def test_buscar_estrutura_vazia_levanta_value_error():
             retriever=_FakeDocRetriever({}),
             reranker=_FakeReranker(),
         )
+
+
+def test_buscar_sem_reranker_mantem_ordem_do_rrf():
+    ids = [f"a{i}" for i in range(25)]
+    docs = {i: _doc(id_documento=i) for i in ids}
+    hybrid = _FakeHybrid([(i, 1.0 / (n + 1)) for n, i in enumerate(ids)])
+
+    resultado = buscar(
+        EstruturaArgumentativa(tese_central="tese fake"),
+        hybrid=hybrid,
+        retriever=_FakeDocRetriever(docs),
+        reranker=None,
+    )
+
+    assert [c.id for c in resultado] == ids[:20]
+    assert resultado[0].score_rrf == 1.0 and resultado[-1].score_rrf == 0.0
