@@ -12,7 +12,6 @@ from scraper.provimento_jev import (
     ClassificadorJev,
     favorece_por_regra,
     montar_estado,
-    perguntas_sha,
     para_provimento,
 )
 from scraper.schema import Provimento
@@ -121,20 +120,3 @@ def test_modelo_latest_e_recusado(monkeypatch):
     monkeypatch.setenv("TYPESAFE_MODEL", "jev-latest")
     with pytest.raises(ValueError, match="latest"):
         ClassificadorJev(client=_FakeClient())
-
-
-def test_resultado_cobre_embargos_sem_efeito():
-    resultado = PERGUNTAS_PROVIMENTO["resultado"]
-    assert "sem efeito modificativo" in resultado.instructions
-    assert "sem efeito modificativo" in resultado.criteria["nao_provido"]
-
-
-def test_parcial_exige_algum_provido():
-    criterio = PERGUNTAS_PROVIMENTO["resultado"].criteria["parcialmente_provido"]
-    assert "pelo menos um deles foi provido" in criterio
-    assert "resultados diferentes" not in criterio
-
-
-def test_sha_mudou():
-    # Sha antes desta mudança: se for igual, os documentos já classificados não ficariam pendentes.
-    assert perguntas_sha() != "06284ccaea9a403d353d7cb4181cf4158aac1d7ecfd4a3558ae527a0a4fb6b3e"

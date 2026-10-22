@@ -67,13 +67,12 @@ Acórdão com `acordao` vazio ou só espaços não é enviado ao Jev.
 
 - `resultado` (Choice) — instruções: "Qual foi o resultado do recurso julgado neste
   acórdão (`acordao`)? Se houver mais de um recurso, escolha parcialmente_provido só quando
-  pelo menos um deles foi provido, no todo ou em parte; se nenhum foi provido e pelo menos um
-  foi conhecido, escolha nao_provido. Embargos de declaração acolhidos apenas para prestar
-  esclarecimentos, sem efeito modificativo, contam como nao_provido." (revisado em 22/10,
-  depois da conferência de 20/10)
+  pelo menos um deles foi provido, no todo ou em parte; se nenhum foi provido, escolha
+  nao_provido. Embargos de declaração acolhidos apenas para esclarecer, sem mudar o
+  resultado, contam como nao_provido." (revisado em 22/10, depois da conferência de 20/10)
   - `provido`: "O recurso foi provido (aceito) integralmente."
-  - `parcialmente_provido`: "O recurso foi provido em parte, ou há mais de um recurso e pelo menos um deles foi provido, no todo ou em parte."
-  - `nao_provido`: "O recurso foi conhecido, mas o provimento foi negado. Também quando há mais de um recurso e nenhum foi provido, ou quando embargos de declaração foram acolhidos só para esclarecer, sem efeito modificativo."
+  - `parcialmente_provido`: "O recurso foi provido em parte, ou, havendo mais de um recurso, pelo menos um foi provido e outro não."
+  - `nao_provido`: "O recurso foi conhecido, mas o provimento foi negado; havendo mais de um recurso, nenhum foi provido; ou embargos acolhidos só para esclarecer, sem efeito modificativo."
   - `nao_conhecido`: "O recurso não foi conhecido (não foi admitido para julgamento do mérito)."
   - `sem_recurso`: "O texto não julga um recurso (por exemplo, incidente, ação originária ou homologação)."
 - `recorrente` (Choice) — instruções: "Quem interpôs o recurso julgado neste acórdão (`acordao`)?"
