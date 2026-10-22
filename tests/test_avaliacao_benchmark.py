@@ -253,3 +253,83 @@ def test_rodar_com_fakes(monkeypatch, tmp_path):
     t = arquivo["teses"][0]
     assert {"tese_id", "origem", "tema", "split", "candidatos", "top10_bm25", "top10_denso", "sistemas"} <= set(t)
     assert t["sistemas"]["S3"]["ids"] == ["S3-1", "S3-2"] and t["sistemas"]["S3"]["latencia_s"] >= 0
+
+
+def _teses_fake(n=2):
+    return [SimpleNamespace(id=uuid.uuid4(), estrutura={}, origem="sintetica", tema="t", split="dev") for _ in range(n)]
+
+
+def _patch_rodar(monkeypatch, rodar_sistema, candidatos=("c1", "c2")):
+    monkeypatch.setattr(bm, "construir_rerankers", lambda nomes: {nomes[0]: object()})
+    monkeypatch.setattr(bm, "rodar_sistema", rodar_sistema)
+    monkeypatch.setattr(bm, "candidatos_hibrido", lambda est, hybrid, retriever: list(candidatos))
+    monkeypatch.setattr(bm, "top_bm25", lambda h, e, k: ["b1"])
+    monkeypatch.setattr(bm, "top_denso", lambda h, e, k: ["v1"])
+    monkeypatch.setattr(bm, "_nomes_dos_modelos", lambda ss: {})
+
+
+def test_rodar_calcula_cada_embedding_uma_vez_e_restaura(monkeypatch):
+    chamadas = []
+
+    class Embedder:
+        marca = "original"
+
+        def embed_text(self, texto):
+            chamadas.append(texto)
+            return [float(len(chamadas))]  # não determinístico: muda a cada chamada
+
+    emb = Embedder()
+    hybrid = SimpleNamespace(embedder=emb)
+    vistos = []
+
+    def rodar_sistema(sistema, estrutura, deps, rerankers):
+        vistos.append(deps.hybrid.embedder.embed_text("frase da tese"))
+        assert deps.hybrid.embedder.marca == "original"  # o wrapper repassa o resto
+        return ["c1"]
+
+    _patch_rodar(monkeypatch, rodar_sistema)
+    # candidatos_hibrido real também embute: simula via top_denso
+    monkeypatch.setattr(bm, "top_denso", lambda h, e, k: h.embedder.embed_text("frase da tese") and ["v1"])
+    rodar(_teses_fake(1), SimpleNamespace(hybrid=hybrid, retriever=None), ["S2", "S3", "S4"], None, None)
+    assert chamadas == ["frase da tese"]
+    assert len(set(map(tuple, vistos))) == 1
+    assert hybrid.embedder is emb
+
+
+def test_rodar_registra_fora_dos_candidatos(monkeypatch):
+    def rodar_sistema(sistema, estrutura, deps, rerankers):
+        return ["c1", "x9"] if sistema == "S3" else ["c1", "c2"]
+
+    _patch_rodar(monkeypatch, rodar_sistema)
+    runs = rodar(_teses_fake(1), SimpleNamespace(hybrid=SimpleNamespace(embedder=None), retriever=None),
+                 ["S0", "S2", "S3"], None, None)
+    s = runs["teses"][0]["sistemas"]
+    assert s["S3"]["fora_dos_candidatos"] == ["x9"]
+    assert s["S2"]["fora_dos_candidatos"] == []
+    assert "fora_dos_candidatos" not in s["S0"]
+
+
+def test_rodar_excecao_numa_tese_nao_aborta(monkeypatch, capsys):
+    teses = _teses_fake(3)
+    ruim = {"n": 0}
+
+    def rodar_sistema(sistema, estrutura, deps, rerankers):
+        ruim["n"] += 1
+        if sistema == "S2" and ruim["n"] == 3:  # aquecimento + 1a tese ok; 2a tese falha
+            raise RuntimeError("openai fora")
+        return ["c1"]
+
+    _patch_rodar(monkeypatch, rodar_sistema)
+    runs = rodar(teses, SimpleNamespace(hybrid=SimpleNamespace(embedder=None), retriever=None), ["S2"], None, None)
+    assert [("S2" in t["sistemas"]) for t in runs["teses"]] == [True, False, True]
+    assert runs["teses_com_erro"] == [{"tese_id": str(teses[1].id), "sistema": "S2", "erro": "openai fora"}]
+    assert "openai fora" in capsys.readouterr().err
+
+
+def test_checar_s6_sem_torch_falha_cedo(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "torch", None)  # import levanta ImportError
+    with pytest.raises(RuntimeError, match="uv run --group benchmark"):
+        bm._checar_dependencias(["S2", "S6"])
+    bm._checar_dependencias(["S2", "S3"])  # sem S6 não checa nada

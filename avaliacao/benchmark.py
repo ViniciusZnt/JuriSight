@@ -59,6 +59,36 @@ def _nomes_dos_modelos(sistemas: list[str]) -> dict[str, str]:
     return {s: todos[s] for s in sistemas if s in todos}
 
 
+class _EmbedderMemoizado:
+    """Embedder com `embed_text` memorizado por texto; o resto vai para o original."""
+
+    def __init__(self, embedder):
+        self._embedder = embedder
+        self._cache: dict[str, object] = {}
+
+    def embed_text(self, texto):
+        if texto not in self._cache:
+            self._cache[texto] = self._embedder.embed_text(texto)
+        return self._cache[texto]
+
+    def __getattr__(self, nome):
+        return getattr(self._embedder, nome)
+
+
+def _checar_dependencias(sistemas: list[str]) -> None:
+    """S6 (monoPTT5) precisa de torch e transformers: falhar antes de carregar tudo."""
+    if "S6" not in sistemas:
+        return
+    for modulo in ("torch", "transformers"):
+        try:
+            __import__(modulo)
+        except ImportError as e:
+            raise RuntimeError(
+                f"S6 precisa de {modulo} (grupo opcional): rode com `uv run --group benchmark "
+                f"python -m avaliacao.benchmark rodar ...` ou tire S6 de --sistemas"
+            ) from e
+
+
 def rodar(
     teses: list[Tese],
     deps,
@@ -75,7 +105,12 @@ def rodar(
             (None não grava).
     Returns: {"data", "commit", "sistemas", "modelos", "teses": [{tese_id, origem,
              tema, split, candidatos, top10_bm25, top10_denso,
-             "sistemas": {S: {"ids": top-20, "latencia_s": float}}}], "arquivo"}.
+             "sistemas": {S: {"ids": top-20, "latencia_s": float,
+             "fora_dos_candidatos": ids de S2-S6 fora dos 30 de referência}}}],
+             "teses_com_erro": [{tese_id, sistema, erro}], "arquivo"}.
+    O `embed_text` do embedder é memorizado durante a execução (restaurado no fim):
+    a latência exclui o embedding repetido. Falha numa tese/sistema é avisada em
+    stderr e registrada em `teses_com_erro`; a run segue.
     """
     desconhecidos = [s for s in sistemas if s not in SISTEMAS]
     if desconhecidos:
@@ -83,42 +118,80 @@ def rodar(
     from query.enrichment.schema import EstruturaArgumentativa
 
     agora = datetime.now()
-    linhas = []
-    for tese in teses:
-        # Pool de referência calculado uma vez por tese (teto e perdidos).
-        est = EstruturaArgumentativa(**tese.estrutura)
-        linhas.append({
-            "tese_id": str(tese.id), "origem": tese.origem, "tema": tese.tema, "split": tese.split,
-            "candidatos": candidatos_hibrido(est, hybrid=deps.hybrid, retriever=deps.retriever),
-            "top10_bm25": top_bm25(deps.hybrid, est, 10),
-            "top10_denso": top_denso(deps.hybrid, est, 10),
-            "sistemas": {},
-        })
-    for sistema in sistemas:
-        usados: dict[str, object] = {}
-        if sistema in ("S0", "S1", "S2"):
-            pass
-        elif rerankers is not None:
-            usados = rerankers
-        else:
-            usados = construir_rerankers([sistema])
-        if teses:  # aquecimento sem cronometrar (cache de modelo, conexões, primeira chamada)
-            rodar_sistema(sistema, EstruturaArgumentativa(**teses[0].estrutura), deps, usados)
-        for tese, linha in zip(teses, linhas):
-            est = EstruturaArgumentativa(**tese.estrutura)
-            t0 = time.perf_counter()
-            ids = rodar_sistema(sistema, est, deps, usados)
-            linha["sistemas"][sistema] = {"ids": ids, "latencia_s": time.perf_counter() - t0}
-        if rerankers is None:
-            del usados
-            gc.collect()
-        print(f"{sistema} concluído ({len(teses)} teses)", file=sys.stderr)
+    erros: list[dict] = []
+
+    def registrar_erro(tese, sistema, e: Exception) -> None:
+        print(f"Aviso: tese {tese.id}{f' / {sistema}' if sistema else ''} falhou: {e}", file=sys.stderr)
+        erros.append({"tese_id": str(tese.id), "sistema": sistema, "erro": str(e)})
+
+    # O embedding da OpenAI não é determinístico: sem memória, cada sistema veria
+    # candidatos ligeiramente diferentes. Um embedding por texto, em toda a execução.
+    embedder = getattr(deps.hybrid, "embedder", None)
+    if embedder is not None:
+        deps.hybrid.embedder = _EmbedderMemoizado(embedder)
+    try:
+        pares = []
+        for tese in teses:
+            # Pool de referência calculado uma vez por tese (teto e perdidos).
+            try:
+                est = EstruturaArgumentativa(**tese.estrutura)
+                linha = {
+                    "tese_id": str(tese.id), "origem": tese.origem, "tema": tese.tema, "split": tese.split,
+                    "candidatos": candidatos_hibrido(est, hybrid=deps.hybrid, retriever=deps.retriever),
+                    "top10_bm25": top_bm25(deps.hybrid, est, 10),
+                    "top10_denso": top_denso(deps.hybrid, est, 10),
+                    "sistemas": {},
+                }
+            except Exception as e:  # noqa: BLE001 — uma tese ruim não aborta a run
+                registrar_erro(tese, None, e)
+                continue
+            pares.append((tese, linha))
+        for sistema in sistemas:
+            usados: dict[str, object] = {}
+            if sistema in ("S0", "S1", "S2"):
+                pass
+            elif rerankers is not None:
+                usados = rerankers
+            else:
+                usados = construir_rerankers([sistema])
+            if pares:  # aquecimento sem cronometrar (cache de modelo, conexões, primeira chamada)
+                try:
+                    rodar_sistema(sistema, EstruturaArgumentativa(**pares[0][0].estrutura), deps, usados)
+                except Exception as e:  # noqa: BLE001
+                    print(f"Aviso: aquecimento de {sistema} falhou: {e}", file=sys.stderr)
+            for tese, linha in pares:
+                try:
+                    est = EstruturaArgumentativa(**tese.estrutura)
+                    t0 = time.perf_counter()
+                    ids = rodar_sistema(sistema, est, deps, usados)
+                    entrada = {"ids": ids, "latencia_s": time.perf_counter() - t0}
+                except Exception as e:  # noqa: BLE001
+                    registrar_erro(tese, sistema, e)
+                    continue
+                if sistema not in ("S0", "S1"):
+                    # S2-S6 reordenam os 30 candidatos de referência: ids fora deles
+                    # denunciam que o sistema viu um conjunto diferente.
+                    ref = set(linha["candidatos"])
+                    entrada["fora_dos_candidatos"] = [i for i in ids if i not in ref]
+                    if entrada["fora_dos_candidatos"]:
+                        print(f"Aviso: {sistema} devolveu {len(entrada['fora_dos_candidatos'])} id(s) fora dos "
+                              f"candidatos de referência na tese {tese.id}", file=sys.stderr)
+                linha["sistemas"][sistema] = entrada
+            if rerankers is None:
+                del usados
+                gc.collect()
+            print(f"{sistema} concluído ({len(pares)} teses)", file=sys.stderr)
+    finally:
+        if embedder is not None:
+            deps.hybrid.embedder = embedder
+    linhas = [linha for _, linha in pares]
     runs = {
         "data": agora.isoformat(timespec="seconds"),
         "commit": _commit_git(),
         "sistemas": list(sistemas),
         "modelos": _nomes_dos_modelos(sistemas),
         "teses": linhas,
+        "teses_com_erro": erros,
         "arquivo": None,
     }
     if saida is not None:
@@ -383,6 +456,11 @@ def _cmd_rodar(args) -> int:
     from avaliacao.contexto import carregar_dependencias
 
     sistemas = [s.strip().upper() for s in args.sistemas.split(",") if s.strip()]
+    try:
+        _checar_dependencias(sistemas)
+    except RuntimeError as e:
+        print(f"Erro: {e}", file=sys.stderr)
+        return 1
     deps = carregar_dependencias()  # lento: BM25, embedder e FlashRank
     deps.reranker = None  # os rerankers são construídos um por vez em `rodar`
     teses = deps.store.listar_teses(None if args.split == "todos" else args.split)
@@ -391,8 +469,13 @@ def _cmd_rodar(args) -> int:
         return 1
     runs = rodar(teses, deps, sistemas, None, args.saida)
     for s in runs["sistemas"]:
-        lat = [t["sistemas"][s]["latencia_s"] for t in runs["teses"]]
+        lat = [t["sistemas"][s]["latencia_s"] for t in runs["teses"] if s in t["sistemas"]]
+        if not lat:
+            print(f"{s}: sem medições (todas as teses falharam)")
+            continue
         print(f"{s}: mediana={np.median(lat):.2f}s p95={np.percentile(lat, 95):.2f}s")
+    if runs["teses_com_erro"]:
+        print(f"Atenção: {len(runs['teses_com_erro'])} falha(s) em teses/sistemas (ver teses_com_erro)", file=sys.stderr)
     print(f"Runs gravadas em {runs['arquivo']}")
     return 0
 
