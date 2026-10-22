@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -144,11 +145,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from avaliacao.contexto import carregar_dependencias, carregar_store
 
+    adjudicador = (os.getenv("AVALIACAO_ADJUDICADOR") or "").strip().lower() or None
     store = carregar_store()
     teses = store.listar_teses(args.split)
+    rotulos = lambda tese_id: store.rotulos_finais(tese_id, adjudicador)  # noqa: E731
     if not teses:
         print(f"Aviso: nenhuma tese no split '{args.split}'.", file=sys.stderr)
-        avaliacao = avaliar([], lambda e: [], store.rotulos_finais)
+        avaliacao = avaliar([], lambda e: [], rotulos)
     else:
         from query.enrichment.schema import EstruturaArgumentativa
         from query.search.pipeline import buscar
@@ -163,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return [c.id for c in cards]
 
-        avaliacao = avaliar(teses, buscar_ids, store.rotulos_finais)
+        avaliacao = avaliar(teses, buscar_ids, rotulos)
 
     agora = datetime.now()
     relatorio = {

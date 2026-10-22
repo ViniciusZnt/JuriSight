@@ -128,3 +128,79 @@ def kappa_ponderado_quadratico(a: list[int], b: list[int], n_niveis: int = 4) ->
     if soma_w_e == 0:
         return None
     return 1 - soma_w_o / soma_w_e
+
+
+def alfa_krippendorff_ordinal(pares: list[tuple[int, int]]) -> float | None:
+    """Alfa de Krippendorff ordinal para dois avaliadores e dados completos.
+
+    Krippendorff (2011), "Computing Krippendorff's Alpha-Reliability". Matriz de
+    coincidências o_ck (cada par contribui com (c,k) e (k,c)), n_c = marginais,
+    n = 2 * len(pares). Distância ordinal:
+        delta²_ck = (n_c/2 + soma_{g entre c e k, exclusive} n_g + n_k/2)²
+    (equivale a (soma_{g=c..k} n_g - (n_c+n_k)/2)²).
+    alfa = 1 - (n-1) * soma o_ck*delta²_ck / soma n_c*n_k*delta²_ck.
+    Retorna None com menos de 2 pares ou quando a discordância esperada é 0
+    (todas as notas iguais).
+    """
+    if len(pares) < 2:
+        return None
+    for par in pares:
+        for valor in par:
+            if not isinstance(valor, int) or valor < 0:
+                raise ValueError(f"nota inválida: {valor!r}")
+    q = max(max(p) for p in pares) + 1
+    coinc = [[0] * q for _ in range(q)]
+    for a, b in pares:
+        coinc[a][b] += 1
+        coinc[b][a] += 1
+    n_c = [sum(linha) for linha in coinc]
+    n = sum(n_c)
+
+    obs = 0.0
+    esp = 0.0
+    for c in range(q):
+        for k in range(q):
+            if c == k:
+                continue
+            lo, hi = min(c, k), max(c, k)
+            delta2 = (sum(n_c[lo : hi + 1]) - (n_c[c] + n_c[k]) / 2) ** 2
+            obs += coinc[c][k] * delta2
+            esp += n_c[c] * n_c[k] * delta2
+    if esp == 0:
+        return None
+    return 1 - (n - 1) * obs / esp
+
+
+def ac2_gwet(pares: list[tuple[int, int]], n_niveis: int = 4) -> float | None:
+    """AC2 de Gwet com pesos quadráticos para dois avaliadores.
+
+    Gwet (2014), "Handbook of Inter-Rater Reliability", AC2:
+        w_kl = 1 - (k-l)² / (q-1)²
+        Pa = média de w_{a_i,b_i} sobre os itens
+        pi_k = (marginal_a_k + marginal_b_k) / (2n)
+        Pe = soma_{k,l} w_kl / (q(q-1)) * soma_k pi_k (1 - pi_k)
+        AC2 = (Pa - Pe) / (1 - Pe)
+    Retorna None sem pares ou se Pe = 1.
+    """
+    n = len(pares)
+    if n == 0:
+        return None
+    for par in pares:
+        for valor in par:
+            if not 0 <= valor < n_niveis:
+                raise ValueError(f"valor {valor} fora de 0..{n_niveis - 1}")
+    q = n_niveis
+
+    def peso(k: int, l: int) -> float:
+        return 1 - (k - l) ** 2 / (q - 1) ** 2
+
+    pa = sum(peso(a, b) for a, b in pares) / n
+    pi = [0.0] * q
+    for a, b in pares:
+        pi[a] += 1 / (2 * n)
+        pi[b] += 1 / (2 * n)
+    t_w = sum(peso(k, l) for k in range(q) for l in range(q))
+    pe = t_w / (q * (q - 1)) * sum(p * (1 - p) for p in pi)
+    if pe == 1:
+        return None
+    return (pa - pe) / (1 - pe)

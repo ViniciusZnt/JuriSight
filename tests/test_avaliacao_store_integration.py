@@ -166,17 +166,42 @@ def test_fila_segue_ordem_e_progresso(store, teses_criadas):
     assert store.proximo_da_fila(juiz) is None
 
 
-def test_rotulo_humano_mais_recente_prevalece(store, teses_criadas):
+def test_rotulo_humano_mais_recente_do_mesmo_juiz_prevalece(store, teses_criadas):
     tese = _tese(store, teses_criadas)
     doc = _doc()
     (par,) = store.adicionar_pares(tese.id, {doc: ["bm25"]})
     store.gravar_julgamento(Julgamento(par.id, "humano:a@x.invalid", 1, 1, "neutro"))
-    store.gravar_julgamento(Julgamento(par.id, "humano:b@x.invalid", 1, 3, "enfraquece"))
-
+    store.gravar_julgamento(Julgamento(par.id, "humano:a@x.invalid", 2, 3, "enfraquece"))
     rel, stance = store.rotulos_finais(tese.id)
     assert rel == {doc: 3} and stance == {doc: "enfraquece"}
 
-    # regravar o julgamento de A o torna o mais recente
-    store.gravar_julgamento(Julgamento(par.id, "humano:a@x.invalid", 1, 0, "fortalece"))
+
+def test_dois_humanos_aplicam_a_regra(store, teses_criadas):
+    tese = _tese(store, teses_criadas)
+    d1, d2 = _doc(), _doc()
+    pares = {p.documento_id: p for p in store.adicionar_pares(tese.id, {d1: ["bm25"], d2: ["bm25"]})}
+    for d, (ra, rb) in {d1: (1, 2), d2: (3, 3)}.items():
+        store.gravar_julgamento(Julgamento(pares[d].id, "humano:a@x.invalid", 1, ra, "neutro" if ra < 2 else "fortalece"))
+        store.gravar_julgamento(Julgamento(pares[d].id, "humano:b@x.invalid", 1, rb, "fortalece"))
+    rel, _ = store.rotulos_finais(tese.id)
+    assert rel == {d1: 1, d2: 3}
+
+
+def test_pendente_fica_fora(store, teses_criadas):
+    tese = _tese(store, teses_criadas)
+    d1, d2 = _doc(), _doc()
+    pares = {p.documento_id: p for p in store.adicionar_pares(tese.id, {d1: ["bm25"], d2: ["bm25"]})}
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:a@x.invalid", 1, 0, "neutro"))
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:b@x.invalid", 1, 3, "fortalece"))
+    store.gravar_julgamento(Julgamento(pares[d2].id, "humano:a@x.invalid", 1, 2, "fortalece"))
+
     rel, stance = store.rotulos_finais(tese.id)
-    assert rel == {doc: 0} and stance == {doc: "fortalece"}
+    assert rel == {d2: 2} and stance == {d2: "fortalece"}
+    assert (tese.id, pares[d1].id) in store.pendentes()
+
+    # o adjudicador resolve (e-mail em qualquer caixa)
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:b@x.invalid", 2, 3, "fortalece"))
+    store.gravar_julgamento(Julgamento(pares[d1].id, "humano:c@x.invalid", 1, 1, "neutro"))
+    rel, _ = store.rotulos_finais(tese.id, adjudicador=" C@X.invalid")
+    assert rel[d1] == 1
+    assert (tese.id, pares[d1].id) not in store.pendentes(adjudicador="c@x.invalid")

@@ -14,6 +14,8 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Json
 
+from avaliacao.consenso import rotulo_final
+
 
 @dataclass(frozen=True)
 class Tese:
@@ -160,18 +162,46 @@ class AvaliacaoStore:
             rows = conn.execute(sql, params).fetchall()
         return [_julgamento(r) for r in rows]
 
-    def rotulos_finais(self, tese_id: uuid.UUID) -> tuple[dict[str, int], dict[str, str]]:
-        """documento_id -> relevância e -> stance, do julgamento humano mais
-        recente de cada par. Pares sem julgamento humano ficam de fora."""
+    def _humanos_por_par(self, tese_id: uuid.UUID | None) -> dict[uuid.UUID, tuple[uuid.UUID, str, list[tuple[str, int, str]]]]:
+        """par_id -> (tese_id, documento_id, [(juiz, relevância, stance)]), com o
+        julgamento humano mais recente de cada juiz. Sem `tese_id`, todas as teses."""
+        sql = (
+            "SELECT DISTINCT ON (p.id, j.juiz) p.id, p.tese_id, p.documento_id, j.juiz, j.relevancia, j.stance "
+            "FROM avaliacao.pares p JOIN avaliacao.julgamentos j ON j.par_id = p.id "
+            "WHERE starts_with(j.juiz, 'humano:')"
+        )
+        params: tuple = ()
+        if tese_id is not None:
+            sql += " AND p.tese_id = %s"
+            params = (tese_id,)
+        sql += " ORDER BY p.id, j.juiz, j.criado_em DESC"
         with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT ON (p.id) p.documento_id, j.relevancia, j.stance "
-                "FROM avaliacao.pares p JOIN avaliacao.julgamentos j ON j.par_id = p.id "
-                "WHERE p.tese_id = %s AND starts_with(j.juiz, 'humano:') "
-                "ORDER BY p.id, j.criado_em DESC",
-                (tese_id,),
-            ).fetchall()
-        return {d: int(r) for d, r, _ in rows}, {d: s for d, _, s in rows}
+            rows = conn.execute(sql, params).fetchall()
+        por_par: dict = {}
+        for par_id, t_id, doc, juiz, rel, stance in rows:
+            por_par.setdefault(par_id, (t_id, doc, []))[2].append((juiz, int(rel), stance))
+        return por_par
+
+    def rotulos_finais(
+        self, tese_id: uuid.UUID, adjudicador: str | None = None
+    ) -> tuple[dict[str, int], dict[str, str]]:
+        """documento_id -> relevância e -> stance, pela regra de
+        `consenso.rotulo_final`. Pares sem humano ou pendentes ficam de fora."""
+        relevancia: dict[str, int] = {}
+        stance: dict[str, str] = {}
+        for _, doc, julgs in self._humanos_por_par(tese_id).values():
+            rotulo = rotulo_final(julgs, adjudicador)
+            if rotulo is not None:
+                relevancia[doc], stance[doc] = rotulo
+        return relevancia, stance
+
+    def pendentes(self, adjudicador: str | None = None) -> list[tuple[uuid.UUID, uuid.UUID]]:
+        """(tese_id, par_id) dos pares com 2+ humanos e sem rótulo final."""
+        return sorted(
+            (t_id, par_id)
+            for par_id, (t_id, _, julgs) in self._humanos_por_par(None).items()
+            if len(julgs) >= 2 and rotulo_final(julgs, adjudicador) is None
+        )
 
     # --- amostra e fila de rotulação ---
 
