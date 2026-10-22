@@ -383,3 +383,112 @@ def test_aplicar_sem_linhas_avisa(capsys):
 def test_confianca_min_fora_de_0_1(valor):
     with pytest.raises(SystemExit):
         cli.main(["aplicar", "--confianca-min", valor], store=_StoreAplicar([]))
+
+
+# ---- sincronizar ----
+import json  # noqa: E402
+
+from qdrant_client import QdrantClient, models  # noqa: E402
+
+from indexing.lexical.bm25_builder import PROVIMENTOS_FILENAME  # noqa: E402
+from indexing.vector_store.qdrant_store import (  # noqa: E402
+    COLLECTION_COMPLETO,
+    COLLECTION_EMENTA,
+    QdrantStore,
+)
+
+DOC_A = "aaaaaaaa-0000-0000-0000-000000000001"
+DOC_B = "bbbbbbbb-0000-0000-0000-000000000002"
+DOC_X = "xxxxxxxx-0000-0000-0000-000000000003"  # só no índice: órfão
+
+
+class _StoreSync:
+    def provimentos_documentos(self):
+        return {DOC_A: "APROVADO", DOC_B: "NEGADO"}
+
+
+def _qdrant_memoria() -> QdrantStore:
+    client = QdrantClient(":memory:")
+    vec = [1.0, 0.0, 0.0, 0.0]
+    for nome in (COLLECTION_COMPLETO, COLLECTION_EMENTA):
+        client.create_collection(
+            nome, vectors_config=models.VectorParams(size=4, distance=models.Distance.COSINE)
+        )
+    client.upsert(COLLECTION_COMPLETO, points=[
+        models.PointStruct(id=i, vector=vec, payload={"documento_id": d, "provimento": "NAO_APLICAVEL"})
+        for i, d in [(1, DOC_A), (2, DOC_A), (3, DOC_B)]
+    ])
+    client.upsert(COLLECTION_EMENTA, points=[
+        models.PointStruct(id=d, vector=vec, payload={"documento_id": d, "provimento": "NAO_APLICAVEL"})
+        for d in (DOC_A, DOC_B)
+    ])
+    return QdrantStore(client)
+
+
+def _indice(tmp_path):
+    (tmp_path / "chunk_ids.json").write_text(
+        json.dumps([f"{DOC_A}:0", f"{DOC_A}:1", f"{DOC_B}:0", f"{DOC_X}:0"])
+    )
+    return tmp_path
+
+
+def _payloads(qs, colecao):
+    pontos, _ = qs._client.scroll(colecao, limit=100, with_payload=True)
+    return sorted((p.payload["documento_id"], p.payload["provimento"]) for p in pontos)
+
+
+def test_provimentos_dos_chunks():
+    lista, orfaos = cli.provimentos_dos_chunks(
+        [f"{DOC_A}:0", f"{DOC_B}:3", f"{DOC_X}:0"], {DOC_A: "APROVADO", DOC_B: "NEGADO"}
+    )
+    assert lista == ["APROVADO", "NEGADO", "NAO_APLICAVEL"]
+    assert orfaos == 1
+
+
+def test_sincronizar_atualiza_qdrant_e_bm25(tmp_path, capsys):
+    qs, indice = _qdrant_memoria(), _indice(tmp_path)
+    rc = cli.main(["sincronizar", "--indice-bm25", str(indice)], store=_StoreSync(), qdrant=qs)
+    assert rc == 0
+    assert json.loads((indice / PROVIMENTOS_FILENAME).read_text()) == [
+        "APROVADO", "APROVADO", "NEGADO", "NAO_APLICAVEL"
+    ]
+    esperado = sorted([(DOC_A, "APROVADO"), (DOC_B, "NEGADO")])
+    assert _payloads(qs, COLLECTION_EMENTA) == esperado
+    assert sorted(set(_payloads(qs, COLLECTION_COMPLETO))) == esperado
+    saida = capsys.readouterr().out
+    assert "órfãos (documento ausente, NAO_APLICAVEL): 1" in saida and "reinicie" in saida.lower()
+
+
+def test_sincronizar_idempotente(tmp_path):
+    qs, indice = _qdrant_memoria(), _indice(tmp_path)
+    args = ["sincronizar", "--indice-bm25", str(indice)]
+    cli.main(args, store=_StoreSync(), qdrant=qs)
+    estado = (
+        (indice / PROVIMENTOS_FILENAME).read_text(),
+        _payloads(qs, COLLECTION_COMPLETO), _payloads(qs, COLLECTION_EMENTA),
+    )
+    cli.main(args, store=_StoreSync(), qdrant=qs)
+    assert estado == (
+        (indice / PROVIMENTOS_FILENAME).read_text(),
+        _payloads(qs, COLLECTION_COMPLETO), _payloads(qs, COLLECTION_EMENTA),
+    )
+
+
+def test_sincronizar_so_qdrant_e_so_bm25(tmp_path):
+    qs, indice = _qdrant_memoria(), _indice(tmp_path)
+    cli.main(["sincronizar", "--so-bm25", "--indice-bm25", str(indice)], store=_StoreSync(), qdrant=qs)
+    assert (indice / PROVIMENTOS_FILENAME).exists()
+    assert {p for _, p in _payloads(qs, COLLECTION_EMENTA)} == {"NAO_APLICAVEL"}
+    (indice / PROVIMENTOS_FILENAME).unlink()
+    cli.main(["sincronizar", "--so-qdrant", "--indice-bm25", str(indice)], store=_StoreSync(), qdrant=qs)
+    assert not (indice / PROVIMENTOS_FILENAME).exists()
+    assert {p for _, p in _payloads(qs, COLLECTION_EMENTA)} == {"APROVADO", "NEGADO"}
+
+
+def test_sincronizar_nao_cria_cliente_jev(tmp_path, monkeypatch):
+    def _proibido(*a, **k):
+        raise AssertionError("sincronizar não pode criar cliente do Jev")
+
+    monkeypatch.setattr(cli, "ClassificadorJev", _proibido)
+    qs, indice = _qdrant_memoria(), _indice(tmp_path)
+    assert cli.main(["sincronizar", "--indice-bm25", str(indice)], store=_StoreSync(), qdrant=qs) == 0

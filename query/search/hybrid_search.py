@@ -90,6 +90,7 @@ class HybridSearch:
         where: dict | None = None,
         *,
         bm25_query: str | None = None,
+        provimento: str | None = None,
     ) -> list[tuple[str, float]]:
         """Busca híbrida: vetorial (2 coleções) + lexical, fundidos por RRF.
 
@@ -98,21 +99,29 @@ class HybridSearch:
                 de metadados do Qdrant (provimento/período — UC03/UC04), opcional;
                 bm25_query — string lexical para o BM25 (ex.: os termos exatos do
                 Query Builder), se diferente de `query`; default None usa `query`
-                nos dois canais (comportamento anterior, retrocompatível).
+                nos dois canais (comportamento anterior, retrocompatível);
+                provimento — valor do enum (str); filtra os TRÊS canais (payload
+                do Qdrant e máscara do BM25). None não muda nenhuma chamada.
         Returns: lista [(documento_id, score_rrf)] top-N, melhor primeiro.
 
-        Nota: o `where` filtra as buscas do Qdrant; o BM25 não filtra por metadados.
-        Se um filtro rígido for necessário, aplique-o depois (no Doc Retriever, sobre
-        o DocumentoJuridico recuperado).
+        Nota: o `where` filtra só as buscas do Qdrant; o BM25 só filtra por
+        `provimento`. Outros filtros rígidos devem ser aplicados depois (no Doc
+        Retriever, sobre o DocumentoJuridico recuperado).
         """
         n_candidates = n_results * CANDIDATOS_POR_CANAL
         texto_bm25 = bm25_query if bm25_query is not None else query
+
+        if provimento is not None:
+            where = {**(where or {}), "provimento": provimento}
+            kwargs_bm25 = {"provimento": provimento}
+        else:
+            kwargs_bm25 = {}  # índices antigos e o pooling não conhecem o kwarg
 
         # Os 3 canais são independentes entre si (BM25 nem depende do embedding) —
         # rodavam em série antes, somando os tempos de rede do Qdrant (x2) + BM25.
         # Em paralelo, o tempo total vira ~o do canal mais lento, não a soma dos 3.
         with ThreadPoolExecutor(max_workers=3) as executor:
-            fut_bm25 = executor.submit(self.bm25.search, texto_bm25, n=n_candidates)
+            fut_bm25 = executor.submit(self.bm25.search, texto_bm25, n=n_candidates, **kwargs_bm25)
             query_vector = self.embedder.embed_text(query)
             fut_completo = executor.submit(
                 self.store.query, query_vector, n_results=n_candidates, where=where, collection=COLLECTION_COMPLETO

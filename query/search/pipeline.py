@@ -33,7 +33,7 @@ N_RESULTS_FINAL = 20
 N_CANDIDATOS_PARA_RERANK = 30
 # Pool de candidatos maior quando algum filtro (provimento/período) está ativo —
 # o filtro é aplicado em Python DEPOIS da busca (ver aplicar_filtros), então um
-# pool maior evita perder recall. Já cobre a folga do re-ranking acima.
+# pool maior evita perder recall. Só o provimento filtrado nos canais dispensa. Já cobre a folga do re-ranking acima.
 N_CANDIDATOS_COM_FILTRO = 80
 
 
@@ -93,6 +93,7 @@ def buscar(
     provimento: Provimento | None = None,
     data_inicio: date | None = None,
     data_fim: date | None = None,
+    filtrar_nos_canais: bool = True,
 ) -> list[ResultCard]:
     """Roda o pipeline completo do /query (síncrono).
 
@@ -102,9 +103,18 @@ def buscar(
     frase_tese = query_builder.build_frase_tese(estrutura)
 
     tem_filtro = provimento is not None or data_inicio is not None or data_fim is not None
-    n_candidatos = N_CANDIDATOS_COM_FILTRO if tem_filtro else N_CANDIDATOS_PARA_RERANK
+    # Provimento filtrado dentro dos canais já devolve só candidatos do provimento:
+    # o pool normal basta. Período (sempre pós-busca) ou provimento pós-busca
+    # (filtrar_nos_canais=False) precisam do pool maior.
+    provimento_nos_canais = provimento is not None and filtrar_nos_canais
+    filtro_pos_busca = (
+        data_inicio is not None or data_fim is not None
+        or (provimento is not None and not filtrar_nos_canais)
+    )
+    n_candidatos = N_CANDIDATOS_COM_FILTRO if filtro_pos_busca else N_CANDIDATOS_PARA_RERANK
 
-    rankings = hybrid.search(frase_tese, n_candidatos, bm25_query=bm25_query)
+    kwargs_busca = {"provimento": provimento.value} if provimento_nos_canais else {}
+    rankings = hybrid.search(frase_tese, n_candidatos, bm25_query=bm25_query, **kwargs_busca)
     docs = retriever.fetch([doc_id for doc_id, _ in rankings])
 
     triplos = [(doc_id, docs[doc_id], score) for doc_id, score in rankings if doc_id in docs]

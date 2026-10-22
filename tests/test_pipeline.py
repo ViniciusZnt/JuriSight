@@ -12,8 +12,10 @@ from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 class _FakeHybrid:
     def __init__(self, resultados: list[tuple[str, float]]):
         self._resultados = resultados
+        self.calls: list[dict] = []
 
-    def search(self, query, n_results, where=None, *, bm25_query=None):
+    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None):
+        self.calls.append({"n_results": n_results, "provimento": provimento})
         return self._resultados[:n_results]
 
 
@@ -87,3 +89,59 @@ def test_buscar_sem_reranker_mantem_ordem_do_rrf():
 
     assert [c.id for c in resultado] == ids[:20]
     assert resultado[0].score_rrf == 1.0 and resultado[-1].score_rrf == 0.0
+
+
+def _buscar_com(hybrid, docs, **kwargs):
+    return buscar(
+        EstruturaArgumentativa(tese_central="tese fake"),
+        hybrid=hybrid,
+        retriever=_FakeDocRetriever(docs),
+        reranker=_FakeReranker(),
+        **kwargs,
+    )
+
+
+def test_buscar_so_provimento_usa_pool_30():
+    docs = {"a": _doc(id_documento="a")}
+    hybrid = _FakeHybrid([("a", 1.0)])
+
+    _buscar_com(hybrid, docs, provimento=Provimento.APROVADO)
+
+    assert hybrid.calls == [{"n_results": 30, "provimento": "APROVADO"}]
+
+
+def test_buscar_com_periodo_usa_pool_80():
+    from datetime import date
+
+    docs = {"a": _doc(id_documento="a", data_julgamento=date(2022, 1, 1))}
+    hybrid = _FakeHybrid([("a", 1.0)])
+
+    _buscar_com(hybrid, docs, provimento=Provimento.APROVADO, data_inicio=date(2021, 1, 1))
+    _buscar_com(hybrid, docs, data_fim=date(2023, 1, 1))
+
+    assert [c["n_results"] for c in hybrid.calls] == [80, 80]
+    assert hybrid.calls[0]["provimento"] == "APROVADO"
+    assert hybrid.calls[1]["provimento"] is None
+
+
+def test_buscar_sem_filtro_nao_passa_provimento_e_usa_pool_30():
+    hybrid = _FakeHybrid([("a", 1.0)])
+
+    _buscar_com(hybrid, {"a": _doc(id_documento="a")})
+
+    assert hybrid.calls == [{"n_results": 30, "provimento": None}]
+
+
+def test_buscar_sem_filtrar_nos_canais_comportamento_antigo():
+    docs = {
+        "a": _doc(id_documento="a", provimento=Provimento.NEGADO),
+        "b": _doc(id_documento="b", provimento=Provimento.APROVADO),
+    }
+    hybrid = _FakeHybrid([("a", 2.0), ("b", 1.0)])
+
+    resultado = _buscar_com(
+        hybrid, docs, provimento=Provimento.APROVADO, filtrar_nos_canais=False
+    )
+
+    assert hybrid.calls == [{"n_results": 80, "provimento": None}]
+    assert [c.id for c in resultado] == ["b"]

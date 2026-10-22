@@ -44,8 +44,10 @@ class _FakeHybrid:
         self._resultados = resultados
         self.calls: list[dict] = []
 
-    def search(self, query, n_results, where=None, *, bm25_query=None):
-        self.calls.append({"query": query, "n_results": n_results, "bm25_query": bm25_query})
+    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None):
+        self.calls.append(
+            {"query": query, "n_results": n_results, "bm25_query": bm25_query, "provimento": provimento}
+        )
         return self._resultados[:n_results]
 
 
@@ -294,7 +296,7 @@ def test_query_estrutura_vazia_422(client):
     assert resp.status_code == 422
 
 
-def test_query_filtro_provimento_reduz_resultados_e_pede_pool_maior(client):
+def test_query_filtro_provimento_reduz_resultados_e_filtra_nos_canais(client):
     favoravel = _doc(provimento=Provimento.APROVADO)
     desfavoravel = _doc(provimento=Provimento.NEGADO)
     docs = {"favoravel": favoravel, "desfavoravel": desfavoravel}
@@ -311,7 +313,9 @@ def test_query_filtro_provimento_reduz_resultados_e_pede_pool_maior(client):
     assert resp.status_code == 200
     body = resp.json()
     assert [card["id"] for card in body] == ["favoravel"]
-    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_COM_FILTRO
+    # provimento filtrado dentro dos canais: pool normal, e o valor chega ao hybrid
+    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_PARA_RERANK
+    assert fake_hybrid.calls[0]["provimento"] == "APROVADO"
 
 
 def test_query_sem_filtro_usa_pool_de_rerank(client):

@@ -203,3 +203,11 @@ def test_regex_preservada_apos_aplicar(store, criar_doc):
     store.gravar(doc, _classif(), "PARCIAL", "outro-modelo", "outro-sha")
     linhas = store.linhas("outro-modelo", "outro-sha")
     assert [l.provimento_regex for l in linhas if l.documento_id == doc] == ["NEGADO"]
+
+
+def test_provimentos_documentos(store, criar_doc):
+    a = criar_doc(provimento="APROVADO")
+    b = criar_doc(provimento=None)
+    r = store.provimentos_documentos()
+    assert r[a] == "APROVADO"
+    assert r[b] == "NAO_APLICAVEL"
