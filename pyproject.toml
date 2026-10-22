@@ -11,6 +11,7 @@ dependencies = [
     "flashrank>=0.2.10",
     "ollama>=0.6.2",
     "openai>=2.46.0",
+    "openpyxl>=3.1",
     "pdfplumber>=0.11",
     "playwright>=1.60.0",
     "psycopg[binary]>=3.2",
