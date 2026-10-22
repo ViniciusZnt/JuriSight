@@ -5,9 +5,8 @@ Funções puras, sem dependências externas. Os casos sem base para cálculo
 """
 
 import math
-from collections import Counter
 
-# Spec §3.8: "relevante" = relevância >= 2 (usado no Recall e na fração "fortalece").
+# Spec §3.8: "relevante" = relevância >= 2 (usado no Recall).
 LIMIAR_RELEVANTE = 2
 
 
@@ -116,57 +115,6 @@ def ndcg_teto(candidatos: list[str], ganhos: dict[str, int], k: int = 10) -> flo
     """
     ordem = sorted(candidatos, key=lambda doc: ganhos.get(doc, 0), reverse=True)
     return ndcg_at_k(ordem, ganhos, k)
-
-
-def fracao_fortalece(
-    ranking: list[str],
-    ganhos: dict[str, int],
-    stances: dict[str, str],
-    k: int = 10,
-) -> float | None:
-    """Fração de stance "fortalece" entre os relevantes do top-k.
-
-    Retorna None quando nenhum relevante aparece no top-k.
-    """
-    relevantes_topo = [
-        doc for doc in ranking[:k] if ganhos.get(doc, 0) >= LIMIAR_RELEVANTE
-    ]
-    if not relevantes_topo:
-        return None
-    fortalecem = sum(1 for doc in relevantes_topo if stances.get(doc) == "fortalece")
-    return fortalecem / len(relevantes_topo)
-
-
-def fracao_nao_julgados(ranking: list[str], ganhos: dict[str, int], k: int = 10) -> float:
-    """Fração dos documentos do top-k sem julgamento em `ganhos`.
-
-    Retorna 0.0 quando o ranking está vazio.
-    """
-    topo = ranking[:k]
-    if not topo:
-        return 0.0
-    nao_julgados = sum(1 for doc in topo if doc not in ganhos)
-    return nao_julgados / len(topo)
-
-
-def kappa_cohen(a: list[str], b: list[str]) -> float | None:
-    """Kappa de Cohen (categórico) entre dois avaliadores.
-
-    Retorna None com menos de 2 itens ou quando a concordância esperada é 1.
-    """
-    if len(a) != len(b):
-        raise ValueError("as listas devem ter o mesmo tamanho")
-    n = len(a)
-    if n < 2:
-        return None
-
-    po = sum(1 for x, y in zip(a, b) if x == y) / n
-    contagem_a = Counter(a)
-    contagem_b = Counter(b)
-    pe = sum(contagem_a[c] * contagem_b[c] for c in contagem_a.keys() | contagem_b.keys()) / (n * n)
-    if pe == 1:
-        return None
-    return (po - pe) / (1 - pe)
 
 
 def kappa_ponderado_quadratico(a: list[int], b: list[int], n_niveis: int = 4) -> float | None:
