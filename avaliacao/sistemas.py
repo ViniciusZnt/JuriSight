@@ -69,3 +69,22 @@ def rodar_sistema(
         reranker = rerankers[sistema]
     cards = buscar(estrutura, hybrid=deps.hybrid, retriever=deps.retriever, reranker=reranker)
     return [card.id for card in cards]
+
+
+def construir_rerankers(nomes: list[str]) -> dict[str, object]:
+    """Monta só os rerankers pedidos (cada modelo é carregado apenas se pedido).
+
+    S6 entra na Task 4: acrescentar uma entrada em `fabricas`.
+    """
+    from query.search.reranker import Reranker
+    from query.search.reranker_onnx import BGE, GTE, CrossEncoderOnnx
+
+    fabricas = {
+        "S3": Reranker,
+        "S4": lambda: CrossEncoderOnnx(*GTE),
+        "S5": lambda: CrossEncoderOnnx(*BGE),
+    }
+    desconhecidos = [n for n in nomes if n not in fabricas]
+    if desconhecidos:
+        raise ValueError(f"Reranker desconhecido: {desconhecidos} (esperado um de {sorted(fabricas)})")
+    return {nome: fabricas[nome]() for nome in nomes}

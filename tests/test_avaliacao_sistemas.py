@@ -97,3 +97,12 @@ def test_top_denso_funde_colecoes_por_rrf():
     estrutura = EstruturaArgumentativa(tese_central="EPI não elide a insalubridade.")
     # x está nas duas coleções: o RRF o põe na frente de a e b.
     assert top_denso(hybrid, estrutura, 1) == ["x"]
+
+
+def test_construir_rerankers_nome_desconhecido():
+    import pytest
+    from avaliacao.sistemas import construir_rerankers
+
+    with pytest.raises(ValueError):
+        construir_rerankers(["S9"])
+    assert construir_rerankers([]) == {}
