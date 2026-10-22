@@ -48,7 +48,7 @@ para indexar todo o corpus; por consulta, o custo é desprezível.
 jurisight/
 ├── auth/                    ← autenticação real (hash de senha, JWT, acesso a auth.usuarios)
 ├── conversations/           ← histórico de busca persistido (public.conversas, ver §Conformidade)
-├── avaliacao/               ← harness de avaliação da busca (conjunto-ouro, pooling, métricas; ver §Avaliação da busca)
+├── avaliacao/               ← harness de avaliação da busca (conjunto-ouro, pooling, planilha de julgamento, consenso, benchmark S0–S6; ver §Avaliação da busca)
 │
 ├── scraper/
 │   ├── run.py              ← ponto de entrada da coleta
@@ -327,6 +327,7 @@ uv run pytest
 | `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
 | `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
 | `avaliacao` / `/avaliacao/*` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`/`eval`, rotas de rotulação via `TestClient`; o store contra Postgres real só roda com `DATABASE_URL` |
+| `avaliacao` (benchmark) | Sistemas S0–S6 com rerankers falsos, planilha de julgamento (exportar/importar), rótulo final e concordância, teses dos advogados, métricas e estatística do `benchmark`; o que usa o banco só roda com `DATABASE_URL` |
 | `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `comparar`/`conferir`/`aplicar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
 
 > Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
@@ -351,6 +352,7 @@ Variáveis no `.env` (ver `.env.example`):
 | `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas e atribui o tema de cada tese |
 | `AVALIACAO_EMAILS`  | —               | E-mails (separados por vírgula) que podem usar a tela de rotulação |
 | `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (acórdãos de origem e split dev/teste) |
+| `AVALIACAO_ADJUDICADOR` | —           | E-mail do adjudicador: o julgamento dele decide os pares em que os avaliadores discordam (ver §4) |
 
 Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start, passos 5 e 7).
 
@@ -366,7 +368,7 @@ interromper e retomar de onde parou):
 1. **teses** — completa até `--teses` (reais das conversas + sintéticas; conversas de
    contas `@example.com`, usadas nos testes E2E, ficam de fora). A OpenAI escreve as
    sintéticas e atribui o tema de cada tese, que decide o split dev/teste;
-2. **pool** — une o top-20 de BM25, vetorial e pipeline completo para cada tese;
+2. **pool** — para cada tese, une os 30 candidatos do híbrido (corredor `hibrido`), o top-10 do BM25 (`bm25_top10`) e o top-10 do denso (`vetorial_top10`). Pares antigos (`pipeline`, `passo_zero`) continuam no banco;
 3. **fila** — coloca os pares do pool na fila da tela de rotulação.
 
 A etapa de teses chama a OpenAI: mostra a estimativa e **pede confirmação**; `--sim` pula.
@@ -401,6 +403,78 @@ par sem julgamento humano conta como não julgado. Se a busca de uma tese falhar
 `teses_com_erro` no JSON. Grava um JSON em `data/eval/runs/` com as métricas e o
 **commit** git. Use `dev` para iterar; o split `teste` deve ser usado **só na medição
 final**, senão deixa de ser uma medida independente.
+
+### 4 — Etapa 2: benchmark de rerankers (S0–S6)
+
+A etapa 2 compara sete sistemas de busca sobre o mesmo conjunto de teses, com
+rótulos de duas pessoas. A ordem:
+
+1. **Teses dos advogados.** Com `docs/avaliacao/1-producao-de-teses.xlsx`
+   preenchida: `uv run python -m avaliacao.teses_advogados importar ARQUIVO...`
+   (origem `advogado`; idempotente).
+2. **`construir`** (seção 1): completa com teses sintéticas escritas no estilo dos
+   advogados e monta o pool novo.
+3. **Exportar os lotes:**
+   `uv run python -m avaliacao.planilha_julgamento exportar [--teses id,... | --todas] [--pasta data/eval/lotes] [--seed 42]`
+   gera um `.xlsx` por tese, com as linhas embaralhadas e sem pista de qual sistema
+   trouxe o acórdão. Envie cada lote a **duas pessoas**.
+4. **Importar o que voltou:**
+   `uv run python -m avaliacao.planilha_julgamento importar ARQUIVO...`
+   (grava `humano:<email>`, rodada 1; linhas inválidas são avisadas e ignoradas;
+   reimportar não duplica).
+5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos] [--saida DIR]`
+   grava `data/eval/runs/<data>_runs.json`.
+6. **Relatório:** `uv run python -m avaliacao.benchmark relatorio data/eval/runs/<data>_runs.json`
+   grava `<mesmo prefixo>_relatorio.json`.
+
+**Escala (0–3):** 0 outro problema jurídico; 1 mesmo ramo/tema, mas outro pedido ou
+fato central; 2 mesmo pedido, com fato decisivo diferente ou só em parte; 3 mesmo
+problema e mesmo fato decisivo ("eu citaria na peça"). O **stance** (fortalece,
+enfraquece, neutro) só vale para nota 2 ou 3; com 0 ou 1 grava-se `neutro`.
+
+**Rótulo final** de um par com vários humanos: se o adjudicador
+(`AVALIACAO_ADJUDICADOR`) julgou, vale o dele. Senão, notas iguais valem a nota;
+diferença de 1 fica com a **menor**; diferença de 2 ou mais (ou stance diferente com
+as duas notas >= 2) fica **pendente** e sai das métricas, listada no relatório. Com
+um só humano, vale o dele.
+
+**Sistemas.** Todos devolvem o top-20. S3 a S6 reordenam os mesmos 30 candidatos do
+S2, com a mesma entrada (tese contra a ementa cortada em 1.200 caracteres). A latência
+é a mediana/p95, em segundos, de um smoke em 5 teses; inclui a busca inteira, medida
+nesta máquina, sem GPU.
+
+| Sistema | O que é | Latência (mediana / p95) |
+|---------|---------|--------------------------|
+| S0 | BM25 sozinho | 0,01 / 0,01 |
+| S1 | Denso sozinho (2 coleções, RRF) | 0,36 / 1,48 |
+| S2 | Híbrido RRF, sem reranker | 0,43 / 0,50 |
+| S3 | S2 + FlashRank | 3,14 / 3,62 |
+| S4 | S2 + `gte-multilingual-reranker-base` | 6,85 / 10,13 |
+| S5 | S2 + `bge-reranker-v2-m3` | 5,66 / 6,71 |
+| S6 | S2 + `unicamp-dl/monoptt5-base` | 8,83 / 15,48 |
+
+O S6 precisa do PyTorch (CPU), no grupo opcional `benchmark`:
+
+```bash
+uv sync --group benchmark
+uv run --group benchmark python -m avaliacao.benchmark rodar
+```
+
+**Métricas.** A principal é o **nDCG@10** (ganho 2^nota − 1). As demais: MRR@10, P@5,
+P@10, Recall@10, Recall@20 e MAP@10 (relevante = nota >= 2) e **Judged@10** (fração do
+top-10 que tem rótulo; não julgado vale 0). Tese sem nenhum relevante fica fora das
+médias das métricas que dependem disso (a contagem de excluídas vai no relatório). O
+**teto** é o nDCG@10 da melhor ordem possível dos 30 candidatos: quanto um reranker
+poderia ganhar no máximo. Os **perdidos** são os relevantes que o BM25 ou o denso
+trouxeram no top-10 e o híbrido deixou fora dos 30.
+
+**Estatística.** Diferenças pareadas por tese, nos contrastes S3×S2, S4×S3, S5×S3,
+S6×S3, S0×S2 e S1×S2: teste t pareado com correção de **Holm**, Wilcoxon (`pratt`)
+com **Benjamini-Hochberg** como checagem, e IC95% por bootstrap (10.000
+reamostragens, seed fixa). A correção depende de quantos contrastes entram
+(`m_holm` no JSON), então **só cite p ajustado de uma run com todos os sistemas**.
+A concordância entre avaliadores sai em kappa ponderado, alfa de Krippendorff e AC2
+de Gwet.
 
 ---
 
