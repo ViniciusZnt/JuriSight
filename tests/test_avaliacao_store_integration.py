@@ -2,7 +2,7 @@
 Testes de integração de avaliacao/store.py contra um Postgres DE VERDADE.
 
 Cada teste cria suas teses (UUIDs próprios) e as apaga ao final — as FKs com
-ON DELETE CASCADE derrubam pares, julgamentos e amostra junto.
+ON DELETE CASCADE derrubam pares e julgamentos junto.
 
 Pulado automaticamente se DATABASE_URL não estiver definida ou o Postgres não
 responder (mesmo espírito de tests/test_conversa_store_integration.py).
@@ -50,7 +50,7 @@ def store() -> AvaliacaoStore:
 @pytest.fixture
 def teses_criadas():
     """Lista a ser preenchida pelos testes; apaga as teses (e, em cascata,
-    pares/julgamentos/amostra) ao final."""
+    pares/julgamentos) ao final."""
     ids: list[uuid.UUID] = []
     yield ids
     if not ids:
@@ -136,34 +136,6 @@ def test_rotulos_finais_so_humanos(store, teses_criadas):
     rel, stance = store.rotulos_finais(tese.id)
     assert rel == {d1: 3}
     assert stance == {d1: "fortalece"}
-
-
-def test_fila_segue_ordem_e_progresso(store, teses_criadas):
-    tese = _tese(store, teses_criadas, tema="rescisão")
-    docs = [_doc() for _ in range(3)]
-    pares = store.adicionar_pares(tese.id, {d: ["bm25"] for d in docs})
-    ordem_id = sorted(p.id for p in pares)  # desempate por id
-    metade = {ordem_id[0]: "incerta", ordem_id[1]: "sorteada", ordem_id[2]: "sorteada"}
-    # a fila é global: com pares reais na amostra a ordem não é isolável
-    if store.amostra():
-        pytest.skip("amostra real presente no banco; ordem da fila não é isolável")
-    store.definir_amostra(metade)
-    assert {k: v for k, v in store.amostra().items() if k in metade} == metade
-
-    juiz = f"humano:{uuid.uuid4().hex[:6]}@x.invalid"
-    ja_feitos, total_inicial = store.progresso(juiz)
-    assert ja_feitos == 0
-
-    esperado = [ordem_id[1], ordem_id[2], ordem_id[0]]  # sorteadas primeiro, depois a incerta
-    for i, par_id in enumerate(esperado):
-        proximo = store.proximo_da_fila(juiz)
-        assert proximo is not None
-        par, t = proximo
-        assert par.id == par_id and t.id == tese.id
-        store.gravar_julgamento(Julgamento(par_id, juiz, 1, 1, "neutro"))
-        assert store.progresso(juiz) == (i + 1, total_inicial)
-
-    assert store.proximo_da_fila(juiz) is None
 
 
 def test_rotulo_humano_mais_recente_do_mesmo_juiz_prevalece(store, teses_criadas):

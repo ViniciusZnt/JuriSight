@@ -1,10 +1,9 @@
 """
-Construção do conjunto-ouro do harness, em três etapas idempotentes (cada uma
+Construção do conjunto-ouro do harness, em duas etapas idempotentes (cada uma
 pula o que já existe, então pode ser interrompida e retomada):
 
   1. teses: completa até --teses (reais das conversas + sintéticas)
   2. pool:  une os 30 candidatos do híbrido e o top-10 de BM25 e do denso por tese
-  3. fila:  coloca os pares do pool na fila de rotulação humana
 
     python -m avaliacao.construir [--teses 100] [--sim]
 
@@ -171,19 +170,6 @@ def etapa_pool(store, deps) -> int:
     return falhas
 
 
-def etapa_fila(store) -> None:
-    """Põe na fila de rotulação (tabela `amostra`) os pares do pool que ainda não estão nela."""
-    na_fila = store.amostra()
-    novos = {
-        p.id: "sorteada"
-        for t in store.listar_teses()
-        for p in store.pares_da_tese(t.id)
-        if p.id not in na_fila
-    }
-    store.definir_amostra(novos)
-    print(f"Fila de rotulação: {len(na_fila) + len(novos)} pares ({len(novos)} novos)")
-
-
 # --- CLI --------------------------------------------------------------------
 
 
@@ -206,7 +192,6 @@ def main(argv: list[str] | None = None) -> int:
 
     falhas = etapa_teses(store, deps, cliente, args.teses, seed, args.sim)
     falhas += etapa_pool(store, deps)
-    etapa_fila(store)
     return 1 if falhas else 0
 
 

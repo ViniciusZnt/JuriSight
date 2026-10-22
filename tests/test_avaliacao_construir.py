@@ -3,45 +3,12 @@ import pytest
 import uuid
 from types import SimpleNamespace
 
-from avaliacao.construir import etapa_fila, precisa_de_pool, reais_novas
+from avaliacao.construir import precisa_de_pool, reais_novas
 from avaliacao.store import Par, Tese
 
 
 def _tese(estrutura=None, tema="insalubridade", origem="sintetica"):
     return Tese(uuid.uuid4(), estrutura or {"pedido_principal": "x"}, origem, tema, "dev", None)
-
-
-class _StoreFalso:
-    """Teses, pares e fila em memória; reproduz só o que `etapa_fila` usa."""
-
-    def __init__(self, teses, pares, fila=None):
-        self._teses, self._pares = teses, pares
-        self.fila: dict = dict(fila or {})
-
-    def listar_teses(self, split=None):
-        return self._teses
-
-    def pares_da_tese(self, tese_id):
-        return [p for p in self._pares if p.tese_id == tese_id]
-
-    def amostra(self):
-        return dict(self.fila)
-
-    def definir_amostra(self, par_ids):
-        self.fila.update(par_ids)
-
-
-def test_etapa_fila_poe_todos_os_pares_e_e_idempotente():
-    tese = _tese()
-    pares = [Par(uuid.uuid4(), tese.id, f"doc{i}", ["bm25"]) for i in range(3)]
-    store = _StoreFalso([tese], pares, fila={pares[0].id: "incerta"})
-
-    etapa_fila(store)
-    etapa_fila(store)
-
-    assert set(store.fila) == {p.id for p in pares}
-    assert store.fila[pares[0].id] == "incerta"  # quem já estava na fila não muda
-    assert store.fila[pares[1].id] == "sorteada"
 
 
 def test_tese_com_pool_antigo_precisa_de_pool_novo():

@@ -1,6 +1,6 @@
 """
 Schema `avaliacao` do harness de avaliação (conjunto-ouro): teses, pares
-(tese, acórdão), julgamentos humanos e a fila de rotulação (tabela `amostra`).
+(tese, acórdão) e julgamentos humanos.
 Ver docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md §3.2.
 
 Idempotente (CREATE ... IF NOT EXISTS) — seguro rodar a cada subida.
@@ -58,13 +58,8 @@ _DDL = [
         UNIQUE (par_id, juiz, rodada)
     );
     """,
-    """
-    CREATE TABLE IF NOT EXISTS avaliacao.amostra (
-        par_id  UUID PRIMARY KEY REFERENCES avaliacao.pares(id) ON DELETE CASCADE,
-        metade  TEXT NOT NULL CHECK (metade IN ('sorteada', 'incerta'))
-    );
-    """,
 ]
+# A tabela avaliacao.amostra (fila de rotulação da tela web) saiu do DDL; ela continua no banco, sem uso.
 
 
 def ensure_schema(database_url: str | None = None) -> None:

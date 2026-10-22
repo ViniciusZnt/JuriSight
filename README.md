@@ -326,7 +326,7 @@ uv run pytest
 | `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), pipeline, Result Formatter |
 | `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
 | `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
-| `avaliacao` / `/avaliacao/*` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`/`eval`, rotas de rotulação via `TestClient`; o store contra Postgres real só roda com `DATABASE_URL` |
+| `avaliacao` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`/`eval`, o store contra Postgres real só roda com `DATABASE_URL` |
 | `avaliacao` (benchmark) | Sistemas S0–S6 com rerankers falsos, planilha de julgamento (exportar/importar), rótulo final e concordância, teses dos advogados, métricas e estatística do `benchmark`; o que usa o banco só roda com `DATABASE_URL` |
 | `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `comparar`/`conferir`/`aplicar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
 
@@ -350,7 +350,6 @@ Variáveis no `.env` (ver `.env.example`):
 | Variável            | Padrão          | Descrição |
 |---------------------|-----------------|-----------|
 | `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas e atribui o tema de cada tese |
-| `AVALIACAO_EMAILS`  | —               | E-mails (separados por vírgula) que podem usar a tela de rotulação |
 | `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (acórdãos de origem e split dev/teste) |
 | `AVALIACAO_ADJUDICADOR` | —           | E-mail do adjudicador: o julgamento dele decide os pares em que os avaliadores discordam (ver §4) |
 
@@ -362,32 +361,15 @@ Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start, pas
 uv run python -m avaliacao.construir [--teses 100] [--sim]
 ```
 
-Três etapas **idempotentes** (cada uma pula o que já existe, então dá para
+Duas etapas **idempotentes** (cada uma pula o que já existe, então dá para
 interromper e retomar de onde parou):
 
 1. **teses** — completa até `--teses` (reais das conversas + sintéticas; conversas de
    contas `@example.com`, usadas nos testes E2E, ficam de fora). A OpenAI escreve as
    sintéticas e atribui o tema de cada tese, que decide o split dev/teste;
-2. **pool** — para cada tese, une os 30 candidatos do híbrido (corredor `hibrido`), o top-10 do BM25 (`bm25_top10`) e o top-10 do denso (`vetorial_top10`). Pares antigos (`pipeline`, `passo_zero`) continuam no banco;
-3. **fila** — coloca os pares do pool na fila da tela de rotulação.
+2. **pool** — para cada tese, une os 30 candidatos do híbrido (corredor `hibrido`), o top-10 do BM25 (`bm25_top10`) e o top-10 do denso (`vetorial_top10`). Pares antigos (`pipeline`, `passo_zero`) continuam no banco.
 
 A etapa de teses chama a OpenAI: mostra a estimativa e **pede confirmação**; `--sim` pula.
-
-### 2 — Tela `/avaliacao`: rotulação
-
-Abra `http://localhost:3000/avaliacao` (não há link na sidebar; o acesso é pela URL
-direta). Exige login **e** e-mail em `AVALIACAO_EMAILS`. A tela mostra a tese no
-topo e um acórdão por vez, com progresso. Cada avaliador é gravado como
-`humano:<email>`.
-
-| Tecla | Ação |
-|-------|------|
-| `1` `2` `3` `4` | Relevância 0, 1, 2, 3 |
-| `F` `E` `N`     | Stance: fortalece, enfraquece, neutro |
-
-Escolha a relevância e o stance; quando os dois estão escolhidos, o rótulo é salvo e o
-próximo acórdão aparece, então dá para parar e voltar depois. Se o envio falhar, a
-seleção fica na tela e dá para tentar de novo.
 
 ### 3 — `eval`: medir a busca
 
