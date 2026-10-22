@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from avaliacao import juiz
 from scraper.provimento_jev import (
     FAVORECE,
     PERGUNTAS_PROVIMENTO,
@@ -14,7 +13,6 @@ from scraper.provimento_jev import (
     favorece_por_regra,
     montar_estado,
     para_provimento,
-    sha_perguntas,
 )
 from scraper.schema import Provimento
 
@@ -114,13 +112,6 @@ def test_perguntas_tem_os_rotulos():
     assert set(PERGUNTAS_PROVIMENTO["resultado"].criteria) == set(RESULTADOS)
     assert set(PERGUNTAS_PROVIMENTO["recorrente"].criteria) == set(RECORRENTES)
     assert set(PERGUNTAS_PROVIMENTO["favorece"].criteria) == set(FAVORECE)
-
-
-def test_sha_juiz_inalterado():
-    assert juiz.perguntas_sha() == sha_perguntas(juiz.PERGUNTAS)
-    assert len(juiz.perguntas_sha()) == 64
-    int(juiz.perguntas_sha(), 16)
-    assert juiz.perguntas_sha() == "2d020d436636bf714e70f051fe7aa611b1e5101f36d69419c098240ab82bd639"
 
 
 def test_modelo_latest_e_recusado(monkeypatch):

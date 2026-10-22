@@ -1,8 +1,8 @@
 """
 Result Formatter (RFC Tabela 6) — última etapa do pipeline de busca.
 
-Serializa os (documento_id, DocumentoJuridico, score_rrf) já ordenados por
-categorical_sort.ordenar() nos cards de resposta da API — tipo, ementa, relator,
+Serializa os (documento_id, DocumentoJuridico, score_rrf) já ordenados pelo
+reranker (query/search/pipeline.py) nos cards de resposta da API — tipo, ementa, relator,
 provimento e link (RF05/RF06/RF09).
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ class DocumentoDetalhe(DocumentoJuridico):
 def format_results(resultados: list[tuple[str, DocumentoJuridico, float]]) -> list[ResultCard]:
     """Projeta os triplos ordenados em cards de resposta.
 
-    Não reordena — resultados já deve vir ordenado de categorical_sort.ordenar().
+    Não reordena — resultados já deve vir ordenado pelo pipeline.
 
     Input:  resultados — lista de (documento_id, DocumentoJuridico, score_rrf).
     Returns: lista de ResultCard, na mesma ordem de entrada.

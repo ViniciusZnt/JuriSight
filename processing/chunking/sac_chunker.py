@@ -25,7 +25,8 @@ MAX_TOKENS = 700
 # Sobreposição entre chunks consecutivos para não cortar contexto no limite.
 OVERLAP_TOKENS = 80
 # Teto de palavras do resumo SAC, aplicado tanto à ementaquanto ao dispositivo:
-# impede que um prefixo longo estoure o limite do nomic.
+# impede que um prefixo longo estoure o limite do modelo de embedding
+# (text-embedding-3-small, 8191 tokens).
 SUMMARY_MAX_WORDS = 150
 
 
@@ -140,7 +141,7 @@ class SACChunker:
 
         if corpo:
             sac_summary = ementa or _dispositivo_summary(corpo)
-            # Teto no prefixo, sem ele poderia estourar a capacidade do nomic.
+            # Teto no prefixo, sem ele poderia estourar a capacidade do text-embedding-3-small.
             sac_summary = " ".join(sac_summary.split()[:SUMMARY_MAX_WORDS])
             janelas = _split_into_windows(corpo)
         else:

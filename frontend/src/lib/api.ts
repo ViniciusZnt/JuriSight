@@ -6,7 +6,6 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export type TipoDocumento = "ACORDAO" | "SUMULA" | "OJ" | "PRECEDENTE";
 export type Provimento = "APROVADO" | "PARCIAL" | "NEGADO" | "NAO_APLICAVEL";
-export type OrdenarPor = "relevancia" | "data";
 
 /** query/enrichment/schema.py::EstruturaArgumentativa — todo campo tem default (RN05: o LLM
  *  nunca inventa; o que não foi encontrado no texto fica vazio/null). */
@@ -91,7 +90,6 @@ export interface QueryRequestBody {
   provimento?: Provimento | null;
   data_inicio?: string | null; // yyyy-mm-dd
   data_fim?: string | null;
-  ordenar_por?: OrdenarPor;
 }
 
 /** Erro de API com o `detail` do FastAPI já extraído (HTTPException / 422 de validação). */

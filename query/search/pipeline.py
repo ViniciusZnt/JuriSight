@@ -2,7 +2,7 @@
 Pipeline de busca do /query, sem HTTP.
 
 Query Builder -> Hybrid Search (RRF) -> Doc Retriever -> filtros -> re-ranking
--> corte -> normalização -> Categorical Sort -> Result Formatter.
+-> corte -> normalização -> Result Formatter.
 
 Extraído de query/api/app.py para que o harness de avaliação (eval/) rode o
 MESMO pipeline do endpoint, sem passar por HTTP. O endpoint só adapta:
@@ -14,7 +14,6 @@ from datetime import date
 
 from query.enrichment import query_builder
 from query.enrichment.schema import EstruturaArgumentativa
-from query.search import categorical_sort
 from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
 from query.search.reranker import Reranker
@@ -94,7 +93,6 @@ def buscar(
     provimento: Provimento | None = None,
     data_inicio: date | None = None,
     data_fim: date | None = None,
-    ordenar_por: str = "relevancia",
 ) -> list[ResultCard]:
     """Roda o pipeline completo do /query (síncrono).
 
@@ -144,5 +142,4 @@ def buscar(
             for (doc_id, doc, _), score_norm in zip(triplos, scores_normalizados)
         ]
 
-    ordenados = categorical_sort.ordenar(triplos, ordenar_por)
-    return format_results(ordenados)
+    return format_results(triplos)

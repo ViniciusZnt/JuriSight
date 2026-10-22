@@ -39,9 +39,8 @@ export function relevancePercent(score: number, maxScore: number): number {
   return Math.round((score / maxScore) * 100);
 }
 
-/** Mesmo comparador de query/search/categorical_sort.py::ordenar — hierarquia jurídica primeiro
- *  (súmula > OJ > precedente > acórdão), relevância/data como critério secundário. Replicado no
- *  cliente para reordenar o mesmo lote de resultados sem precisar chamar a API de novo. */
+/** Reordena no cliente o mesmo lote de resultados, sem chamar a API de novo — hierarquia
+ *  jurídica primeiro (súmula > OJ > precedente > acórdão), relevância/data como critério secundário. */
 export function compareResultCards(a: ResultCard, b: ResultCard, por: "relevancia" | "data"): number {
   if (a.hierarquia_categoria !== b.hierarquia_categoria) {
     return a.hierarquia_categoria - b.hierarquia_categoria;

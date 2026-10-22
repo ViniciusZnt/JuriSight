@@ -15,7 +15,7 @@ substitui get_current_user por um usuário fake em TODO teste, sem precisar
 repetir isso em cada um.
 """
 import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -272,21 +272,17 @@ def test_normalizar_scores_sem_variacao_nao_divide_por_zero():
 # --------------------------------------------------------------------------- #
 
 def test_query_fim_a_fim_ordena_e_formata(client):
-    sumula = _doc(tipo_documento=TipoDocumento.SUMULA, hierarquia_categoria=1)
-    acordao = _doc(tipo_documento=TipoDocumento.ACORDAO, hierarquia_categoria=4)
-    docs = {"sumula-id": sumula, "acordao-id": acordao}
+    docs = {"a-id": _doc(), "b-id": _doc()}
 
-    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid(
-        [("acordao-id", 9.0), ("sumula-id", 1.0)]
-    )
+    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
     app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
 
     resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
 
     assert resp.status_code == 200
     body = resp.json()
-    # a súmula tem hierarquia_categoria menor -> vem primeiro, mesmo com score menor.
-    assert [card["id"] for card in body] == ["sumula-id", "acordao-id"]
+    # a ordem final é a do reranker (o fake mantém a ordem de entrada).
+    assert [card["id"] for card in body] == ["a-id", "b-id"]
 
 
 def test_query_estrutura_vazia_422(client):
@@ -352,22 +348,6 @@ def test_query_reranking_promove_candidato_mal_rankeado_pelo_rrf(client):
     resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
 
     assert [card["id"] for card in resp.json()] == ["c", "b", "a"]
-
-
-def test_query_ordenar_por_data(client):
-    recente = _doc(data_julgamento=date(2026, 1, 1))
-    antigo = _doc(data_julgamento=date(2020, 1, 1))
-    docs = {"antigo": antigo, "recente": recente}
-
-    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("antigo", 2.0), ("recente", 1.0)])
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
-
-    resp = client.post(
-        "/query",
-        json={"estrutura": {"tese_central": "insalubridade"}, "ordenar_por": "data"},
-    )
-
-    assert [card["id"] for card in resp.json()] == ["recente", "antigo"]
 
 
 # --------------------------------------------------------------------------- #

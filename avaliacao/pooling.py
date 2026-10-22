@@ -1,6 +1,6 @@
 """
 Pooling (estilo TREC): para cada tese, une o top-k de 3 buscas diferentes para
-decidir quais acórdãos o juiz vai julgar. Assim o conjunto-ouro não fica
+decidir quais acórdãos os avaliadores vão julgar. Assim o conjunto-ouro não fica
 enviesado para o que o pipeline atual já acha.
 """
 from __future__ import annotations

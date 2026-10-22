@@ -1,6 +1,6 @@
 """
 Schema `avaliacao` do harness de avaliação (conjunto-ouro): teses, pares
-(tese, acórdão), julgamentos (humano ou Jev) e a amostra que a Alexia rotula.
+(tese, acórdão), julgamentos humanos e a fila de rotulação (tabela `amostra`).
 Ver docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md §3.2.
 
 Idempotente (CREATE ... IF NOT EXISTS) — seguro rodar a cada subida.
