@@ -199,17 +199,15 @@ def test_relatorio_grava_m_e_metodo_wilcoxon():
 
 
 def test_commit_git_marca_dirty(monkeypatch):
-    import avaliacao.eval as ev
-
     def falso(cmd, **kw):
         saida = "abc123\n" if "rev-parse" in cmd else " M arquivo.py\n"
         return SimpleNamespace(stdout=saida)
 
-    monkeypatch.setattr(ev.subprocess, "run", falso)
-    assert ev._commit_git() == "abc123-dirty"
-    monkeypatch.setattr(ev.subprocess, "run",
+    monkeypatch.setattr(bm.subprocess, "run", falso)
+    assert bm._commit_git() == "abc123-dirty"
+    monkeypatch.setattr(bm.subprocess, "run",
                         lambda cmd, **kw: SimpleNamespace(stdout="abc123\n" if "rev-parse" in cmd else ""))
-    assert ev._commit_git() == "abc123"
+    assert bm._commit_git() == "abc123"
 
 
 class _Reranker:

@@ -326,7 +326,7 @@ uv run pytest
 | `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), pipeline, Result Formatter |
 | `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
 | `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
-| `avaliacao` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`/`eval`, o store contra Postgres real só roda com `DATABASE_URL` |
+| `avaliacao` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`; o store contra Postgres real só roda com `DATABASE_URL` |
 | `avaliacao` (benchmark) | Sistemas S0–S6 com rerankers falsos, planilha de julgamento (exportar/importar), rótulo final e concordância, teses dos advogados, métricas e estatística do `benchmark`; o que usa o banco só roda com `DATABASE_URL` |
 | `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `comparar`/`conferir`/`aplicar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
 
@@ -340,10 +340,9 @@ uv run pytest
 
 Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem
 uma régua: um **conjunto-ouro** de pares (tese × acórdão) com **relevância 0–3** e
-**stance** (fortalece / enfraquece / neutro), julgados por pessoas. O comando `eval`
-roda a busca para cada tese e reporta **nDCG@10**, **Recall@20**, a fração de
-"fortalece" entre os relevantes do top-10 e a fração de resultados **não julgados**
-no top-10. Esta etapa só mede, não muda a busca.
+**stance** (fortalece / enfraquece / neutro), julgados por pessoas. O `benchmark`
+roda a busca (e o pipeline de produção, S3) para cada tese e reporta as métricas.
+Esta etapa só mede, não muda a busca.
 
 Variáveis no `.env` (ver `.env.example`):
 
@@ -351,7 +350,7 @@ Variáveis no `.env` (ver `.env.example`):
 |---------------------|-----------------|-----------|
 | `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas e atribui o tema de cada tese |
 | `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (acórdãos de origem e split dev/teste) |
-| `AVALIACAO_ADJUDICADOR` | —           | E-mail do adjudicador: o julgamento dele decide os pares em que os avaliadores discordam (ver §4) |
+| `AVALIACAO_ADJUDICADOR` | —           | E-mail do adjudicador: o julgamento dele decide os pares em que os avaliadores discordam (ver §2) |
 
 Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start, passos 5 e 7).
 
@@ -371,22 +370,7 @@ interromper e retomar de onde parou):
 
 A etapa de teses chama a OpenAI: mostra a estimativa e **pede confirmação**; `--sim` pula.
 
-### 3 — `eval`: medir a busca
-
-```bash
-uv run python -m avaliacao.eval --split dev [--saida data/eval/runs/]
-uv run python -m avaliacao.eval --split teste     # só para a medição final
-```
-
-Roda a busca real para cada tese: precisa de Qdrant, do índice BM25 e do embedding da
-OpenAI (além do Postgres). O rótulo de cada par é o julgamento humano mais recente;
-par sem julgamento humano conta como não julgado. Se a busca de uma tese falhar, ela
-é avisada em stderr, fica fora das médias (conta como excluída) e seu id vai para
-`teses_com_erro` no JSON. Grava um JSON em `data/eval/runs/` com as métricas e o
-**commit** git. Use `dev` para iterar; o split `teste` deve ser usado **só na medição
-final**, senão deixa de ser uma medida independente.
-
-### 4 — Etapa 2: benchmark de rerankers (S0–S6)
+### 2 — Etapa 2: benchmark de rerankers (S0–S6)
 
 A etapa 2 compara sete sistemas de busca sobre o mesmo conjunto de teses, com
 rótulos de duas pessoas. A ordem:

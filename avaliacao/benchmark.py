@@ -14,6 +14,7 @@ import argparse
 import gc
 import json
 import os
+import subprocess
 import sys
 import time
 import uuid
@@ -23,7 +24,6 @@ from typing import Callable
 
 import numpy as np
 
-from avaliacao.eval import SAIDA_PADRAO, _commit_git
 from avaliacao.metricas import (
     LIMIAR_RELEVANTE,
     ac2_gwet,
@@ -46,9 +46,28 @@ CONTRASTES = (("S3", "S2"), ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S0", "S2
 N_BOOTSTRAP = 10_000
 SEED_BOOTSTRAP = 42
 WILCOXON_ZERO_METHOD = "pratt"
+SAIDA_PADRAO = Path(__file__).resolve().parent.parent / "data" / "eval" / "runs"
 
 
 # --- rodar ------------------------------------------------------------------
+
+
+def _commit_git() -> str | None:
+    try:
+        saida = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
+            check=True, cwd=Path(__file__).resolve().parent.parent,
+        )
+        commit = saida.stdout.strip()
+        if not commit:
+            return None
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True,
+            check=True, cwd=Path(__file__).resolve().parent.parent,
+        )
+        return commit + "-dirty" if status.stdout.strip() else commit
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 def _nomes_dos_modelos(sistemas: list[str]) -> dict[str, str]:
