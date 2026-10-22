@@ -71,10 +71,16 @@ def rodar_sistema(
     return [card.id for card in cards]
 
 
+def _monoptt5():
+    from query.search.reranker_monoptt5 import MonoPTT5
+
+    return MonoPTT5()  # levanta RuntimeError orientando `uv sync --group benchmark`
+
+
 def construir_rerankers(nomes: list[str]) -> dict[str, object]:
     """Monta só os rerankers pedidos (cada modelo é carregado apenas se pedido).
 
-    S6 entra na Task 4: acrescentar uma entrada em `fabricas`.
+    S6 (monoPTT5) exige o grupo opcional `benchmark` (torch + transformers).
     """
     from query.search.reranker import Reranker
     from query.search.reranker_onnx import BGE, GTE, CrossEncoderOnnx
@@ -83,6 +89,7 @@ def construir_rerankers(nomes: list[str]) -> dict[str, object]:
         "S3": Reranker,
         "S4": lambda: CrossEncoderOnnx(*GTE),
         "S5": lambda: CrossEncoderOnnx(*BGE),
+        "S6": _monoptt5,
     }
     desconhecidos = [n for n in nomes if n not in fabricas]
     if desconhecidos:

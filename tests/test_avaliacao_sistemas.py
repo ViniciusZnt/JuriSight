@@ -106,3 +106,11 @@ def test_construir_rerankers_nome_desconhecido():
     with pytest.raises(ValueError):
         construir_rerankers(["S9"])
     assert construir_rerankers([]) == {}
+
+
+def test_construir_rerankers_s6_usa_monoptt5(monkeypatch):
+    import query.search.reranker_monoptt5 as mod
+    from avaliacao.sistemas import construir_rerankers
+
+    monkeypatch.setattr(mod, "MonoPTT5", lambda: "mono")
+    assert construir_rerankers(["S6"]) == {"S6": "mono"}
