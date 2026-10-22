@@ -1,22 +1,26 @@
 """
 CLI do provimento com o Jev. Subcomandos: `classificar` (backfill retomável),
 `comparar` (regex x Jev, gera CSV de divergências), `conferir` (resume o CSV preenchido)
-e `aplicar` (escreve o Jev em `documentos.provimento`, só com --confirmar).
+`aplicar` (escreve o Jev em `documentos.provimento`, só com --confirmar) e
+`sincronizar` (leva `documentos.provimento` ao Qdrant e ao provimentos.json do BM25).
 Ver docs/superpowers/specs/2026-10-20-provimento-jev-design.md.
 
 Uso: uv run python -m scraper.provimento_jev_cli classificar [--limite N] [--sim]
      uv run python -m scraper.provimento_jev_cli comparar [--amostra 100] [--csv CAMINHO]
      uv run python -m scraper.provimento_jev_cli conferir [--csv CAMINHO]
      uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--confirmar]
+     uv run python -m scraper.provimento_jev_cli sincronizar [--lote 1000] [--so-bm25] [--so-qdrant]
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import logging
 import os
 import random
 import sys
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -332,7 +336,66 @@ def _cmd_conferir(args) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None, *, store=None, classificador=None) -> int:
+def provimentos_dos_chunks(
+    chunk_ids: list[str], por_documento: dict[str, str]
+) -> tuple[list[str], int]:
+    """Provimento de cada chunk pelo documento (parte antes do último `:`).
+    Chunk de documento ausente vira NAO_APLICAVEL; devolve também quantos foram."""
+    nao_aplicavel = "NAO_APLICAVEL"
+    resultado, orfaos = [], 0
+    for chunk_id in chunk_ids:
+        prov = por_documento.get(chunk_id.rpartition(":")[0])
+        if prov is None:
+            prov, orfaos = nao_aplicavel, orfaos + 1
+        resultado.append(prov)
+    return resultado, orfaos
+
+
+def _construir_qdrant():
+    from qdrant_client import QdrantClient
+
+    from indexing.vector_store.qdrant_store import QdrantStore
+
+    # Timeout de 5 s (padrão) estoura em set_payload de lotes grandes nesta máquina.
+    url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    return QdrantStore(QdrantClient(url=url, timeout=210))
+
+
+def _cmd_sincronizar(args, store, qdrant) -> int:
+    inicio = time.monotonic()
+    por_documento = store.provimentos_documentos()
+    print(f"Documentos no Postgres: {len(por_documento)}")
+    grupos: dict[str, list[str]] = {}
+    for doc_id, prov in por_documento.items():
+        grupos.setdefault(prov, []).append(doc_id)
+
+    if not args.so_bm25:
+        qdrant = qdrant or _construir_qdrant()
+        qdrant.garantir_indices_payload()
+        for prov, ids in sorted(grupos.items()):
+            enviados = qdrant.atualizar_provimento(prov, sorted(ids), lote=args.lote)
+            print(f"Qdrant {prov}: {enviados} documentos")
+
+    if not args.so_qdrant:
+        from indexing.lexical import bm25_builder
+
+        indice = args.indice_bm25 or bm25_builder.BM25_INDEX_PATH
+        with open(Path(indice) / "chunk_ids.json") as f:
+            chunk_ids = json.load(f)
+        provimentos, orfaos = provimentos_dos_chunks(chunk_ids, por_documento)
+        bm25_builder.gravar_provimentos(Path(indice), provimentos)
+        for prov, n in sorted(Counter(provimentos).items()):
+            print(f"BM25 {prov}: {n} chunks")
+        print(f"Chunks órfãos (documento ausente, NAO_APLICAVEL): {orfaos}")
+        print(f"Gravado {Path(indice) / bm25_builder.PROVIMENTOS_FILENAME}")
+    print(f"Tempo total: {time.monotonic() - inicio:.1f}s")
+    print("Reinicie o backend para o BM25 recarregar o provimentos.json.")
+    return 0
+
+
+def main(
+    argv: list[str] | None = None, *, store=None, classificador=None, qdrant=None
+) -> int:
     parser = argparse.ArgumentParser(prog="provimento_jev_cli")
     sub = parser.add_subparsers(dest="comando", required=True)
     p = sub.add_parser("classificar", help="backfill retomável com o Jev")
@@ -348,10 +411,19 @@ def main(argv: list[str] | None = None, *, store=None, classificador=None) -> in
     p = sub.add_parser("aplicar", help="escreve o provimento do Jev em documentos (só com --confirmar)")
     p.add_argument("--confianca-min", type=_fracao, default=0.8)
     p.add_argument("--confirmar", action="store_true", help="grava de fato")
+    p = sub.add_parser("sincronizar", help="leva documentos.provimento ao Qdrant e ao BM25")
+    p.add_argument("--lote", type=_positivo, default=1000, help="documento_ids por chamada ao Qdrant")
+    p.add_argument("--so-bm25", action="store_true")
+    p.add_argument("--so-qdrant", action="store_true")
+    p.add_argument("--indice-bm25", type=Path, default=None, help="padrão: BM25_INDEX_PATH")
     args = parser.parse_args(argv)
+    if args.comando == "sincronizar" and args.so_bm25 and args.so_qdrant:
+        parser.error("--so-bm25 e --so-qdrant são excludentes")
 
     if args.comando == "conferir":
         return _cmd_conferir(args)
+    if args.comando == "sincronizar":
+        return _cmd_sincronizar(args, store or _construir_store(), qdrant)
     try:
         validar_modelo(os.getenv("TYPESAFE_MODEL", MODELO_PADRAO))
     except ValueError as e:

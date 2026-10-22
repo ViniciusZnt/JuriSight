@@ -212,3 +212,11 @@ class ProvimentoJevStore:
                 )
                 mudou += cur.rowcount
         return mudou
+
+    def provimentos_documentos(self) -> dict[str, str]:
+        """`documento_id -> provimento` de todos os documentos (NULL vira NAO_APLICAVEL)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id::text, coalesce(provimento, 'NAO_APLICAVEL') FROM documentos"
+            ).fetchall()
+        return {r[0]: r[1] for r in rows}
