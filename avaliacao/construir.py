@@ -19,7 +19,6 @@ import os
 import sys
 
 from avaliacao.geracao import candidatos_sinteticos, uuids_origem
-from avaliacao.pooling import CORREDORES
 from avaliacao.store import Par
 
 TOKENS_POR_TESE_OPENAI = 1500
@@ -56,11 +55,12 @@ def reais_novas(reais: list[dict], existentes: list[dict], limite: int) -> list[
 
 
 def precisa_de_pool(pares: list[Par]) -> bool:
-    """True se a tese ainda não tem nenhum par vindo de um corredor do pooling.
+    """True se a tese ainda não tem nenhum par do corredor "hibrido" (pool novo).
 
-    Teses antigas do passo 0 têm pares, mas só com o corredor "passo_zero":
-    também precisam do pool. `adicionar_pares` une os corredores, então remontar é seguro."""
-    return not any(c in CORREDORES for p in pares for c in p.corredores)
+    Teses do passo 0 ("passo_zero") e as de pool antigo (bm25/vetorial/pipeline)
+    também precisam do pool novo. `adicionar_pares` une os corredores, então
+    remontar é seguro e não apaga os pares antigos."""
+    return not any("hibrido" in p.corredores for p in pares)
 
 
 # --- etapas -----------------------------------------------------------------
@@ -141,7 +141,7 @@ def _completar_sinteticas(store, deps, cliente, alvo, seed, splits) -> None:
 
 
 def etapa_pool(store, deps) -> int:
-    """Monta o pool das teses que ainda não têm pares de corredor. Devolve quantas falharam."""
+    """Monta o pool novo das teses que ainda não têm o corredor híbrido. Devolve quantas falharam."""
     from avaliacao.pooling import montar_pool
     from query.enrichment.schema import EstruturaArgumentativa
 
@@ -154,7 +154,7 @@ def etapa_pool(store, deps) -> int:
         try:
             pool = montar_pool(
                 EstruturaArgumentativa.model_validate(tese.estrutura),
-                hybrid=deps.hybrid, retriever=deps.retriever, reranker=deps.reranker,
+                hybrid=deps.hybrid, retriever=deps.retriever,
             )
         except Exception as e:  # noqa: BLE001
             _aviso(f"Pool da tese {tese.id} falhou: {e}")

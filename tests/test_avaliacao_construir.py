@@ -43,12 +43,13 @@ def test_etapa_fila_poe_todos_os_pares_e_e_idempotente():
     assert store.fila[pares[1].id] == "sorteada"
 
 
-def test_precisa_de_pool_so_com_corredor_real():
+def test_tese_com_pool_antigo_precisa_de_pool_novo():
     p = lambda corredores: Par(uuid.uuid4(), uuid.uuid4(), "d", corredores)  # noqa: E731
     assert precisa_de_pool([])
-    assert precisa_de_pool([p(["passo_zero"])])  # tese do passo 0: só tem o corredor de teste
-    assert not precisa_de_pool([p(["passo_zero"]), p(["bm25", "pipeline"])])
-    assert not precisa_de_pool([p(["vetorial"])])
+    assert precisa_de_pool([p(["passo_zero"])])
+    assert precisa_de_pool([p(["bm25", "vetorial", "pipeline"])])  # pool antigo
+    assert not precisa_de_pool([p(["passo_zero"]), p(["hibrido", "bm25"])])
+    assert not precisa_de_pool([p(["hibrido"])])
 
 
 def test_reais_novas_ignora_as_ja_gravadas_e_respeita_o_limite():

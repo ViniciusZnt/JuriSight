@@ -1,4 +1,4 @@
-"""Testes do pooling de 3 corredores (fakes; sem Qdrant/BM25/banco)."""
+"""Testes do pooling (híbrido + BM25 + denso) (fakes; sem Qdrant/BM25/banco)."""
 from types import SimpleNamespace
 
 import pytest
@@ -64,91 +64,71 @@ def _estrutura():
     )
 
 
-def _hybrid(bm25_chunks, completo, ementa):
+def _hybrid(bm25_chunks, completo, ementa, hibrido=()):
     from indexing.vector_store.qdrant_store import COLLECTION_COMPLETO, COLLECTION_EMENTA
 
-    return SimpleNamespace(
+    h = SimpleNamespace(
         bm25=_FakeBM25(bm25_chunks),
         embedder=_FakeEmbedder(),
         store=_FakeStore({COLLECTION_COMPLETO: completo, COLLECTION_EMENTA: ementa}),
+        chamadas_search=[],
     )
 
+    def search(frase, n, bm25_query=None):
+        h.chamadas_search.append((frase, n, bm25_query))
+        return [(d, 1.0 / (i + 1)) for i, d in enumerate(hibrido)][:n]
 
-@pytest.fixture
-def pipeline_ids(monkeypatch):
-    def _definir(ids):
-        monkeypatch.setattr(
-            pooling, "buscar", lambda estrutura, **kw: [SimpleNamespace(id=i) for i in ids]
-        )
-
-    return _definir
+    h.search = search
+    return h
 
 
-def test_pool_une_corredores_e_colapsa_chunks(pipeline_ids):
-    pipeline_ids(["d3"])
-    hybrid = _hybrid(["d1:0", "d1:1", "d2:0"], ["d1", "d4"], ["d1"])
-    pool = montar_pool(
-        _estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), reranker=None, k=5
+def test_pool_une_os_tres_corredores():
+    hibrido = [f"h{i}" for i in range(30)]
+    hybrid = _hybrid(
+        [f"b{i}:0" for i in range(10)], [f"v{i}" for i in range(10)], [], hibrido=hibrido
     )
-    assert pool == {
-        "d1": ["bm25", "vetorial"],
-        "d2": ["bm25"],
-        "d4": ["vetorial"],
-        "d3": ["pipeline"],
-    }
-    assert len(hybrid.bm25.chamadas) == 1
-    assert hybrid.bm25.chamadas[0] == (
-        "adicional de insalubridade EPI sem fiscalização",
-        5 * CANDIDATOS_POR_CANAL,
-    )
-    assert hybrid.embedder.textos == ["EPI não elide a insalubridade sem fiscalização."]
-
-
-def test_corredores_na_ordem_fixa(pipeline_ids):
-    pipeline_ids(["d1"])
-    hybrid = _hybrid(["d1:0"], ["d1"], ["d1"])
-    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), reranker=None, k=3)
-    assert pool == {"d1": ["bm25", "vetorial", "pipeline"]}
-
-
-def test_cada_corredor_limitado_a_k(pipeline_ids):
-    pipeline_ids([f"p{i}" for i in range(10)])
-    # 6 chunks do mesmo doc primeiro: só colapsam para 1 documento, não gastam o k.
-    chunks = [f"b0:{i}" for i in range(6)] + [f"b{i}:0" for i in range(1, 10)]
-    hybrid = _hybrid(chunks, [f"v{i}" for i in range(10)], [f"e{i}" for i in range(10)])
-    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), reranker=None, k=3)
-
-    por_corredor = {"bm25": [], "vetorial": [], "pipeline": []}
+    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever())
+    assert pooling.CORREDORES == ("hibrido", "bm25", "vetorial")
+    por_corredor = {c: [] for c in pooling.CORREDORES}
     for doc, corredores in pool.items():
         for c in corredores:
             por_corredor[c].append(doc)
-    assert por_corredor["bm25"] == ["b0", "b1", "b2"]
-    assert por_corredor["pipeline"] == ["p0", "p1", "p2"]
-    assert len(por_corredor["vetorial"]) == 3
-    assert all(d.startswith(("v", "e")) for d in por_corredor["vetorial"])
+    assert len(por_corredor["hibrido"]) == 30
+    assert len(por_corredor["bm25"]) == 10
+    assert len(por_corredor["vetorial"]) == 10
+    assert hybrid.chamadas_search[0][1] == 30
 
 
-def test_vetorial_funde_colecoes_por_rrf(pipeline_ids):
-    pipeline_ids([])
-    # x aparece nas duas coleções: o RRF o põe na frente de a e b.
-    hybrid = _hybrid([], ["a", "x"], ["b", "x"])
-    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), reranker=None, k=1)
-    assert pool == {"x": ["vetorial"]}
+def test_corredores_na_ordem_fixa_e_colapsa_chunks():
+    hybrid = _hybrid(["d1:0", "d1:1", "d2:0"], ["d1", "d4"], ["d1"], hibrido=["d1", "d3"])
+    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), n_hibrido=5, k=5)
+    assert pool == {
+        "d1": ["hibrido", "bm25", "vetorial"],
+        "d3": ["hibrido"],
+        "d2": ["bm25"],
+        "d4": ["vetorial"],
+    }
+    assert hybrid.embedder.textos[0] == "EPI não elide a insalubridade sem fiscalização."
 
 
-def test_pool_descarta_documento_sem_texto(pipeline_ids):
-    pipeline_ids(["d3", "d5"])
-    hybrid = _hybrid(["d1:0", "d2:0"], ["d1"], [])
+def test_bm25_e_denso_limitados_a_k():
+    chunks = [f"b0:{i}" for i in range(6)] + [f"b{i}:0" for i in range(1, 10)]
+    hybrid = _hybrid(chunks, [f"v{i}" for i in range(10)], [f"e{i}" for i in range(10)])
+    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), k=3)
+    bm25 = [d for d, c in pool.items() if "bm25" in c]
+    vet = [d for d, c in pool.items() if "vetorial" in c]
+    assert bm25 == ["b0", "b1", "b2"]
+    assert len(vet) == 3
+
+
+def test_pool_descarta_documento_sem_texto():
+    hybrid = _hybrid(["d1:0", "d2:0"], ["d1"], [], hibrido=["d3", "d5"])
     retriever = _FakeRetriever(vazios={"d1"}, ausentes={"d5"})
-    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=retriever, reranker=None, k=5)
+    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=retriever, k=5)
     assert set(pool) == {"d2", "d3"}
-    assert len(retriever.chamadas) == 1  # um único fetch sobre a união
 
 
-def test_estrutura_vazia_propaga_value_error(pipeline_ids):
-    pipeline_ids([])
+def test_estrutura_vazia_propaga_value_error():
     hybrid = _hybrid([], [], [])
     with pytest.raises(ValueError):
-        montar_pool(
-            EstruturaArgumentativa(), hybrid=hybrid, retriever=_FakeRetriever(), reranker=None
-        )
+        montar_pool(EstruturaArgumentativa(), hybrid=hybrid, retriever=_FakeRetriever())
