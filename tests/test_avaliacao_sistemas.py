@@ -114,3 +114,31 @@ def test_construir_rerankers_s6_usa_monoptt5(monkeypatch):
 
     monkeypatch.setattr(mod, "MonoPTT5", lambda: "mono")
     assert construir_rerankers(["S6"]) == {"S6": "mono"}
+
+
+class _Bm25Chunks:
+    """Muitos chunks por documento: 7 chunks para cada doc, nas posições 0..."""
+
+    def search(self, texto, n):
+        return [(f"d{i // 7}:{i % 7}", 1.0) for i in range(n)]
+
+
+def _hybrid_profundidade():
+    from indexing.vector_store.qdrant_store import COLLECTION_COMPLETO, COLLECTION_EMENTA
+
+    def query(vetor, n_results=20, collection=None):
+        base = "c" if collection == COLLECTION_COMPLETO else "e"
+        return [{"documento_id": f"{base}{i // 2}"} for i in range(n_results)]  # 2 chunks por doc
+
+    return SimpleNamespace(
+        bm25=_Bm25Chunks(), embedder=SimpleNamespace(embed_text=lambda t: [0.1]),
+        store=SimpleNamespace(query=query),
+    )
+
+
+def test_top10_e_prefixo_do_top20_bm25_e_denso():
+    hybrid = _hybrid_profundidade()
+    est = EstruturaArgumentativa(tese_central="tese")
+    assert sistemas.top_bm25(hybrid, est, 10) == sistemas.top_bm25(hybrid, est, 20)[:10]
+    assert sistemas.top_denso(hybrid, est, 10) == sistemas.top_denso(hybrid, est, 20)[:10]
+    assert len(sistemas.top_bm25(hybrid, est, 20)) == 15  # 100 chunks / 7 por doc: profundidade fixa

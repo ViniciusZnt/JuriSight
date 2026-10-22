@@ -18,11 +18,15 @@ from query.search.pipeline import N_CANDIDATOS_PARA_RERANK, N_RESULTS_FINAL, bus
 
 SISTEMAS: tuple[str, ...] = ("S0", "S1", "S2", "S3", "S4", "S5", "S6")
 
+# Profundidade da consulta de cada canal, igual para qualquer k: assim o top-10 de
+# referência do pool é prefixo do top-20 de S0/S1 (com k variável, o corte mudava).
+PROFUNDIDADE = N_RESULTS_FINAL * CANDIDATOS_POR_CANAL
+
 
 def top_bm25(hybrid, estrutura: EstruturaArgumentativa, k: int) -> list[str]:
     """Top-k documentos distintos só do canal BM25."""
     texto_bm25 = query_builder.build_bm25_query(estrutura)
-    hits = hybrid.bm25.search(texto_bm25, n=k * CANDIDATOS_POR_CANAL)
+    hits = hybrid.bm25.search(texto_bm25, n=PROFUNDIDADE)
     return _dedup_ordenado([_doc_id_do_chunk(cid) for cid, _ in hits])[:k]
 
 
@@ -31,7 +35,7 @@ def top_denso(hybrid, estrutura: EstruturaArgumentativa, k: int) -> list[str]:
     frase_tese = query_builder.build_frase_tese(estrutura)
     # Mesma fusão do HybridSearch.search, só que sem o canal BM25.
     vetor = hybrid.embedder.embed_text(frase_tese)
-    n = k * CANDIDATOS_POR_CANAL
+    n = PROFUNDIDADE
     rankings = [
         _dedup_ordenado(
             [h["documento_id"] for h in hybrid.store.query(vetor, n_results=n, collection=colecao)]
