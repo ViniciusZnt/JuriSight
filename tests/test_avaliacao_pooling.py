@@ -6,7 +6,6 @@ import pytest
 from avaliacao import pooling
 from avaliacao.pooling import montar_pool
 from query.enrichment.schema import EstruturaArgumentativa
-from query.search.hybrid_search import CANDIDATOS_POR_CANAL
 from scraper.schema import DocumentoJuridico
 
 
@@ -126,6 +125,8 @@ def test_pool_descarta_documento_sem_texto():
     retriever = _FakeRetriever(vazios={"d1"}, ausentes={"d5"})
     pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=retriever, k=5)
     assert set(pool) == {"d2", "d3"}
+    assert len(retriever.chamadas) == 2  # fetch do híbrido + um único fetch sobre a união
+    assert set(retriever.chamadas[1]) == {"d3", "d1", "d2"}
 
 
 def test_estrutura_vazia_propaga_value_error():

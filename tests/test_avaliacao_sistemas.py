@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from avaliacao import sistemas
-from avaliacao.sistemas import candidatos_hibrido, rodar_sistema
+from avaliacao.sistemas import candidatos_hibrido, rodar_sistema, top_denso
 from query.enrichment.schema import EstruturaArgumentativa
 from tests.test_pipeline import _doc
 
@@ -82,3 +82,18 @@ def test_sistema_desconhecido_falha():
 def test_candidatos_hibrido_so_os_que_o_retriever_acha():
     deps = _deps(["a0", "a1", "a2"], achados=["a0", "a2"])
     assert candidatos_hibrido(ESTRUTURA, hybrid=deps.hybrid, retriever=deps.retriever) == ["a0", "a2"]
+
+
+def test_top_denso_funde_colecoes_por_rrf():
+    from indexing.vector_store.qdrant_store import COLLECTION_COMPLETO, COLLECTION_EMENTA
+
+    por_colecao = {COLLECTION_COMPLETO: ["a", "x"], COLLECTION_EMENTA: ["b", "x"]}
+    store = SimpleNamespace(
+        query=lambda vetor, n_results=20, collection=None: [
+            {"documento_id": d} for d in por_colecao[collection]
+        ][:n_results]
+    )
+    hybrid = SimpleNamespace(embedder=SimpleNamespace(embed_text=lambda t: [0.1]), store=store)
+    estrutura = EstruturaArgumentativa(tese_central="EPI não elide a insalubridade.")
+    # x está nas duas coleções: o RRF o põe na frente de a e b.
+    assert top_denso(hybrid, estrutura, 1) == ["x"]
