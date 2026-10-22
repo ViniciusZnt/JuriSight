@@ -27,13 +27,22 @@ def _carregar(modelo: str):
 
 
 def _logits_torch(model, entrada, id_sim: int, id_nao: int) -> list[tuple[float, float]]:
-    """(logit_sim, logit_nao) por item do lote, no primeiro passo do decoder."""
+    """(logit_sim, logit_nao) por item do lote, no primeiro passo do decoder.
+    `entrada` traz listas de ids; a conversão para tensor fica aqui."""
     import torch
 
+    tensores = {k: torch.tensor(v, dtype=torch.long) for k, v in entrada.items()}
     with torch.inference_mode():
-        decoder = torch.full((entrada["input_ids"].shape[0], 1), model.config.decoder_start_token_id)
-        logits = model(**entrada, decoder_input_ids=decoder).logits[:, 0, :]
+        decoder = torch.full((tensores["input_ids"].shape[0], 1), model.config.decoder_start_token_id)
+        logits = model(**tensores, decoder_input_ids=decoder).logits[:, 0, :]
     return [(float(l[id_sim]), float(l[id_nao])) for l in logits]
+
+
+def _sigmoide(x: float) -> float:
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    e = math.exp(x)
+    return e / (1.0 + e)
 
 
 class MonoPTT5:
@@ -49,12 +58,35 @@ class MonoPTT5:
         self._calcular_logits = calcular_logits
         self._id_sim = tokenizer.convert_tokens_to_ids(TOKEN_SIM)
         self._id_nao = tokenizer.convert_tokens_to_ids(TOKEN_NAO)
+        for token, id_ in ((TOKEN_SIM, self._id_sim), (TOKEN_NAO, self._id_nao)):
+            if id_ is None or id_ == tokenizer.unk_token_id:
+                raise RuntimeError(f"Token {token!r} ausente do vocabulário do tokenizer")
+        if self._id_sim == self._id_nao:
+            raise RuntimeError("Tokens Sim/Não com o mesmo id")
+        self._eos = tokenizer.eos_token_id
+        self._cabeca = self._ids("Pergunta:")
+        self._meio = self._ids("Documento:")
+        self._sufixo = self._ids(" Relevante:")
+
+    def _ids(self, texto: str) -> list[int]:
+        return list(self._tokenizer(texto, add_special_tokens=False)["input_ids"])
+
+    def _montar(self, query: str, passagem: str) -> dict[str, list[list[int]]]:
+        """Prompt do card com o sufixo " Relevante:" e o eos sempre no fim: só
+        o documento (e, se preciso, a query) é truncado, nunca o sufixo."""
+        fixos = len(self._cabeca) + len(self._meio) + len(self._sufixo) + 1  # +eos
+        livre = max(self._max_tokens - fixos, 0)
+        ids_query = self._ids(query)
+        if len(ids_query) > livre:  # query sozinha estoura: fica com metade do espaço
+            ids_query = ids_query[: livre // 2]
+        ids_doc = self._ids(passagem[:_MAX_PASSAGE_CHARS])[: livre - len(ids_query)]
+        ids = self._cabeca + ids_query + self._meio + ids_doc + self._sufixo + [self._eos]
+        return {"input_ids": [ids], "attention_mask": [[1] * len(ids)]}
 
     def _pontuar(self, query: str, passagem: str) -> float:
-        prompt = PROMPT.format(query=query, text=passagem[:_MAX_PASSAGE_CHARS])
-        entrada = self._tokenizer(prompt, return_tensors="pt", truncation=True, max_length=self._max_tokens)
+        entrada = self._montar(query, passagem)
         sim, nao = self._calcular_logits(self._model, entrada, self._id_sim, self._id_nao)[0]
-        return 1.0 / (1.0 + math.exp(nao - sim))
+        return _sigmoide(sim - nao)
 
     def rerank_scores(self, query: str, passagens: list[str]) -> list[float]:
         """P(Sim) contra Não (softmax entre os dois logits, como no card), na
