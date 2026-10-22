@@ -38,7 +38,7 @@ def cenario():
     tese = Tese(uuid.uuid4(), {"pedido_principal": "adicional", "tese_central": "tese X",
                                "normas": ["CLT 192"], "_texto_original": "texto do advogado"},
                 "advogado", "insalubridade", "dev", "d0")
-    pares = [Par(uuid.uuid4(), tese.id, f"d{i}", ["hibrido", "bm25"]) for i in range(12)]
+    pares = [Par(uuid.uuid4(), tese.id, f"d{i}", ["hibrido", "bm25_top10"]) for i in range(12)]
     docs = {f"d{i}": _doc(i) for i in range(12)}
     docs["d3"] = _doc(3, ementa="")
     store = _FakeStore([tese], {tese.id: pares})
@@ -170,3 +170,49 @@ def test_nome_do_arquivo_e_cli_importar(cenario, tmp_path, capsys):
     assert pj.main(["importar", str(ok), str(ruim)], store=store) == 1
     out = capsys.readouterr()
     assert "1 gravada" in out.out
+
+
+def test_stance_ignorado_com_nota_baixa(cenario, tmp_path):
+    tese, pares, docs, store = cenario
+    caminho = tmp_path / "lote.xlsx"
+    pj.exportar_lote(tese, pares, docs, caminho, seed=1)
+    ids = _preencher(caminho, {0: 0, 1: 1}, stances={0: "inventado", 1: "fortalece"})
+    email, linhas = pj.ler_lote(caminho)
+    assert {(str(p), n, s) for p, n, s in linhas} == {(ids[0], 0, "neutro"), (ids[1], 1, "neutro")}
+
+
+def test_cegueira_so_uuids(cenario, tmp_path):
+    tese, pares, docs, _ = cenario
+    caminho = tmp_path / "lote.xlsx"
+    pj.exportar_lote(tese, pares, docs, caminho, seed=1)
+    wb = openpyxl.load_workbook(caminho)
+    assert str(uuid.UUID(wb.defined_names["tese_id"].attr_text.strip('"'))) == str(tese.id)
+    ws = wb["Avaliação"]
+    assert ws.column_dimensions["A"].hidden
+    for r in _linhas(ws):
+        uuid.UUID(r[0].value)
+
+
+def test_cli_exportar_filtra_corredores_e_pula_tese_vazia(cenario, tmp_path, monkeypatch, capsys):
+    tese, pares, docs, store = cenario
+    vazia = Tese(uuid.uuid4(), {"tese_central": "y"}, "sintetica", "outro", "dev")
+    antigo = Par(uuid.uuid4(), tese.id, "d99", ["bm25"])
+    store.teses.append(vazia)
+    store.pares[tese.id] = pares + [antigo]
+    store.pares[vazia.id] = [Par(uuid.uuid4(), vazia.id, "d1", ["bm25", "pipeline"])]
+    buscados = []
+
+    class _Ret:
+        def __init__(self, url): pass
+        def fetch(self, ids):
+            buscados.extend(ids)
+            return docs
+
+    monkeypatch.setenv("DATABASE_URL", "x")
+    monkeypatch.setattr("query.search.doc_retriever.DocRetriever", _Ret)
+    assert pj.main(["exportar", "--todas", "--pasta", str(tmp_path / "l")], store=store) == 0
+    assert "d99" not in buscados
+    arquivos = list((tmp_path / "l").glob("*.xlsx"))
+    assert len(arquivos) == 1
+    assert len(_linhas(_avaliacao(arquivos[0]))) == 12
+    assert "sem pares do pool" in capsys.readouterr().err

@@ -87,14 +87,14 @@ def test_pool_une_os_tres_corredores():
         [f"b{i}:0" for i in range(10)], [f"v{i}" for i in range(10)], [], hibrido=hibrido
     )
     pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever())
-    assert pooling.CORREDORES == ("hibrido", "bm25", "vetorial")
+    assert pooling.CORREDORES == ("hibrido", "bm25_top10", "vetorial_top10")
     por_corredor = {c: [] for c in pooling.CORREDORES}
     for doc, corredores in pool.items():
         for c in corredores:
             por_corredor[c].append(doc)
     assert len(por_corredor["hibrido"]) == 30
-    assert len(por_corredor["bm25"]) == 10
-    assert len(por_corredor["vetorial"]) == 10
+    assert len(por_corredor["bm25_top10"]) == 10
+    assert len(por_corredor["vetorial_top10"]) == 10
     assert hybrid.chamadas_search[0][1] == 30
 
 
@@ -102,10 +102,10 @@ def test_corredores_na_ordem_fixa_e_colapsa_chunks():
     hybrid = _hybrid(["d1:0", "d1:1", "d2:0"], ["d1", "d4"], ["d1"], hibrido=["d1", "d3"])
     pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), n_hibrido=5, k=5)
     assert pool == {
-        "d1": ["hibrido", "bm25", "vetorial"],
+        "d1": ["hibrido", "bm25_top10", "vetorial_top10"],
         "d3": ["hibrido"],
-        "d2": ["bm25"],
-        "d4": ["vetorial"],
+        "d2": ["bm25_top10"],
+        "d4": ["vetorial_top10"],
     }
     assert hybrid.embedder.textos[0] == "EPI não elide a insalubridade sem fiscalização."
 
@@ -114,8 +114,8 @@ def test_bm25_e_denso_limitados_a_k():
     chunks = [f"b0:{i}" for i in range(6)] + [f"b{i}:0" for i in range(1, 10)]
     hybrid = _hybrid(chunks, [f"v{i}" for i in range(10)], [f"e{i}" for i in range(10)])
     pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), k=3)
-    bm25 = [d for d, c in pool.items() if "bm25" in c]
-    vet = [d for d, c in pool.items() if "vetorial" in c]
+    bm25 = [d for d, c in pool.items() if "bm25_top10" in c]
+    vet = [d for d, c in pool.items() if "vetorial_top10" in c]
     assert bm25 == ["b0", "b1", "b2"]
     assert len(vet) == 3
 

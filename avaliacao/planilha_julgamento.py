@@ -22,6 +22,7 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
+from avaliacao.pooling import CORREDORES
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Protection
 from openpyxl.workbook.defined_name import DefinedName
@@ -30,7 +31,6 @@ from openpyxl.worksheet.datavalidation import DataValidation
 STANCES = ("fortalece", "enfraquece", "neutro")
 ATUACOES = ("Reclamante", "Reclamada", "Ambos", "Outra")
 NOME_TESE_ID = "tese_id"
-CORREDORES_DO_POOL = ("hibrido", "bm25", "vetorial")
 
 COL_PAR, COL_NUM, COL_PROCESSO, COL_LINK, COL_EMENTA, COL_FUND, COL_NOTA, COL_STANCE, COL_COMENT = range(1, 10)
 LINHA_CABECALHO = 8
@@ -251,11 +251,9 @@ def _ler(caminho):
             puladas.append((linha, "nota fora de 0 a 3"))
             continue
         stance = "" if _vazio(bruto_stance) else str(bruto_stance).strip().lower()
-        if stance and stance not in STANCES:
-            puladas.append((linha, "stance inválido"))
-            continue
-        if nota >= 2 and not stance:
-            puladas.append((linha, "stance vazio com nota 2 ou 3"))
+        if nota >= 2 and stance not in STANCES:
+            motivo = "stance vazio com nota 2 ou 3" if not stance else "stance inválido"
+            puladas.append((linha, motivo))
             continue
         if par_id in vistos:
             puladas.append((linha, "par repetido"))
@@ -318,8 +316,11 @@ def _exportar(args, store) -> int:
             return 1
     retriever = DocRetriever(os.environ["DATABASE_URL"])
     for tese in teses:
-        # pares antigos (pipeline, passo_zero) ficam fora do lote
-        pares = [p for p in store.pares_da_tese(tese.id) if set(p.corredores) & set(CORREDORES_DO_POOL)]
+        # pares do pool antigo (bm25, vetorial, pipeline, passo_zero) ficam fora do lote
+        pares = [p for p in store.pares_da_tese(tese.id) if set(p.corredores) & set(CORREDORES)]
+        if not pares:
+            print(f"tese {tese.id}: sem pares do pool; nenhum arquivo gerado", file=sys.stderr)
+            continue
         docs = retriever.fetch([p.documento_id for p in pares])
         destino = Path(args.pasta) / nome_arquivo(tese)
         n = exportar_lote(tese, pares, docs, destino, args.seed)

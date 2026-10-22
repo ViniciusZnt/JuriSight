@@ -8,7 +8,9 @@ from __future__ import annotations
 from avaliacao.sistemas import candidatos_hibrido, top_bm25, top_denso
 from query.enrichment.schema import EstruturaArgumentativa
 
-CORREDORES = ("hibrido", "bm25", "vetorial")
+# Os nomes com _top10 distinguem o pool novo do antigo, que marcava "bm25" e
+# "vetorial" para o top-20 sem guardar o rank.
+CORREDORES = ("hibrido", "bm25_top10", "vetorial_top10")
 
 
 def montar_pool(
@@ -25,14 +27,14 @@ def montar_pool(
             produção; n_hibrido — candidatos do híbrido (o que os rerankers veem);
             k — documentos distintos de cada canal isolado.
     Returns: {documento_id: corredores que o trouxeram}, corredores sempre na
-             ordem hibrido, bm25, vetorial. Documentos ausentes do retriever ou
+             ordem hibrido, bm25_top10, vetorial_top10. Documentos ausentes do retriever ou
              com ementa e fundamentação vazias são removidos.
     Raises: ValueError se a estrutura não tiver conteúdo (do query_builder).
     """
     ids_por_corredor = {
         "hibrido": candidatos_hibrido(estrutura, hybrid=hybrid, retriever=retriever, n=n_hibrido),
-        "bm25": top_bm25(hybrid, estrutura, k),
-        "vetorial": top_denso(hybrid, estrutura, k),
+        "bm25_top10": top_bm25(hybrid, estrutura, k),
+        "vetorial_top10": top_denso(hybrid, estrutura, k),
     }
 
     pool: dict[str, list[str]] = {}
