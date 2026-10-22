@@ -175,3 +175,53 @@ def test_ensure_schema_aceita_origem_advogado_duas_vezes():
     finally:
         with psycopg.connect(DATABASE_URL) as conn:
             conn.execute("DELETE FROM avaliacao.teses WHERE id = %s", (tese.id,))
+
+
+def test_ler_planilha_real_email_na_coluna_c(tmp_path):
+    """A planilha distribuída tem rótulos em A:B mesclado e respostas em C."""
+    import shutil
+    from pathlib import Path
+
+    origem = Path(ta.__file__).resolve().parent.parent / "docs" / "avaliacao" / "1-producao-de-teses.xlsx"
+    p = tmp_path / "real.xlsx"
+    shutil.copy(origem, p)
+    wb = openpyxl.load_workbook(p)
+    ws = wb["Teses"]
+    ws["C4"] = "Adv@X.com"
+    assert ws["A11"].value == 2
+    ws["E11"], ws["F11"] = "tese da linha 11", LADO_RECLAMADA
+    wb.save(p)
+    linhas = ta.ler_planilha_teses(p)
+    assert linhas == [{"n": 2, "tema": "insalubridade", "texto": "tese da linha 11",
+                       "lado": LADO_RECLAMADA, "email": "Adv@X.com"}]
+
+
+def test_importar_tema_vazio_nao_manda_chaves_sublinhado(tmp_path, acordaos, monkeypatch):
+    p = _planilha(tmp_path / "p.xlsx", [(1, None, "texto um", LADO_RECLAMANTE)])
+    recebido = []
+    monkeypatch.setattr(ta, "atribuir_tema", lambda estrutura, client=None: recebido.append(estrutura) or "outro")
+    ta.importar(_Store(), _Enricher(), p, "db", 42, acordaos_json=acordaos)
+    assert recebido and not any(k.startswith("_") for k in recebido[0])
+
+
+def test_importar_idempotente_com_email_em_caixa_diferente(tmp_path, acordaos):
+    store = _Store()
+    p1 = _planilha(tmp_path / "a.xlsx", [(1, "periculosidade", "texto um", LADO_RECLAMANTE)], email="Adv@X.com")
+    p2 = _planilha(tmp_path / "b.xlsx", [(1, "periculosidade", "texto um", LADO_RECLAMANTE)], email="adv@x.com")
+    assert ta.importar(store, _Enricher(), p1, "db", 42, acordaos_json=acordaos) == 1
+    assert ta.importar(store, _Enricher(), p2, "db", 42, acordaos_json=acordaos) == 0
+
+
+def test_dependencias_carregam_o_env(monkeypatch):
+    import avaliacao.contexto as ctx
+
+    chamadas = []
+    monkeypatch.setattr(ctx, "_database_url", lambda: chamadas.append(1) or "postgresql://x")
+    import avaliacao.db as db
+    import avaliacao.store as st
+    import query.enrichment.query_enrichment as qe
+    monkeypatch.setattr(db, "ensure_schema", lambda url: None)
+    monkeypatch.setattr(qe, "QueryEnricher", lambda: "enr")
+    monkeypatch.setattr(st, "AvaliacaoStore", lambda url: ("store", url))
+    assert ta._dependencias() == (("store", "postgresql://x"), "enr", "postgresql://x")
+    assert chamadas

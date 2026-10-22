@@ -35,7 +35,8 @@ def ler_planilha_teses(caminho) -> list[dict]:
     for linha in ws.iter_rows(min_col=1, max_col=7):
         rotulo = str(linha[0].value or "").strip()
         if rotulo.lower() in _ROTULOS_DADOS and cabecalho is None:
-            email = str(linha[1].value or "").strip() or None
+            # rótulo em A:B mesclado → resposta em C; rótulo só em A → resposta em B
+            email = next((str(c.value).strip() for c in linha[1:3] if str(c.value or "").strip()), None)
         elif rotulo == "Nº":
             cabecalho = linha[0].row
             break
@@ -85,7 +86,8 @@ def _importar(store, enricher, caminho, database_url, seed, acordaos_json=None) 
     uuids = uuids_origem(database_url, [SimpleNamespace(id_documento=i) for i in ids.values()])
 
     ja = {
-        (t.documento_origem_id, t.estrutura.get("_avaliador"), (t.estrutura.get("_texto_original") or "").strip())
+        (t.documento_origem_id, (t.estrutura.get("_avaliador") or "").lower(),
+         (t.estrutura.get("_texto_original") or "").strip())
         for t in store.listar_teses() if t.origem == "advogado"
     }
     splits = sortear_split(TEMAS, seed)
@@ -95,13 +97,13 @@ def _importar(store, enricher, caminho, database_url, seed, acordaos_json=None) 
         if uid is None:
             raise ValueError(f"{caminho}: acórdão {ids[l['n']]} (Nº {l['n']}) não existe em documentos")
         lado = _lado(l["lado"])
-        chave = (uid, l["email"], l["texto"])
+        chave = (uid, l["email"].lower(), l["texto"])
         if chave in ja:
             puladas += 1
             continue
         estrutura = enricher.extract_estrutura(l["texto"], intencao=l["lado"]).model_dump()
         estrutura.update(_texto_original=l["texto"], _avaliador=l["email"], _lado=lado)
-        tema = l["tema"] if l["tema"] in splits else atribuir_tema(estrutura)
+        tema = l["tema"] if l["tema"] in splits else atribuir_tema({k: v for k, v in estrutura.items() if not k.startswith("_")})
         store.criar_tese(estrutura, "advogado", tema, splits[tema], documento_origem_id=uid)
         ja.add(chave)
         importadas += 1
@@ -114,13 +116,12 @@ def importar(store, enricher, caminho, database_url, seed, acordaos_json=None) -
 
 
 def _dependencias():
-    import os
-
+    from avaliacao.contexto import _database_url  # carrega o .env
     from avaliacao.db import ensure_schema
     from avaliacao.store import AvaliacaoStore
     from query.enrichment.query_enrichment import QueryEnricher
 
-    url = os.getenv("DATABASE_URL")
+    url = _database_url()
     ensure_schema(url)
     return AvaliacaoStore(url), QueryEnricher(), url
 
@@ -135,8 +136,8 @@ def main(argv: list[str] | None = None) -> int:
 
     import os
 
+    store, enricher, url = _dependencias()  # antes do seed: carrega o .env
     seed = int(os.getenv("AVALIACAO_SEED", "42"))
-    store, enricher, url = _dependencias()
     falhas = 0
     for arquivo in args.arquivos:
         try:
