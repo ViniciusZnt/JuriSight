@@ -227,6 +227,37 @@ class QdrantStore:
             )
         return resultados
 
+    def garantir_indices_payload(self) -> None:
+        """Cria índice keyword em 'provimento' e 'documento_id' nas duas coleções.
+
+        Sem índice, o filtro por payload varre o corpus inteiro (400k pontos).
+        Idempotente: create_payload_index num campo já indexado é no-op no servidor.
+        """
+        for nome in (COLLECTION_COMPLETO, COLLECTION_EMENTA):
+            for campo in ("provimento", "documento_id"):
+                self._client.create_payload_index(
+                    collection_name=nome,
+                    field_name=campo,
+                    field_schema=models.PayloadSchemaType.KEYWORD,
+                    wait=True,
+                )
+
+    def atualizar_provimento(self, provimento: str, documento_ids: list[str], lote: int = 1000) -> int:
+        """Grava 'provimento' no payload de todos os pontos dos documentos, sem tocar nos vetores.
+
+        Input:  provimento — valor do enum como str; documento_ids; lote — ids por chamada.
+        Returns: quantos documento_ids foram enviados. wait=True: ao retornar, a escrita terminou.
+        """
+        for i in range(0, len(documento_ids), lote):
+            filtro = models.Filter(must=[models.FieldCondition(
+                key="documento_id", match=models.MatchAny(any=documento_ids[i:i + lote]),
+            )])
+            for nome in (COLLECTION_COMPLETO, COLLECTION_EMENTA):
+                self._client.set_payload(
+                    collection_name=nome, payload={"provimento": provimento}, points=filtro, wait=True,
+                )
+        return len(documento_ids)
+
     def documento_ids_indexados(self) -> set[str]:
         """Retorna os documento_id já presentes na coleção da ementa.
         Usado pela indexação delta para pular o embedding de quem já foi indexado.
