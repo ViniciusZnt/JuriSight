@@ -185,20 +185,6 @@ class ProvimentoJevStore:
             ).fetchall()
         return [LinhaClassificada(str(r[0]), r[1], r[2], r[3], r[4], r[5], r[6]) for r in rows]
 
-    def trechos(
-        self, documento_ids: list[str], tamanho: int = 1500
-    ) -> dict[str, tuple[str | None, str]]:
-        """`link_original` e os últimos `tamanho` caracteres do acórdão."""
-        if not documento_ids:
-            return {}
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT id, link_original, right(coalesce(acordao, ''), %s) "
-                "FROM documentos WHERE id = ANY(%s::uuid[])",
-                (tamanho, list(documento_ids)),
-            ).fetchall()
-        return {str(r[0]): (r[1], r[2]) for r in rows}
-
     def aplicar(self, mudancas: list[tuple[str, str]]) -> int:
         """UPDATE documentos.provimento por (documento_id, novo), numa
         transação. Devolve quantas linhas realmente mudaram."""

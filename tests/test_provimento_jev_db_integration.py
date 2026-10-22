@@ -170,14 +170,6 @@ def test_acordao_so_com_quebras_de_linha_nao_e_pendente(store, criar_doc):
     assert store.contar_sem_texto() >= 1
 
 
-def test_trechos(store, criar_doc):
-    doc = criar_doc(acordao="a" * 3000 + "FIM")
-    t = store.trechos([doc], tamanho=100)
-    assert set(t) == {doc}
-    link, trecho = t[doc]
-    assert link is None and len(trecho) == 100 and trecho.endswith("FIM")
-
-
 def test_aplicar_muda_provimento(store, criar_doc):
     doc = criar_doc()
     assert store.aplicar([(doc, "PARCIAL")]) == 1

@@ -10,7 +10,6 @@ from scraper.provimento_jev import (
     RESULTADOS,
     ClassificacaoProvimento,
     ClassificadorJev,
-    favorece_por_regra,
     montar_estado,
     para_provimento,
 )
@@ -86,26 +85,6 @@ def test_acordao_vazio_nao_chama_jev(texto):
 )
 def test_para_provimento(resultado, esperado):
     assert para_provimento(resultado) == esperado
-
-
-@pytest.mark.parametrize(
-    "resultado,recorrente,esperado",
-    [
-        ("provido", "reclamante", "reclamante"),
-        ("parcialmente_provido", "reclamante", "ambos_em_parte"),
-        ("nao_provido", "reclamante", "reclamada"),
-        ("nao_conhecido", "reclamante", "reclamada"),
-        ("provido", "reclamada", "reclamada"),
-        ("parcialmente_provido", "reclamada", "ambos_em_parte"),
-        ("nao_provido", "reclamada", "reclamante"),
-        ("nao_conhecido", "reclamada", "reclamante"),
-        ("provido", "ambos", None),
-        ("nao_provido", "indefinido", None),
-        ("sem_recurso", "reclamante", None),
-    ],
-)
-def test_favorece_por_regra(resultado, recorrente, esperado):
-    assert favorece_por_regra(resultado, recorrente) == esperado
 
 
 def test_perguntas_tem_os_rotulos():

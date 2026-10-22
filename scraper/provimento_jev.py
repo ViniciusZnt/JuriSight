@@ -165,14 +165,3 @@ _MAPA_PROVIMENTO = {
 def para_provimento(resultado: str) -> Provimento:
     return _MAPA_PROVIMENTO[resultado]
 
-
-def favorece_por_regra(resultado: str, recorrente: str) -> str | None:
-    """Deriva `favorece` de (resultado, recorrente) quando é inequívoco; senão None."""
-    if recorrente not in ("reclamante", "reclamada") or resultado not in RESULTADOS:
-        return None
-    if resultado == "sem_recurso":
-        return None
-    if resultado == "parcialmente_provido":
-        return "ambos_em_parte"
-    outro = "reclamada" if recorrente == "reclamante" else "reclamante"
-    return recorrente if resultado == "provido" else outro

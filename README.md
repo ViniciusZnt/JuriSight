@@ -328,7 +328,7 @@ uv run pytest
 | `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
 | `avaliacao` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`; o store contra Postgres real só roda com `DATABASE_URL` |
 | `avaliacao` (benchmark) | Sistemas S0–S6 com rerankers falsos, planilha de julgamento (exportar/importar), rótulo final e concordância, teses dos advogados, métricas e estatística do `benchmark`; o que usa o banco só roda com `DATABASE_URL` |
-| `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `comparar`/`conferir`/`aplicar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
+| `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `aplicar` e `sincronizar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
 
 > Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
 > clientes externos são substituídos por fakes injetados. Um smoke test manual de
@@ -484,15 +484,7 @@ precisa do Postgres no ar. Os comandos, na ordem de uso:
 # 1. Classifica os acórdãos pendentes (mostra a estimativa e pede confirmação)
 uv run python -m scraper.provimento_jev_cli classificar [--limite N] [--lote 500] [--max-workers 8] [--sim]
 
-# 2. Compara regex x Jev e escreve o CSV de divergências (data/eval/provimento_divergencias.csv)
-uv run python -m scraper.provimento_jev_cli comparar [--amostra 100] [--csv CAMINHO]
-
-# 3. Preencha a coluna quem_acertou do CSV: jev, regex, ambos ou nenhum
-
-# 4. Resume a conferência
-uv run python -m scraper.provimento_jev_cli conferir [--csv CAMINHO]
-
-# 5. Mostra o que mudaria; só escreve em documentos.provimento com --confirmar
+# 2. Mostra o que mudaria; só escreve em documentos.provimento com --confirmar
 uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--confirmar]
 ```
 
@@ -507,10 +499,9 @@ uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--con
 - **Voltar à regex:** `uv run python utils/reclassify.py` recalcula a coluna a partir do texto.
 - **Ainda não usados:** `favorece` e `recorrente` ficam guardados, mas a busca ainda
   não os usa; só o resultado entra em `documentos.provimento`.
-- **Excel em português:** o `conferir` aceita o CSV com `,` ou `;` como separador. Se o
-  arquivo não tiver a coluna `quem_acertou`, o `conferir` avisa e sai com código 2.
-- **Conferência protegida:** o `comparar` recusa sobrescrever um CSV que já tenha
-  `quem_acertou` preenchido (ou que não tenha a coluna), para não apagar a conferência manual.
+- **Validação:** foi feita por duas conferências cegas, documentadas em
+  `docs/superpowers/specs/2026-10-20-provimento-jev-conferencia.md` e
+  `docs/superpowers/specs/2026-10-22-provimento-jev-conferencia-2.md`.
 - **Modelo fixo:** `TYPESAFE_MODEL` terminado em `-latest` é recusado; use uma versão
   fixa (ex.: `jev-1.13.0`).
 

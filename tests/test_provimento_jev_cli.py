@@ -180,32 +180,6 @@ def test_modelo_latest_e_recusado_no_cli(monkeypatch, capsys):
     assert cli.main(["classificar", "--sim"], store=_FakeStore([_item(1)])) == 2
     assert "latest" in capsys.readouterr().err
     assert cli.main(["aplicar"], store=_StoreAplicar([])) == 2
-    assert cli.main(["comparar"], store=_StoreComparar([])) == 2
-
-
-def _csv_ponto_e_virgula(caminho, valor="jev"):
-    caminho.write_text(
-        "documento_id;quem_acertou\ndoc-1;" + valor + "\n", encoding="utf-8-sig"
-    )
-
-
-def test_csv_ponto_e_virgula_e_conferido_e_nao_sobrescrito(tmp_path):
-    caminho = tmp_path / "d.csv"
-    _csv_ponto_e_virgula(caminho)
-    antes = caminho.read_bytes()
-    assert cli.csv_conferido(caminho)
-    store = _StoreComparar([_lc(1, "provido", regex="NEGADO")])
-    assert cli.main(["comparar", "--csv", str(caminho)], store=store) == 1
-    assert caminho.read_bytes() == antes
-    assert cli.resumo_conferencia(caminho)["jev"] == 1
-
-
-def test_csv_sem_coluna_quem_acertou(tmp_path, capsys):
-    caminho = tmp_path / "d.csv"
-    caminho.write_text("documento_id,outra\ndoc-1,x\n", encoding="utf-8")
-    assert cli.csv_conferido(caminho)
-    assert cli.main(["conferir", "--csv", str(caminho)], store=None) == 2
-    assert "quem_acertou" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("flag", ["--lote", "--limite"])
@@ -226,96 +200,7 @@ def test_estimativa_usa_min_com_limite(capsys):
     assert "3 tentados (ok=3, falhas=0)" in saida
 
 
-# --- comparar / conferir ---------------------------------------------------
-
-import csv
-
 from scraper.provimento_jev_db import LinhaClassificada
-
-
-def _lc(i, resultado, recorrente="reclamante", favorece="reclamante", regex="", conf=0.9):
-    return LinhaClassificada(f"doc-{i}", resultado, recorrente, favorece, conf, regex, "")
-
-
-def test_resumo_matriz_e_concordancia():
-    linhas = [
-        _lc(1, "provido", regex="APROVADO"),
-        _lc(2, "nao_provido", regex="APROVADO"),
-        _lc(3, "parcialmente_provido", regex="PARCIAL"),
-    ]
-    r = cli.resumo(linhas)
-    assert r["n"] == 3
-    assert r["matriz"] == {"APROVADO": {"APROVADO": 1, "NEGADO": 1}, "PARCIAL": {"PARCIAL": 1}}
-    assert r["concordancia"] == pytest.approx(2 / 3)
-    assert r["distribuicao"]["resultado"] == {"provido": 1, "nao_provido": 1, "parcialmente_provido": 1}
-
-
-def test_coerencia_favorece():
-    linhas = [
-        _lc(1, "provido", "reclamante", "reclamante"),  # coerente
-        _lc(2, "provido", "reclamante", "reclamada"),  # incoerente
-        _lc(3, "provido", "outro", "reclamante"),  # regra não opina
-    ]
-    assert cli.resumo(linhas)["coerencia_favorece"] == {"n": 2, "concordam": 0.5}
-
-
-def test_divergencias_deterministicas():
-    linhas = [_lc(i, "provido", regex="APROVADO" if i % 2 else "NEGADO") for i in range(40)]
-    a = cli.divergencias(linhas, 5, seed=42)
-    b = cli.divergencias(list(reversed(linhas)), 5, seed=42)
-    assert [l.documento_id for l in a] == [l.documento_id for l in b]
-    assert len(a) == 5
-    assert all(l.provimento_regex == "NEGADO" for l in a)
-
-
-class _StoreComparar:
-    def __init__(self, linhas):
-        self._linhas = linhas
-
-    def linhas(self, modelo, perguntas_sha):
-        return self._linhas
-
-    def trechos(self, ids, tamanho=1500):
-        return {i: ("http://x", f"trecho {i}") for i in ids}
-
-
-def test_csv_conferido_nao_e_sobrescrito(tmp_path):
-    caminho = tmp_path / "d.csv"
-    store = _StoreComparar([_lc(1, "provido", regex="NEGADO")])
-    assert cli.main(["comparar", "--csv", str(caminho)], store=store) == 0
-    with open(caminho, encoding="utf-8-sig", newline="") as f:
-        linhas = list(csv.DictReader(f))
-    assert linhas[0]["trecho_dispositivo"] == "trecho doc-1"
-    assert linhas[0]["quem_acertou"] == ""
-    linhas[0]["quem_acertou"] = "jev"
-    with open(caminho, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(linhas[0]))
-        w.writeheader()
-        w.writerows(linhas)
-    antes = caminho.read_bytes()
-    assert cli.csv_conferido(caminho)
-    assert cli.main(["comparar", "--csv", str(caminho)], store=store) == 1
-    assert caminho.read_bytes() == antes
-
-
-def test_comparar_sem_linhas_avisa(tmp_path, capsys):
-    assert cli.main(["comparar", "--csv", str(tmp_path / "d.csv")], store=_StoreComparar([])) == 1
-    assert "classificar" in capsys.readouterr().out
-
-
-def test_resumo_conferencia(tmp_path, capsys):
-    caminho = tmp_path / "c.csv"
-    with open(caminho, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["documento_id", "quem_acertou"])
-        w.writeheader()
-        for i, v in enumerate(["jev", "jev", "regex", "ambos", "nenhum", "", "talvez"]):
-            w.writerow({"documento_id": i, "quem_acertou": v})
-    assert cli.resumo_conferencia(caminho) == {"jev": 2, "regex": 1, "ambos": 1, "nenhum": 1}
-    assert "talvez" in capsys.readouterr().err
-
-
-def test_conferir_csv_inexistente(tmp_path, capsys):
-    assert cli.main(["conferir", "--csv", str(tmp_path / "nada.csv")], store=None) == 2
 
 
 # --- aplicar ---

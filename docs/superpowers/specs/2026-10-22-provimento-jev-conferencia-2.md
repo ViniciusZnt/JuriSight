@@ -48,4 +48,4 @@ petição com papéis trocados e um embargo do devedor com gabarito de certeza b
 
 Critério do design de 21/10 atendido (provimento ≥ 90% e nenhum erro nos dois casos).
 Segue para o lote cronometrado e o `classificar` no acervo inteiro. `aplicar --confirmar`
-continua sendo decisão do Vinicius, depois de `comparar` e `conferir`.
+continua sendo decisão do Vinicius. A validação do provimento foi feita por esta e pela primeira conferência cega.

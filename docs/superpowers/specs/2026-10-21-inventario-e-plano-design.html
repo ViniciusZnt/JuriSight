@@ -218,8 +218,8 @@ dispositivo</td>
 <td>Resultado do recurso, quem recorreu e a quem favorece, com
 probabilidades</td>
 <td>3 perguntas Choice ao Jev; tabela <code>provimento_jev</code>; CLI
-<code>classificar</code>, <code>comparar</code>, <code>conferir</code>,
-<code>aplicar</code>; não depende de <code>avaliacao/</code></td>
+<code>classificar</code>, <code>aplicar</code>,
+<code>sincronizar</code>; não depende de <code>avaliacao/</code></td>
 <td>Pipeline de ingestão (lote)</td>
 <td><code>scraper/provimento_jev*.py</code></td>
 </tr>
@@ -951,9 +951,9 @@ pendentes.</li>
 provimento e nenhum erro nos dois casos.</li>
 <li>Lote cronometrado de 500 e depois <code>classificar</code> no acervo
 (69.349 acórdãos, ~110 M tokens).</li>
-<li><code>comparar</code>, <code>conferir</code> e
-<code>aplicar --confianca-min 0.8 --confirmar</code>. Abaixo de 0,8,
-fica o valor da regex.</li>
+<li><code>aplicar --confianca-min 0.8 --confirmar</code>. Abaixo de 0,8,
+fica o valor da regex. A validação foi feita pelas conferências
+cegas.</li>
 </ol>
 <p><strong>Parte B — filtrar antes da busca</strong> (código):</p>
 <ol type="1">
@@ -1002,8 +1002,7 @@ a 10 teses escritas por advogados.</label></li>
 </ul>
 <h3 id="fds1-242510">FDS1 (24–25/10)</h3>
 <ul class="task-list">
-<li><label><input type="checkbox" />Provimento: <code>comparar</code>,
-<code>conferir</code> e
+<li><label><input type="checkbox" />Provimento:
 <code>aplicar --confianca-min 0.8 --confirmar</code>.</label></li>
 <li><label><input type="checkbox" />Ajustar o pooling para os 30
 candidatos do híbrido + top-10 do BM25 + top-10 do denso (hoje é o

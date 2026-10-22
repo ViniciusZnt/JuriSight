@@ -37,8 +37,8 @@ A classificação com o Jev já está quase toda construída e foi mesclada em
   "já classificado" estão definidos ali e continuam valendo;
 - código: `scraper/provimento_jev.py` (perguntas e mapeamento),
   `scraper/provimento_jev_db.py` (tabela `public.provimento_jev`),
-  `scraper/provimento_jev_cli.py` (subcomandos `classificar`, `comparar`, `conferir`,
-  `aplicar`), com testes;
+  `scraper/provimento_jev_cli.py` (subcomandos `classificar`,
+  `aplicar` e `sincronizar`), com testes;
 - conferência de 2026-10-20: 96% no provimento, 74% nas três perguntas juntas. Ela apontou
   dois buracos no texto das perguntas (abaixo).
 
@@ -67,7 +67,7 @@ O que falta é fechar a parte A e construir a parte B.
 4. **`classificar` no acervo inteiro** (69.349 acórdãos, ~110 M tokens). Antes, um lote
    cronometrado (`--limite 500`) para confirmar o tempo; o CLI já mostra a estimativa e
    pede confirmação.
-5. **`comparar`** e **`conferir`**: o Vinicius preenche o CSV de divergências.
+5. Validação do provimento: feita pelas conferências cegas (`2026-10-20-provimento-jev-conferencia.md` e `2026-10-22-provimento-jev-conferencia-2.md`); os subcomandos `comparar` e `conferir` foram removidos.
 6. **`aplicar --confianca-min 0.8 --confirmar`**. Abaixo de 0,8 o documento fica com o
    valor da regex. Só o Vinicius decide rodar com `--confirmar`.
 

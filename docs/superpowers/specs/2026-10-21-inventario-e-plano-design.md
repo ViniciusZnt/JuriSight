@@ -102,7 +102,7 @@ O JuriSight é, tecnicamente, um sistema de **recuperação** com entendimento d
 | --- | --- | --- | --- | --- |
 | Scraper | Coleta acórdãos, súmulas, OJs e precedentes do portal do TST | `requests` com delay adaptativo (mín. 2 s), estado retomável em `scraper_state`, parser HTML por seção | Pipeline de ingestão | `scraper/` |
 | Classificador de provimento (regex) | Marca APROVADO, PARCIAL, NEGADO ou NAO_APLICAVEL pelo dispositivo | Regex sobre marcadores do dispositivo | Pipeline de ingestão | `scraper/provimento.py` |
-| Classificador de provimento (Jev) | Resultado do recurso, quem recorreu e a quem favorece, com probabilidades | 3 perguntas Choice ao Jev; tabela `provimento_jev`; CLI `classificar`, `comparar`, `conferir`, `aplicar`; não depende de `avaliacao/` | Pipeline de ingestão (lote) | `scraper/provimento_jev*.py` |
+| Classificador de provimento (Jev) | Resultado do recurso, quem recorreu e a quem favorece, com probabilidades | 3 perguntas Choice ao Jev; tabela `provimento_jev`; CLI `classificar`, `aplicar`, `sincronizar`; não depende de `avaliacao/` | Pipeline de ingestão (lote) | `scraper/provimento_jev*.py` |
 | Chunker SAC | Divide o texto e prefixa a ementa | Janela por palavras | Pipeline de ingestão | `processing/chunking/sac_chunker.py` |
 | Embedder poly-vector | Gera os 2 vetores por chunk | OpenAI `text-embedding-3-small`, 1536 dimensões, cerca de US$ 8 para o acervo | Pipeline de ingestão | `processing/embeddings/poly_vector.py` |
 | Vector store | Guarda e busca vetores | Qdrant 1.19, vetores em disco, HNSW em RAM, quantização int8 | Banco vetorial | `indexing/vector_store/qdrant_store.py` |
@@ -306,7 +306,7 @@ O provimento que o advogado escolhe passa a valer dentro da busca, e não depois
 1. Ajustar as perguntas nos dois casos da conferência. Isso muda o `perguntas_sha`, e os 90 já classificados voltam a ficar pendentes.
 2. Nova conferência em 50 acórdãos. Seguir só com ≥ 90% de acerto no provimento e nenhum erro nos dois casos.
 3. Lote cronometrado de 500 e depois `classificar` no acervo (69.349 acórdãos, ~110 M tokens).
-4. `comparar`, `conferir` e `aplicar --confianca-min 0.8 --confirmar`. Abaixo de 0,8, fica o valor da regex.
+4. `aplicar --confianca-min 0.8 --confirmar` (a validação foi feita pelas conferências cegas). Abaixo de 0,8, fica o valor da regex.
 
 **Parte B — filtrar antes da busca** (código):
 
@@ -352,7 +352,7 @@ gantt
 
 ### FDS1 (24–25/10)
 
-- [ ] Provimento: `comparar`, `conferir` e `aplicar --confianca-min 0.8 --confirmar`.
+- [ ] Provimento: `aplicar --confianca-min 0.8 --confirmar` (a validação foi feita pelas conferências cegas).
 - [ ] Ajustar o pooling para os 30 candidatos do híbrido + top-10 do BM25 + top-10 do denso (hoje é o top-20 de três corredores).
 - [ ] Congelar índice e candidatos; gerar as runs de S0 a S3; montar o pool de cada tese.
 - [ ] `planilha.py exportar` (um lote por tese, para duas pessoas) e `importar`; enviar os 3 ou 4 lotes do piloto.
