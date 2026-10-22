@@ -18,6 +18,7 @@ qdrant-client>=1.19.0
 bm25s>=0.3.11
 stop-words>=2025.11.4
 flashrank>=0.2.10
+scipy>=1.14
 
 # Enriquecimento da query (LLM local) e PDF do usuário
 ollama>=0.6.2

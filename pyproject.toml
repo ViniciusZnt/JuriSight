@@ -22,6 +22,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "qdrant-client>=1.19.0",
     "requests>=2.32",
+    "scipy>=1.14",
     "stop-words>=2025.11.4",
     "typesafe-sdk>=0.7.5",
     "uvicorn[standard]>=0.32",
