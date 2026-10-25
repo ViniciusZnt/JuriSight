@@ -11,6 +11,12 @@ Ordena os documentos recuperados para exibição. Regras (RN02):
 Peça que você já pode usar:
   - HIERARQUIA_CATEGORIA (scraper/schema.py) — mapa TipoDocumento -> prioridade;
     o próprio DocumentoJuridico já carrega o campo `hierarquia_categoria`.
+
+Nota sobre a assinatura de ordenar(): recebe e devolve triplos
+(documento_id, DocumentoJuridico, score_rrf), não só (doc, score). O
+DocumentoJuridico não carrega o UUID de propósito (é devolvido à parte pelo
+DocRetriever) — sem carregar o id através da ordenação, o Result Formatter não
+teria como montar o link para GET /document/{id}.
 """
 from __future__ import annotations
 
@@ -21,34 +27,37 @@ from scraper.schema import DocumentoJuridico
 Ordenacao = str  # "relevancia" | "data"
 
 
-def ordenar(
-    resultados: list[tuple[DocumentoJuridico, float]],
-    por: Ordenacao = "relevancia",
-) -> list[DocumentoJuridico]:
-    """Ordena (doc, score_rrf) por hierarquia e depois por relevância ou data.
-
-    Input:  resultados — lista de (DocumentoJuridico, score_rrf) vinda da busca;
-            por — "relevancia" (default) ou "data".
-    Returns: lista de DocumentoJuridico ordenada para exibição.
-
-    TODO:
-      - montar a chave de ordenação composta:
-          primário  = doc.hierarquia_categoria           (asc: súmula antes de acórdão)
-          secundário= -score_rrf            se por == "relevancia"
-                      data_julgamento desc   se por == "data"  (cuidar de None)
-      - usar sorted(resultados, key=...) e devolver só os DocumentoJuridico.
-      - dica p/ data desc com None por último: usar uma chave que trate None como
-        a data mínima (date.min) e inverter (reverse ou negação via ordinal).
-    """
-    raise NotImplementedError
-
-
 def _chave_data(doc: DocumentoJuridico) -> date:
     """Chave de data para ordenação (trata data_julgamento None).
 
     Input:  doc.
     Returns: doc.data_julgamento, ou date.min quando ausente (vai para o fim no desc).
-
-    TODO: return doc.data_julgamento or date.min
     """
-    raise NotImplementedError
+    return doc.data_julgamento or date.min
+
+
+def _chave_ordenacao(item: tuple[str, DocumentoJuridico, float], por: Ordenacao) -> tuple[int, float]:
+    """Chave de ordenação composta: hierarquia_categoria (primário) + relevância/data (secundário).
+
+    Input:  item — (documento_id, doc, score_rrf); por — "relevancia" ou "data".
+    Returns: tupla (hierarquia_categoria, chave_secundaria) para sorted() em ordem asc.
+    """
+    _, doc, score = item
+    if por == "data":
+        secundaria = -_chave_data(doc).toordinal()  # date.min -> maior ordinal negado -> vai ao fim
+    else:
+        secundaria = -score
+    return (doc.hierarquia_categoria, secundaria)
+
+
+def ordenar(
+    resultados: list[tuple[str, DocumentoJuridico, float]],
+    por: Ordenacao = "relevancia",
+) -> list[tuple[str, DocumentoJuridico, float]]:
+    """Ordena (documento_id, doc, score_rrf) por hierarquia e depois por relevância ou data.
+
+    Input:  resultados — lista de (documento_id, DocumentoJuridico, score_rrf)
+            vinda da busca; por — "relevancia" (default) ou "data".
+    Returns: mesma lista de triplos, ordenada para exibição.
+    """
+    return sorted(resultados, key=lambda item: _chave_ordenacao(item, por))

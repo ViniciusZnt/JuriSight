@@ -1,0 +1,82 @@
+# ============================================================================
+# Dataset golden — avaliação dos KPIs de recuperação (RFC §1.6, Tabela 3)
+# ============================================================================
+#
+# COMO PREENCHER (idealmente com a especialista, ex.: Alexia):
+#
+#   1. Rode a busca de cada query (o run_eval.py imprime os top-10 de cada uma).
+#   2. Olhe os documentos retornados e marque em `relevantes` os documento_id
+#      (o UUID do Postgres) que DE FATO ajudam a tese da query.
+#   3. Vale incluir documento_id que você SABE que existem e deveriam aparecer,
+#      mesmo que a busca não os tenha trazido — é assim que P@K mede recall real.
+#
+# Enquanto `relevantes` estiver vazio, a query NÃO entra no Precision@K
+# (o runner avisa quais faltam). As demais métricas (latência, provimento,
+# citação, cobertura) rodam mesmo sem rótulos.
+#
+# `filtro` é opcional: aplica um where de metadados na busca. Use
+# `filtro = { provimento = "APROVADO" }` nas queries que testam o KPI de
+# "filtro por provimento" (o advogado pedindo só decisões favoráveis).
+# ============================================================================
+
+[[query]]
+id = "q01"
+query = "Adicional de insalubridade em grau máximo por exposição habitual a benzeno com EPI ineficaz"
+filtro = { provimento = "APROVADO" }
+relevantes = []
+
+[[query]]
+id = "q02"
+query = "Insalubridade por exposição a hidrocarbonetos aromáticos sem monitoramento de saúde ocupacional"
+relevantes = []
+
+[[query]]
+id = "q03"
+query = "EPI fornecido de forma eficaz afasta o direito ao adicional de insalubridade"
+relevantes = []
+
+[[query]]
+id = "q04"
+query = "Adicional de periculosidade por trabalho com inflamáveis e exposição a risco acentuado"
+filtro = { provimento = "APROVADO" }
+relevantes = []
+
+[[query]]
+id = "q05"
+query = "Necessidade de laudo pericial técnico contemporâneo aos fatos para deferir insalubridade"
+relevantes = []
+
+[[query]]
+id = "q06"
+query = "Horas extras de bancário e a jornada de seis horas do artigo 224 da CLT"
+relevantes = []
+
+[[query]]
+id = "q07"
+query = "Supressão do intervalo intrajornada e natureza da parcela devida"
+relevantes = []
+
+[[query]]
+id = "q08"
+query = "Adicional noturno em jornada mista e sua hora reduzida"
+relevantes = []
+
+[[query]]
+id = "q09"
+query = "Equiparação salarial e requisitos do artigo 461 da CLT"
+relevantes = []
+
+[[query]]
+id = "q10"
+query = "Assédio moral no ambiente de trabalho e dano existencial"
+relevantes = []
+
+[[query]]
+id = "q11"
+query = "Rescisão indireta por mora salarial reiterada do empregador"
+relevantes = []
+
+[[query]]
+id = "q12"
+query = "Responsabilidade subsidiária do tomador de serviços na terceirização"
+relevantes = []
