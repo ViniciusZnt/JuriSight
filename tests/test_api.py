@@ -379,3 +379,59 @@ def test_get_document_nao_encontrado_404(client):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# --------------------------------------------------------------------------- #
+# Classificação do Jev anexada aos cards                                       #
+# --------------------------------------------------------------------------- #
+
+import psycopg  # noqa: E402
+
+from query.api.provimento_routes import get_provimento_store  # noqa: E402
+
+_DETALHE = {
+    "resultado": "nao_provido", "recorrente": "reclamada", "favorece": "reclamante",
+    "probabilidades": {"resultado": {"nao_provido": 0.9, "provido": 0.1}},
+    "confianca_resultado": 0.9, "confianca_recorrente": 0.8, "confianca_favorece": 0.7,
+    "modelo": "jev-1.13.0",
+}
+
+
+class _FakeProvimentoStore:
+    def __init__(self, falha: bool = False):
+        self.falha = falha
+
+    def detalhes(self, ids):
+        if self.falha:
+            raise psycopg.OperationalError("banco fora")
+        return {i: _DETALHE for i in ids if i == "a-id"}
+
+
+def _instalar_busca():
+    docs = {"a-id": _doc(), "b-id": _doc()}
+    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
+    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
+
+
+def test_query_anexa_classificacao(client):
+    _instalar_busca()
+    app.dependency_overrides[get_provimento_store] = lambda: _FakeProvimentoStore()
+    body = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}}).json()
+    por_id = {c["id"]: c for c in body}
+    assert por_id["a-id"]["classificacao_provimento"]["favorece"] == "reclamante"
+    assert por_id["b-id"]["classificacao_provimento"] is None
+
+
+def test_query_sem_classificacao_quando_store_falha(client):
+    _instalar_busca()
+    app.dependency_overrides[get_provimento_store] = lambda: _FakeProvimentoStore(falha=True)
+    resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
+    assert resp.status_code == 200
+    assert all(c["classificacao_provimento"] is None for c in resp.json())
+
+
+def test_document_anexa_classificacao(client):
+    _instalar_busca()
+    app.dependency_overrides[get_provimento_store] = lambda: _FakeProvimentoStore()
+    body = client.get("/document/a-id").json()
+    assert body["classificacao_provimento"]["recorrente"] == "reclamada"

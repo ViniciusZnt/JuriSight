@@ -24,9 +24,12 @@ persistido — só leitura via DocRetriever sobre os documentos já coletados do
 """
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import date
+
+import psycopg
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,8 +60,13 @@ from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados
     normalizar_scores as _normalizar_scores,
 )
 from query.search.reranker import Reranker
-from query.search.result_formatter import DocumentoDetalhe, ResultCard
+from query.api.provimento_routes import get_provimento_store
+from query.api.provimento_routes import router as provimento_router
+from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
+from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema_correcoes
 from scraper.schema import Provimento
+
+logger = logging.getLogger(__name__)
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -79,6 +87,8 @@ async def lifespan(app: FastAPI):
     app.state.usuario_store = UsuarioStore(DATABASE_URL)
     ensure_conversas_schema(DATABASE_URL)  # depende de auth.usuarios (FK) — roda depois
     app.state.conversa_store = ConversaStore(DATABASE_URL)
+    ensure_schema_correcoes(DATABASE_URL)  # depende de auth.usuarios (FK)
+    app.state.provimento_store = ProvimentoJevStore(DATABASE_URL)
     yield
 
 
@@ -108,6 +118,23 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(conversa_router)
+app.include_router(provimento_router)
+
+
+def com_classificacao(cards: list, store: ProvimentoJevStore | None) -> list:
+    """Anexa a classificação do Jev aos cards. Falha no banco não derruba a busca."""
+    if store is None or not cards:
+        return cards
+    try:
+        detalhes = store.detalhes([c.id for c in cards])
+    except psycopg.Error as exc:
+        logger.warning("Sem classificação do provimento nos resultados: %s", exc)
+        return cards
+    return [
+        c.model_copy(update={"classificacao_provimento": ClassificacaoProvimentoView(**detalhes[c.id])})
+        if c.id in detalhes else c
+        for c in cards
+    ]
 
 
 def get_hybrid(request: Request) -> HybridSearch:
@@ -202,9 +229,10 @@ async def query(
     hybrid: HybridSearch = Depends(get_hybrid),
     retriever: DocRetriever = Depends(get_doc_retriever),
     reranker: Reranker = Depends(get_reranker),
+    provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
 ) -> list[ResultCard]:
     try:
-        return await run_in_threadpool(
+        cards = await run_in_threadpool(
             buscar,
             body.estrutura,
             hybrid=hybrid,
@@ -216,6 +244,7 @@ async def query(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await run_in_threadpool(com_classificacao, cards, provimento_store)
 
 
 # --------------------------------------------------------------------------- #
@@ -226,9 +255,11 @@ async def query(
 async def get_document(
     documento_id: str,
     retriever: DocRetriever = Depends(get_doc_retriever),
+    provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
 ) -> DocumentoDetalhe:
     docs = await run_in_threadpool(retriever.fetch, [documento_id])
     doc = docs.get(documento_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Documento não encontrado.")
-    return DocumentoDetalhe(id=documento_id, **doc.model_dump())
+    detalhe = DocumentoDetalhe(id=documento_id, **doc.model_dump())
+    return (await run_in_threadpool(com_classificacao, [detalhe], provimento_store))[0]

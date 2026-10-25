@@ -14,6 +14,19 @@ from pydantic import BaseModel
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
 
+class ClassificacaoProvimentoView(BaseModel):
+    """Classificação do Jev (public.provimento_jev) mostrada no frontend."""
+
+    resultado: str
+    recorrente: str
+    favorece: str
+    probabilidades: dict[str, dict[str, float]]
+    confianca_resultado: float | None = None
+    confianca_recorrente: float | None = None
+    confianca_favorece: float | None = None
+    modelo: str
+
+
 class ResultCard(BaseModel):
     """Card de resultado devolvido por POST /query."""
 
@@ -29,6 +42,7 @@ class ResultCard(BaseModel):
     provimento: Provimento
     link_original: str | None
     score_rrf: float
+    classificacao_provimento: ClassificacaoProvimentoView | None = None
 
 
 class DocumentoDetalhe(DocumentoJuridico):
@@ -36,6 +50,7 @@ class DocumentoDetalhe(DocumentoJuridico):
     de propósito (é devolvido à parte pelo DocRetriever). Usado por GET /document/{id}."""
 
     id: str
+    classificacao_provimento: ClassificacaoProvimentoView | None = None
 
 
 def format_results(resultados: list[tuple[str, DocumentoJuridico, float]]) -> list[ResultCard]:
