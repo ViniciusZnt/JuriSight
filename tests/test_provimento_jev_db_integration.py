@@ -203,3 +203,58 @@ def test_provimentos_documentos(store, criar_doc):
     r = store.provimentos_documentos()
     assert r[a] == "APROVADO"
     assert r[b] == "NAO_APLICAVEL"
+
+
+# --- detalhes e correções (frontend) ----------------------------------------
+
+from scraper.provimento_jev_db import DocumentoNaoEncontrado, ensure_schema_correcoes  # noqa: E402
+
+
+@pytest.fixture
+def criar_usuario():
+    ensure_schema_correcoes(DATABASE_URL)
+    ids: list[str] = []
+
+    def _criar() -> str:
+        with psycopg.connect(DATABASE_URL) as conn:
+            row = conn.execute(
+                "INSERT INTO auth.usuarios (email, hashed_password) VALUES (%s, 'x') RETURNING id",
+                (f"teste-pj-{uuid.uuid4().hex}@example.com",),
+            ).fetchone()
+        ids.append(str(row[0]))
+        return str(row[0])
+
+    yield _criar
+    with psycopg.connect(DATABASE_URL) as conn:
+        conn.execute("DELETE FROM auth.usuarios WHERE id = ANY(%s::uuid[])", (ids,))
+
+
+def test_detalhes_devolve_probabilidades(store, criar_doc):
+    doc = criar_doc()
+    store.gravar(doc, _classif(), "NEGADO", MODELO, SHA)
+    d = store.detalhes([doc])[doc]
+    assert d["probabilidades"] == {"resultado": {"nao_provido": 0.9}}
+    assert d["favorece"] == "reclamante"
+    assert d["modelo"] == MODELO
+
+
+def test_detalhes_ignora_sem_classificacao(store, criar_doc):
+    doc = criar_doc()
+    assert store.detalhes([doc]) == {}
+    assert store.detalhes([]) == {}
+
+
+def test_salvar_correcao_faz_upsert(store, criar_doc, criar_usuario):
+    doc, usuario = criar_doc(), criar_usuario()
+    store.gravar(doc, _classif(), "NEGADO", MODELO, SHA)
+    store.salvar_correcao(doc, usuario, "provido", "reclamada", "reclamada", None)
+    store.salvar_correcao(doc, usuario, "parcialmente_provido", "reclamada", "ambos_em_parte", "x")
+    linhas = [c for c in store.correcoes() if c["documento_id"] == doc]
+    assert len(linhas) == 1
+    assert linhas[0]["resultado"] == "parcialmente_provido"
+    assert linhas[0]["jev_resultado"] == "nao_provido"
+
+
+def test_salvar_correcao_documento_inexistente(store, criar_usuario):
+    with pytest.raises(DocumentoNaoEncontrado):
+        store.salvar_correcao(str(uuid.uuid4()), criar_usuario(), "provido", "reclamante", "reclamante", None)

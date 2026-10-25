@@ -35,6 +35,42 @@ CREATE TABLE IF NOT EXISTS public.provimento_jev (
 """
 
 
+_DDL_CORRECAO = """
+CREATE TABLE IF NOT EXISTS public.provimento_correcao (
+    documento_id    UUID        NOT NULL REFERENCES documentos(id) ON DELETE CASCADE,
+    usuario_id      UUID        NOT NULL REFERENCES auth.usuarios(id) ON DELETE CASCADE,
+    resultado       TEXT        NOT NULL,
+    recorrente      TEXT        NOT NULL,
+    favorece        TEXT        NOT NULL,
+    comentario      TEXT,
+    jev_resultado   TEXT,
+    jev_recorrente  TEXT,
+    jev_favorece    TEXT,
+    modelo          TEXT,
+    perguntas_sha   TEXT,
+    criado_em       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (documento_id, usuario_id)
+);
+"""
+
+_COLUNAS_CORRECAO = (
+    "documento_id", "usuario_id", "resultado", "recorrente", "favorece", "comentario",
+    "jev_resultado", "jev_recorrente", "jev_favorece", "modelo", "perguntas_sha",
+    "criado_em", "atualizado_em",
+)
+
+
+class DocumentoNaoEncontrado(LookupError):
+    """Correção para um documento que não existe."""
+
+
+def ensure_schema_correcoes(database_url: str) -> None:
+    """Cria `public.provimento_correcao` (idempotente). Depende de auth.usuarios."""
+    with psycopg.connect(database_url) as conn:
+        conn.execute(_DDL_CORRECAO)
+
+
 def ensure_schema(database_url: str) -> None:
     """Cria `public.provimento_jev` (idempotente)."""
     with psycopg.connect(database_url) as conn:
@@ -206,3 +242,59 @@ class ProvimentoJevStore:
                 "SELECT id::text, coalesce(provimento, 'NAO_APLICAVEL') FROM documentos"
             ).fetchall()
         return {r[0]: r[1] for r in rows}
+
+    def detalhes(self, documento_ids: list[str]) -> dict[str, dict]:
+        """Classificação do Jev de cada documento, para o frontend. Ids sem linha ficam fora."""
+        if not documento_ids:
+            return {}
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT documento_id::text, resultado, recorrente, favorece, probs,
+                       confianca_resultado, confianca_recorrente, confianca_favorece, modelo
+                FROM public.provimento_jev WHERE documento_id = ANY(%s::uuid[])
+                """,
+                (list(documento_ids),),
+            ).fetchall()
+        chaves = ("resultado", "recorrente", "favorece", "probabilidades",
+                  "confianca_resultado", "confianca_recorrente", "confianca_favorece", "modelo")
+        return {r[0]: dict(zip(chaves, r[1:])) for r in rows}
+
+    def salvar_correcao(
+        self, documento_id: str, usuario_id: str, resultado: str, recorrente: str,
+        favorece: str, comentario: str | None,
+    ):
+        """Upsert da correção do usuário, com cópia da resposta atual do Jev. Devolve atualizado_em."""
+        try:
+            with self._conn() as conn:
+                return conn.execute(
+                    """
+                    INSERT INTO public.provimento_correcao
+                        (documento_id, usuario_id, resultado, recorrente, favorece, comentario,
+                         jev_resultado, jev_recorrente, jev_favorece, modelo, perguntas_sha)
+                    SELECT v.d, v.u, %s, %s, %s, %s,
+                           p.resultado, p.recorrente, p.favorece, p.modelo, p.perguntas_sha
+                    FROM (SELECT %s::uuid AS d, %s::uuid AS u) v
+                    LEFT JOIN public.provimento_jev p ON p.documento_id = v.d
+                    ON CONFLICT (documento_id, usuario_id) DO UPDATE SET
+                        resultado = EXCLUDED.resultado, recorrente = EXCLUDED.recorrente,
+                        favorece = EXCLUDED.favorece, comentario = EXCLUDED.comentario,
+                        jev_resultado = EXCLUDED.jev_resultado, jev_recorrente = EXCLUDED.jev_recorrente,
+                        jev_favorece = EXCLUDED.jev_favorece, modelo = EXCLUDED.modelo,
+                        perguntas_sha = EXCLUDED.perguntas_sha, atualizado_em = NOW()
+                    RETURNING atualizado_em
+                    """,
+                    (resultado, recorrente, favorece, comentario, documento_id, usuario_id),
+                ).fetchone()[0]
+        except psycopg.errors.ForeignKeyViolation as e:
+            raise DocumentoNaoEncontrado(documento_id) from e
+
+    def correcoes(self) -> list[dict]:
+        """Todas as correções, da mais antiga para a mais recente."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(_COLUNAS_CORRECAO)} FROM public.provimento_correcao "
+                "ORDER BY atualizado_em"
+            ).fetchall()
+        return [{k: (str(v) if k in ("documento_id", "usuario_id") else v)
+                 for k, v in zip(_COLUNAS_CORRECAO, r)} for r in rows]

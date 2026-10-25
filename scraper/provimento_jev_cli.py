@@ -7,10 +7,12 @@ Ver docs/superpowers/specs/2026-10-20-provimento-jev-design.md.
 Uso: uv run python -m scraper.provimento_jev_cli classificar [--limite N] [--sim]
      uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--confirmar]
      uv run python -m scraper.provimento_jev_cli sincronizar [--lote 1000] [--so-bm25] [--so-qdrant]
+     uv run python -m scraper.provimento_jev_cli correcoes --csv CAMINHO
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import logging
 import os
@@ -229,6 +231,19 @@ def _cmd_sincronizar(args, store, qdrant) -> int:
     return 0
 
 
+def _cmd_correcoes(args, store) -> int:
+    """Exporta as correções enviadas pelos usuários e resume onde discordam do Jev."""
+    linhas = store.correcoes()
+    with open(args.csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(linhas[0]) if linhas else ["documento_id"])
+        w.writeheader()
+        w.writerows(linhas)
+    print(f"Correções: {len(linhas)} (gravadas em {args.csv})")
+    for k in ("resultado", "recorrente", "favorece"):
+        print(f"  {k}: {sum(l[k] != l['jev_' + k] for l in linhas)} de {len(linhas)} discordam do Jev")
+    return 0
+
+
 def main(
     argv: list[str] | None = None, *, store=None, classificador=None, qdrant=None
 ) -> int:
@@ -247,7 +262,11 @@ def main(
     p.add_argument("--so-bm25", action="store_true")
     p.add_argument("--so-qdrant", action="store_true")
     p.add_argument("--indice-bm25", type=Path, default=None, help="padrão: BM25_INDEX_PATH")
+    p = sub.add_parser("correcoes", help="exporta as correções dos usuários em CSV")
+    p.add_argument("--csv", type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.comando == "correcoes":
+        return _cmd_correcoes(args, store or _construir_store())
     if args.comando == "sincronizar" and args.so_bm25 and args.so_qdrant:
         parser.error("--so-bm25 e --so-qdrant são excludentes")
 

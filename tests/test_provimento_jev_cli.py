@@ -377,3 +377,20 @@ def test_sincronizar_nao_cria_cliente_jev(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "ClassificadorJev", _proibido)
     qs, indice = _qdrant_memoria(), _indice(tmp_path)
     assert cli.main(["sincronizar", "--indice-bm25", str(indice)], store=_StoreSync(), qdrant=qs) == 0
+
+
+def test_correcoes_grava_csv(tmp_path, capsys):
+    class _Fake:
+        def correcoes(self):
+            base = {"documento_id": "d", "usuario_id": "u", "comentario": None, "modelo": "jev",
+                    "perguntas_sha": "s", "atualizado_em": "2026-10-25",
+                    "jev_resultado": "provido", "jev_recorrente": "reclamante", "jev_favorece": "reclamante"}
+            return [
+                {**base, "resultado": "provido", "recorrente": "reclamante", "favorece": "reclamante"},
+                {**base, "resultado": "provido", "recorrente": "reclamante", "favorece": "reclamada"},
+            ]
+
+    p = tmp_path / "c.csv"
+    assert cli.main(["correcoes", "--csv", str(p)], store=_Fake()) == 0
+    assert len(p.read_text(encoding="utf-8").strip().splitlines()) == 3
+    assert "favorece: 1 de 2" in capsys.readouterr().out
