@@ -1,28 +1,42 @@
-# Scraping
-scrapy>=2.11.0
-scrapy-playwright>=0.0.40
-playwright>=1.40.0
-pdfplumber>=0.10.0
+# Dependências do backend, para quem instala com pip em vez do uv.
+# A fonte da verdade é o pyproject.toml (versões travadas no uv.lock):
+# ao mudar uma dependência lá, mude aqui também.
+#   pip install -r requirements.txt
 
-# NLP / NER
-spacy>=3.7.0
-# LeNER-Br: instalar manualmente via https://github.com/peluz/lener-br
+# Coleta (portal TST)
+requests>=2.32
+beautifulsoup4>=4.14.3
+playwright>=1.60.0
 
-# Embeddings e LLM local
-ollama>=0.2.0
+# Banco de dados
+psycopg[binary]>=3.2
 
-# Vector DB e GraphRAG
-chromadb>=0.5.0
-lightrag-hku>=1.0.0
+# Indexação e busca
+openai>=2.46.0
+openpyxl>=3.1
+qdrant-client>=1.19.0
+bm25s>=0.3.11
+stop-words>=2025.11.4
+flashrank>=0.2.10
+scipy>=1.14
 
-# Busca lexical
-rank-bm25>=0.2.2
+# Enriquecimento da query (LLM local) e PDF do usuário
+ollama>=0.6.2
+pdfplumber>=0.11
 
-# Interface
-streamlit>=1.35.0
+# Classificador de provimento (Jev)
+typesafe-sdk>=0.7.5
+
+# API e autenticação
+fastapi>=0.115
+uvicorn[standard]>=0.32
+python-multipart>=0.0.9
+pyjwt>=2.9
+pwdlib[argon2]>=0.3.1
 
 # Utilitários
-python-dotenv>=1.0.0
-pydantic>=2.0.0
-loguru>=0.7.0
-tqdm>=4.66.0
+pydantic>=2.0
+python-dotenv>=1.0
+
+# Testes
+pytest>=9.1.1

@@ -11,9 +11,8 @@
 ## O que é
 
 JuriSight recebe o documento de um caso trabalhista e a intenção
-argumentativa do advogado, e retorna jurisprudências do TST —
-acórdãos, súmulas, OJs e precedentes normativos — ordenados pela
-hierarquia das fontes jurídicas e alinhados à tese.
+argumentativa do advogado, e retorna acórdãos do TST ordenados por
+relevância e alinhados à tese.
 
 **Problema resolvido:** Advogados trabalhistas gastam ~5h semanais
 pesquisando jurisprudência em ferramentas que retornam resultados sem
@@ -30,11 +29,11 @@ Portal TST (Falcão)
     → [PostgreSQL]              ← source of truth
     → [SAC Chunking]
     → [Poly-Vector Embeddings]  ← OpenAI text-embedding-3-small (1536d)
-    → [ChromaDB]                ← busca semântica
-    → [BM25 Index]              ← busca lexical
-    → [FastAPI + RRF]           ← fusão dos rankings
-    → [Sort Categórico]         ← hierarquia jurídica
-    → [Streamlit]
+    → [Qdrant]                  ← busca semântica (vetores em disco, HNSW em RAM)
+    → [BM25 Index]              ← busca lexical (bm25s, mmap)
+    → [FastAPI + RRF]           ← fusão dos rankings (pool de 30 candidatos)
+    → [Cross-Encoder Rerank]    ← reordena por relevância real (FlashRank, ONNX)
+    → [Next.js]
 ```
 
 Custo: o LLM e o enriquecimento de query rodam **100% locais** (Ollama). Só os
@@ -47,12 +46,17 @@ para indexar todo o corpus; por consulta, o custo é desprezível.
 
 ```
 jurisight/
+├── auth/                    ← autenticação real (hash de senha, JWT, acesso a auth.usuarios)
+├── conversations/           ← histórico de busca persistido (public.conversas, ver §Conformidade)
+├── avaliacao/               ← harness de avaliação da busca (conjunto-ouro, pooling, planilha de julgamento, consenso, benchmark S0–S6; ver §Avaliação da busca)
+│
 ├── scraper/
 │   ├── run.py              ← ponto de entrada da coleta
 │   ├── api.py              ← cliente HTTP (requests.Session)
 │   ├── core.py             ← loop de coleta com delay adaptativo
 │   ├── db_writer.py        ← PostgresStore + estado da coleta (scraper_state)
 │   ├── html_parser.py      ← extração de seções do HTML dos acórdãos
+│   ├── provimento_jev*.py  ← provimento com o Jev: classificador, store e CLI (ver §Provimento com o Jev)
 │   ├── items/
 │   ├── pipelines/
 │   └── settings.py         ← configurações Scrapy (uso futuro)
@@ -67,12 +71,16 @@ jurisight/
 │   └── graph/
 │
 ├── query/
-│   ├── enrichment/
-│   └── search/
+│   ├── enrichment/          ← PDF Extractor, Query Enrichment (LLM), Query Builder
+│   ├── search/              ← Hybrid Search (RRF), Doc Retriever, Reranker, Result Formatter
+│   └── api/                 ← FastAPI: /enrich, /query, /document/{id}, /health, /auth/*, /conversas
 │
-├── interface/
-│   ├── app.py
-│   └── components/
+├── frontend/                ← interface Next.js (App Router)
+│   ├── src/
+│   │   ├── app/              ← rotas (home, resultados, decisão, revisão, salvos, login)
+│   │   ├── components/
+│   │   └── lib/
+│   └── package.json
 │
 ├── data/
 │   ├── raw/
@@ -93,7 +101,9 @@ jurisight/
 | Ferramenta | Versão mínima | Observação              |
 |------------|---------------|-------------------------|
 | Python     | 3.13          | Gerenciado pelo uv      |
-| uv         | qualquer      | Gerenciador de pacotes  |
+| uv         | qualquer      | Gerenciador de pacotes Python |
+| Node.js    | 20+           | Para o frontend Next.js |
+| pnpm       | qualquer      | Gerenciador de pacotes do frontend |
 | Docker     | 24+           | Para o PostgreSQL       |
 | Ollama     | qualquer      | LLM local (enriquecimento de query) |
 | Chave OpenAI | —           | Embeddings (`text-embedding-3-small`) — exige crédito pré-pago |
@@ -161,26 +171,38 @@ cp .env.example .env
 | `DATABASE_URL`      | `postgresql://postgres:postgres@localhost:5432/jurisight` | Conexão com o PostgreSQL   |
 | `OPENAI_API_KEY`    | —                                                   | Chave da OpenAI (embeddings) — **obrigatória**, exige crédito pré-pago |
 | `OPENAI_EMBED_MODEL`| `text-embedding-3-small`                            | Modelo de embeddings (1536d)     |
-| `CHROMA_PERSIST_DIR`| `~/.local/share/jurisight/chroma`                   | Índice ChromaDB — **no FS Linux, não em `/mnt/d`** (ver passo 7) |
-| `BM25_INDEX_PATH`   | `./data/index/bm25.pkl`                             | Índice lexical BM25 (pickle)     |
+| `QDRANT_URL`        | `http://localhost:6333`                             | Endpoint do Qdrant (banco vetorial, sobe via `docker compose`) |
+| `BM25_INDEX_PATH`   | `./data/index/bm25s_index`                          | Índice lexical BM25 (diretório — matriz esparsa `bm25s`, carregada via mmap) |
+| `OLLAMA_HOST`       | `http://localhost:11434`                            | Endpoint do Ollama (Query Enrichment) |
+| `OLLAMA_MODEL`      | `llama3.2:3b`                                       | Modelo usado no enriquecimento de query e na sumarização de PDFs longos |
+| `API_HOST` / `API_PORT` | `0.0.0.0` / `8000`                              | Endereço do backend FastAPI      |
+| `API_RELOAD`        | `true`                                              | Reload automático do Uvicorn em dev |
+| `CORS_ORIGINS`      | `http://localhost:3000`                             | Origens permitidas (a interface web em dev) |
 
 > A chave da OpenAI vai só no `.env` (gitignored) — **nunca** commitada. Sem crédito
 > pré-pago na conta, a API responde `429 insufficient_quota`.
 
+> **Atalho:** com `.env` preenchido (`OPENAI_API_KEY` e `JWT_SECRET_KEY`, gere a
+> segunda com `openssl rand -hex 32`) e a coleta/indexação já feitas (passos 6-7,
+> só na primeira vez), `./run.sh` faz os passos 5, 8 e 9 de uma vez — sobe
+> infra + backend + frontend com um comando só, espera cada um responder antes
+> de seguir, e Ctrl+C encerra backend+frontend (a infra continua no ar).
+
 ### 5 — Subir a infraestrutura (Docker)
 
 ```bash
-docker compose up -d          # sobe Postgres (+ Ollama, se optar pela opção B do passo 3)
+docker compose up -d          # sobe Postgres + Qdrant (+ Ollama, se optar pela opção B do passo 3)
 docker compose ps             # aguarda "healthy"
 ```
 
-Para subir só o Postgres (usando o Ollama nativo): `docker compose up -d postgres`.
+Para subir só o Postgres (usando o Ollama nativo): `docker compose up -d postgres qdrant`.
 
 A tabela `documentos` é criada automaticamente na primeira execução do scraper.
 
-> **ChromaDB não é um serviço.** Ele roda embedded (biblioteca Python) e persiste
-> em disco no diretório `CHROMA_PERSIST_DIR`, criado automaticamente na primeira
-> indexação — não há container nem porta para ele.
+> **Qdrant é um serviço** (imagem `qdrant/qdrant`, portas 6333/REST e 6334/gRPC),
+> ao contrário do antigo ChromaDB embedded. Os vetores ficam em disco (mmap,
+> quantizados em int8 em RAM pra busca inicial) dentro do volume `qdrant_data`;
+> o grafo HNSW fica em RAM (ver §Escalabilidade).
 
 Para parar sem apagar dados:
 
@@ -222,9 +244,9 @@ O progresso é salvo no PostgreSQL (tabela `scraper_state`, por coleção) a cad
 ### 7 — Indexar documentos (SAC Chunking + Poly-Vector + BM25)
 
 Lê os documentos do PostgreSQL, gera os chunks e embeddings (OpenAI) e popula o
-ChromaDB e o índice BM25. Roda **depois** da coleta. Requer a `OPENAI_API_KEY`
+Qdrant e o índice BM25. Roda **depois** da coleta. Requer a `OPENAI_API_KEY`
 (passo 4). A carga completa leva ~4-5h e é resumível — o delta pula o que já está
-no Chroma.
+no Qdrant.
 
 ```bash
 # Teste rápido (100 docs)
@@ -237,26 +259,251 @@ nohup uv run python indexing/run.py --reset > indexing.log 2>&1 &
 uv run python indexing/run.py
 ```
 
-> No WSL2, mantenha o `CHROMA_PERSIST_DIR` no FS Linux (`~/…`), não em `/mnt/d`:
-> gravar no HD/drive Windows deixa o Chroma ~30x mais lento (fsync).
+### 8 — Rodar a API
 
-### 8 — Rodar interface
+Requer Postgres no ar (passo 5), Ollama respondendo (passo 3) e o índice
+Qdrant/BM25 já construído (passo 7) — sem eles, os endpoints sobem mas
+`/query`/`/enrich` falham ao tentar acessá-los.
 
 ```bash
-uv run streamlit run interface/app.py
+uv run python main.py
 ```
+
+Sobe em [http://localhost:8000](http://localhost:8000). Endpoints:
+`POST /enrich` (PDF e/ou intenção argumentativa → `EstruturaArgumentativa`),
+`POST /query` (busca híbrida → lista de resultados), `GET /document/{id}`
+(detalhe completo), `GET /health`.
+
+### 9 — Rodar interface
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+Abre em [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## Hierarquia Categórica dos Documentos
+## Testes (frontend)
 
-| Categoria | Tipo                        | Descrição                                          |
-|-----------|-----------------------------|----------------------------------------------------|
-| 1         | Súmula                      | Entendimento consolidado — máximo peso argumentativo |
-| 2         | Orientação Jurisprudencial (OJ) | Interpretação técnica oficial                  |
-| 3         | Precedente Normativo        | Regra aplicável por categoria profissional         |
-| 4         | Acórdão                     | Decisão colegiada                                  |
-| 5         | Decisão Monocrática         | Tendência recente de um ministro                   |
+O frontend tem dois níveis de teste, ambos em `frontend/`:
+
+| Tipo                  | Ferramenta                          | O que cobre                                                        |
+|------------------------|--------------------------------------|---------------------------------------------------------------------|
+| Unitário / componente | Jest + React Testing Library         | Lógica pura (`initialsOf`, `groupByRecency`, `findDecision`, `OUTCOME_CONFIG`) e componentes (`OutcomeBadge`, `Chip`, `StepIndicator`, `ActionButton`), além do contexto `useSaved` (salvar, remover, persistir) |
+| End-to-end             | Cypress                              | Login/cadastro e proteção de rotas, fluxo de consulta (com e sem PDF → revisão → resultados), filtros/ordenação/exportar resultados, e os fluxos alternativos do RFC (FA02, FA03, FA04, FA05) |
+
+```bash
+cd frontend
+
+# Unitário/componente
+pnpm test              # roda uma vez
+pnpm test:watch        # modo watch
+
+# End-to-end (precisa do dev server rodando em localhost:3000)
+pnpm cypress:open      # interface interativa
+pnpm cypress:run       # headless
+pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e derruba o server no final
+```
+
+> Ainda não há testes de backend/integração — o pipeline de IA e a API ainda não existem
+> (ver [Pipeline](#pipeline)). O frontend inteiro roda sobre dados mockados até lá.
+
+---
+
+## Testes (backend)
+
+```bash
+uv run pytest
+```
+
+| Módulo | O que cobre |
+|--------|-------------|
+| `scraper`/`processing`/`indexing` | Parsing HTML, chunking SAC, embeddings (OpenAI mockado), BM25 |
+| `query/enrichment` | PDF Extractor (pdfplumber mockado), Query Enrichment (Ollama mockado, RN05), Query Builder |
+| `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), pipeline, Result Formatter |
+| `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
+| `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
+| `avaliacao` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`; o store contra Postgres real só roda com `DATABASE_URL` |
+| `avaliacao` (benchmark) | Sistemas S0–S6 com rerankers falsos, planilha de julgamento (exportar/importar), rótulo final e concordância, teses dos advogados, métricas e estatística do `benchmark`; o que usa o banco só roda com `DATABASE_URL` |
+| `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `aplicar` e `sincronizar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
+
+> Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
+> clientes externos são substituídos por fakes injetados. Um smoke test manual de
+> ponta a ponta (com a infra de verdade no ar) é o passo 8 do Quick Start.
+
+---
+
+## Avaliação da busca
+
+Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem
+uma régua: um **conjunto-ouro** de pares (tese × acórdão) com **relevância 0–3** e
+**stance** (fortalece / enfraquece / neutro), julgados por pessoas. O `benchmark`
+roda a busca (e o pipeline de produção, S3) para cada tese e reporta as métricas.
+Esta etapa só mede, não muda a busca.
+
+Variáveis no `.env` (ver `.env.example`):
+
+| Variável            | Padrão          | Descrição |
+|---------------------|-----------------|-----------|
+| `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas e atribui o tema de cada tese |
+| `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (acórdãos de origem e split dev/teste) |
+| `AVALIACAO_ADJUDICADOR` | —           | E-mail do adjudicador: o julgamento dele decide os pares em que os avaliadores discordam (ver §2) |
+
+Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start, passos 5 e 7).
+
+### 1 — `construir`: o conjunto-ouro
+
+```bash
+uv run python -m avaliacao.construir [--teses 100] [--sim]
+```
+
+Duas etapas **idempotentes** (cada uma pula o que já existe, então dá para
+interromper e retomar de onde parou):
+
+1. **teses** — completa até `--teses` (reais das conversas + sintéticas; conversas de
+   contas `@example.com`, usadas nos testes E2E, ficam de fora). A OpenAI escreve as
+   sintéticas e atribui o tema de cada tese, que decide o split dev/teste;
+2. **pool** — para cada tese, une os 30 candidatos do híbrido (corredor `hibrido`), o top-10 do BM25 (`bm25_top10`) e o top-10 do denso (`vetorial_top10`). Pares antigos (`pipeline`, `passo_zero`) continuam no banco.
+
+A etapa de teses chama a OpenAI: mostra a estimativa e **pede confirmação**; `--sim` pula.
+
+### 2 — Etapa 2: benchmark de rerankers (S0–S6)
+
+A etapa 2 compara sete sistemas de busca sobre o mesmo conjunto de teses, com
+rótulos de duas pessoas. A ordem:
+
+1. **Teses dos advogados.** Com `docs/avaliacao/1-producao-de-teses.xlsx`
+   preenchida: `uv run python -m avaliacao.teses_advogados importar ARQUIVO...`
+   (origem `advogado`; idempotente).
+2. **`construir`** (seção 1): completa com teses sintéticas escritas no estilo dos
+   advogados e monta o pool novo.
+3. **Exportar os lotes:**
+   `uv run python -m avaliacao.planilha_julgamento exportar [--teses id,... | --todas] [--pasta data/eval/lotes] [--seed 42]`
+   gera um `.xlsx` por tese, com as linhas embaralhadas e sem pista de qual sistema
+   trouxe o acórdão. Envie cada lote a **duas pessoas**.
+4. **Importar o que voltou:**
+   `uv run python -m avaliacao.planilha_julgamento importar ARQUIVO...`
+   (grava `humano:<email>`, rodada 1; linhas inválidas são avisadas e ignoradas;
+   reimportar não duplica).
+   **Adjudicação:** os pares pendentes (ver "Rótulo final") vão para o adjudicador
+   (`AVALIACAO_ADJUDICADOR`) num lote exportado de novo; ele devolve o arquivo e você
+   importa com `... importar --adjudicacao ARQUIVO`, que grava **rodada 2**. Se o
+   e-mail do arquivo não for o do adjudicador, o comando falha sem gravar nada.
+5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos] [--saida DIR]`
+   grava `data/eval/runs/<data>_runs.json`.
+6. **Relatório:** `uv run python -m avaliacao.benchmark relatorio data/eval/runs/<data>_runs.json`
+   grava `<mesmo prefixo>_relatorio.json`.
+
+**Escala (0–3):** 0 outro problema jurídico; 1 mesmo ramo/tema, mas outro pedido ou
+fato central; 2 mesmo pedido, com fato decisivo diferente ou só em parte; 3 mesmo
+problema e mesmo fato decisivo ("eu citaria na peça"). O **stance** (fortalece,
+enfraquece, neutro) só vale para nota 2 ou 3; com 0 ou 1 grava-se `neutro`.
+
+**Rótulo final** de um par com vários humanos: se o adjudicador
+(`AVALIACAO_ADJUDICADOR`) julgou na **rodada 2** (`--adjudicacao`), vale o dele. A
+rodada 1 de todos, inclusive a do adjudicador se ele também for avaliador, segue a
+regra normal: notas iguais valem a nota; diferença de 1 fica com a **menor**;
+diferença de 2 ou mais (ou stance diferente com as duas notas >= 2) fica
+**pendente** e sai das métricas. Com um só humano, vale o dele. O relatório lista cada
+pendente (tese, par, documento, número do processo, nota e stance de cada avaliador).
+A concordância (kappa, alfa, AC2) usa só a rodada 1, com todos os avaliadores.
+**Zere os pendentes antes da medição final**, adjudicando todos.
+
+**Sistemas.** Todos devolvem o top-20. S0 e S1 consultam sempre a mesma profundidade
+(100 chunks por canal), então o top-10 usado no pool é prefixo do top-20 deles. S3 a S6 reordenam os mesmos 30 candidatos do
+S2, com a mesma entrada (tese contra a ementa cortada em 1.200 caracteres). A latência
+é a mediana/p95, em segundos, de um smoke em 5 teses; inclui a busca inteira, medida
+nesta máquina, sem GPU. **Na execução do benchmark o embedding da OpenAI é calculado
+uma vez por texto e reaproveitado** (a API não é determinística e os sistemas S2 a S6
+têm de reordenar os mesmos 30 candidatos), então a latência medida **exclui** o
+embedding repetido e é menor que a da tabela. Cada tese/sistema S2 a S6 grava
+`fora_dos_candidatos` (ids do top-20 fora dos 30 de referência; deve vir vazio) e
+falhas isoladas ficam em `teses_com_erro` sem abortar a run.
+
+| Sistema | O que é | Latência (mediana / p95) |
+|---------|---------|--------------------------|
+| S0 | BM25 sozinho | 0,01 / 0,01 |
+| S1 | Denso sozinho (2 coleções, RRF) | 0,36 / 1,48 |
+| S2 | Híbrido RRF, sem reranker | 0,43 / 0,50 |
+| S3 | S2 + FlashRank | 3,14 / 3,62 |
+| S4 | S2 + `gte-multilingual-reranker-base` | 6,85 / 10,13 |
+| S5 | S2 + `bge-reranker-v2-m3` | 5,66 / 6,71 |
+| S6 | S2 + `unicamp-dl/monoptt5-base` | 8,83 / 15,48 |
+
+O S6 precisa do PyTorch (CPU), no grupo opcional `benchmark`:
+
+```bash
+uv sync --group benchmark
+uv run --group benchmark python -m avaliacao.benchmark rodar
+```
+
+Sem o grupo, `rodar` com S6 falha logo no início (antes de carregar o índice).
+
+**Métricas.** A principal é o **nDCG@10** (ganho 2^nota − 1). As demais: MRR@10, P@5,
+P@10, Recall@10, Recall@20 e MAP@10 (relevante = nota >= 2) e **Judged@10** (fração do
+top-10 que tem rótulo; não julgado vale 0). Tese sem nenhum relevante fica fora das
+médias das métricas que dependem disso (a contagem de excluídas vai no relatório). O
+**teto** é o nDCG@10 da melhor ordem possível dos 30 candidatos: quanto um reranker
+poderia ganhar no máximo. Os **perdidos** são os relevantes que o BM25 ou o denso
+trouxeram no top-10 e o híbrido deixou fora dos 30.
+
+**Limitação: Recall@20 de S0 e S1 é enviesado para baixo.** O pool julga os 30 do
+híbrido e o top-10 de BM25 e do denso; as posições 11 a 20 de S0 e S1 só têm rótulo
+se por acaso caírem nos 30 do híbrido. O resto conta como não julgado (não relevante),
+então o Recall@20 desses dois sistemas subestima o real. Use Judged@10 e nDCG@10 para
+compará-los. O relatório mostra as médias no total e por origem (advogado, sintética,
+real) e o adjudicador em uso.
+
+**Estatística.** Diferenças pareadas por tese, nos contrastes S3×S2, S4×S3, S5×S3,
+S6×S3, S0×S2 e S1×S2: teste t pareado com correção de **Holm**, Wilcoxon (`pratt`)
+com **Benjamini-Hochberg** como checagem, e IC95% por bootstrap (10.000
+reamostragens, seed fixa). A correção depende de quantos contrastes entram
+(`m_holm` no JSON), então **só cite p ajustado de uma run com todos os sistemas**.
+A concordância entre avaliadores sai em kappa ponderado, alfa de Krippendorff e AC2
+de Gwet.
+
+---
+
+## Provimento com o Jev
+
+A coluna `documentos.provimento` vem de uma regex sobre o dispositivo, que diz se o
+recurso foi aceito, mas não quem ganhou: "recurso negado" é vitória do trabalhador
+quando quem recorreu foi a empresa. Esta etapa pergunta ao Jev, para cada acórdão, o
+**resultado** do recurso, o **recorrente** e **quem é favorecido**, guarda as respostas
+com probabilidades na tabela `provimento_jev` e, depois de uma conferência manual, pode
+passar a usar o resultado do Jev em `documentos.provimento`. A regex continua gravada
+ao lado (`provimento_regex`). Racional e decisões: [`docs/superpowers/specs/2026-10-20-provimento-jev-design.md`](docs/superpowers/specs/2026-10-20-provimento-jev-design.md).
+
+Usa `TYPESAFE_API_KEY` e `TYPESAFE_MODEL` (padrão `jev-1.13.0`, nunca `jev-latest`) e
+precisa do Postgres no ar. Os comandos, na ordem de uso:
+
+```bash
+# 1. Classifica os acórdãos pendentes (mostra a estimativa e pede confirmação)
+uv run python -m scraper.provimento_jev_cli classificar [--limite N] [--lote 500] [--max-workers 8] [--sim]
+
+# 2. Mostra o que mudaria; só escreve em documentos.provimento com --confirmar
+uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--confirmar]
+```
+
+- **Custo:** ~1.600 tokens por acórdão, cerca de **110 M tokens** para o acervo inteiro
+  (~69 mil). O `classificar` imprime a estimativa e pergunta `s/N` antes de chamar o
+  Jev; `--sim` pula a pergunta.
+- **Retomável:** o `classificar` pode ser interrompido (Ctrl-C) e rodado de novo. Só
+  classifica o que ainda não tem linha com o mesmo modelo e as mesmas perguntas.
+- **`aplicar`:** sem `--confirmar` apenas imprime as transições (`ATUAL → NOVO: n`) e
+  quantas linhas ficaram abaixo do limite de confiança (`--confianca-min`, de 0 a 1), separando as que mudariam das que não mudam.
+  Com `--confirmar`, grava só onde a confiança atinge o limite e o valor muda.
+- **Voltar à regex:** `uv run python utils/reclassify.py` recalcula a coluna a partir do texto.
+- **Ainda não usados:** `favorece` e `recorrente` ficam guardados, mas a busca ainda
+  não os usa; só o resultado entra em `documentos.provimento`.
+- **Validação:** foi feita por duas conferências cegas, documentadas em
+  `docs/superpowers/specs/2026-10-20-provimento-jev-conferencia.md` e
+  `docs/superpowers/specs/2026-10-22-provimento-jev-conferencia-2.md`.
+- **Modelo fixo:** `TYPESAFE_MODEL` terminado em `-latest` é recusado; use uma versão
+  fixa (ex.: `jev-1.13.0`).
 
 ---
 
@@ -266,34 +513,105 @@ uv run streamlit run interface/app.py
 |--------------------|---------------------------------------------|
 | requests           | Coleta do portal TST (Falcão)               |
 | PostgreSQL         | Source of truth — documentos completos      |
-| ChromaDB           | Banco vetorial — busca semântica            |
-| Ollama / Llama 3.2 3B | Query enrichment local                 |
+| Qdrant             | Banco vetorial — busca semântica (vetores/HNSW em disco) |
+| Ollama / Llama 3.2 3B | Query enrichment local + sumarização de PDFs longos |
 | OpenAI text-embedding-3-small | Embeddings (1536d)              |
-| rank-bm25          | Busca lexical — índice BM25                 |
-| FastAPI            | Backend — fusão RRF dos rankings            |
-| Streamlit          | Interface do usuário                        |
+| bm25s              | Busca lexical — índice BM25 (matriz esparsa, mmap) |
+| FlashRank          | Re-ranking pós-RRF — cross-encoder ONNX (sem PyTorch), multilíngue |
+| pdfplumber         | Extração de texto do PDF do usuário         |
+| FastAPI / Uvicorn  | Backend — API REST, fusão RRF dos rankings  |
+| Next.js / React    | Interface do usuário                        |
+| Jest + React Testing Library | Testes unitários e de componente (frontend) |
+| Cypress            | Testes end-to-end (frontend)                |
 
 ---
 
 ## Escalabilidade
 
-O ChromaDB é RAM-bound: o HNSW carrega o índice inteiro em memória, então o tamanho
-da coleção é limitado pela RAM. Passou da RAM, entra em swap e trava
-([docs](https://docs.trychroma.com/guides/deploy/performance)).
+**Migração ChromaDB → Qdrant concluída em 2026-09-13.** O ChromaDB era RAM-bound:
+o HNSW carregava o índice inteiro em memória, e com ~69k acórdãos (~470k pontos
+somando as duas coleções Poly-Vector) isso já travava numa máquina com RAM
+limitada ([docs](https://docs.trychroma.com/guides/deploy/performance)).
 
-Escala atual: ~69k acórdãos (~400k chunks, ~3 GB de vetores) em 11 GB de RAM.
+O Qdrant (`indexing/vector_store/qdrant_store.py`) guarda os vetores brutos em
+disco (mmap, `VectorParams.on_disk=True` — a parte grande, ~2.4GB pra 400k
+pontos de 1536 dims). Troca localizada, como planejado: só o `ChromaStore`
+virou `QdrantStore` — `HybridSearch`, `query/api/app.py` e `indexing/run.py`
+não mudaram de lógica, só de import. Dados migrados com
+`indexing/vector_store/migrate_chroma_to_qdrant.py` (lê o Chroma antigo, sem
+apagá-lo, e faz upsert idempotente no Qdrant).
 
-Migração planejada para **Qdrant** (índice em disco com mmap) quando o acervo
-crescer além da RAM. Troca localizada: só o `ChromaStore` muda — o Postgres é a
-fonte de verdade e a busca fica atrás do `HybridSearch`.
-https://qdrant.tech/documentation/migrate-to-qdrant/from-chroma/
+**Ajuste de 2026-09-28 — grafo HNSW em RAM + quantização.** A primeira versão
+também colocava o grafo HNSW em disco (`HnswConfigDiff.on_disk=True`), na
+teoria pra economizar RAM. Na prática, cada busca nova percorre o grafo fazendo
+I/O a disco a cada salto — medido nesta infra, 80-125s por busca. O grafo em si
+(só os links entre vizinhos) custa dezenas de MB pra 400k pontos — bem menos
+que os vetores — então voltou pra RAM (`on_disk=False`, o default do Qdrant).
+Também foi ligada quantização escalar int8 nas duas coleções: uma versão
+comprimida (~4x menor) de cada vetor fica em RAM pra busca inicial no grafo, e
+só os poucos candidatos finais são re-pontuados com o vetor original em disco
+— reduz ainda mais o I/O por busca. Resultado combinado (com a mudança do BM25
+abaixo): a mesma busca caiu de 80-330s para 3-5s.
+
+BM25 migrou de `rank_bm25` para `bm25s` (2026-09-28). O `rank_bm25` guardava um
+dict Python por documento — pra ~400k chunks isso media ~6-7GB desserializado
+em RAM no processo do backend, que numa máquina de 11GB empurrava o sistema
+inteiro pra swap (confirmado via `pswpin`/`pswpout` subindo durante as buscas
+lentas — o Qdrant ficava competindo com o swap pela banda de disco, daí os
+80-125s do parágrafo acima serem ainda piores na prática). `bm25s` guarda o
+índice como matriz esparsa CSC e carrega via `mmap=True`
+(`indexing/lexical/bm25_builder.py`) — fica em disco, paginado sob demanda,
+igual ao Qdrant já fazia com os vetores. RAM do processo do backend: de ~7.4GB
+para ~300MB.
+
+**Re-ranking pós-RRF (2026-10-04).** RRF funde bem o RANK de cada canal
+(Qdrant completo, Qdrant ementa, BM25), mas não lê o conteúdo — só a posição
+relativa. `query/search/reranker.py` adiciona um cross-encoder (FlashRank,
+`ms-marco-MultiBERT-L-12`, ONNX — sem PyTorch/Transformers de propósito, pra
+não pesar a RAM que o BM25 acabou de liberar) que pontua tese+ementa juntas e
+reordena o pool do RRF antes do corte final. Dois problemas de performance
+reais até ficar aceitável: (1) mandar todas as passagens num só
+`RerankRequest` tinha custo super-linear (~49s pra 50) — uma chamada por
+passagem, paralelizada em 8 threads, caiu pra ~5s; (2) uma única ementa-outlier
+(a base tem casos >60 mil caracteres) travava o lote inteiro — corrigido
+truncando a 1200 chars antes de reranquear. `N_CANDIDATOS_PARA_RERANK = 30`
+(não os 50 "de livro-texto"): a busca híbrida pede 5x esse número por canal,
+então o pool também pesa na busca, não só no re-ranking — 30 é o equilíbrio
+que manteve o re-ranking em si consistente (~2s) sem inflar demais a busca.
+
+---
+
+## Autenticação — pendências futuras
+
+A autenticação real (`auth/`, `query/api/auth_routes.py`) cobre hoje o essencial e
+funcional: cadastro, login, logout, sessão via cookie httpOnly, senha com Argon2id,
+JWT, proteção contra timing attack e contra CSRF via `<form>`. Deliberadamente
+**não** implementado (escopo cortado a pedido — não é trabalho pela metade, é
+trabalho que ainda não começou):
+
+- **Verificação de e-mail** — hoje qualquer e-mail digitado é aceito sem confirmação.
+- **Recuperação de senha** ("esqueci minha senha") — a tela `/esqueci-senha` existe
+  no frontend mas não fala com nenhum backend real.
+- **2FA** (segundo fator de autenticação).
+- **Rate limiting / lockout** de tentativas de login (força bruta hoje não tem
+  nenhum limite além do custo do próprio Argon2id).
+
+Ver `auth/SCHEMA.md` para o que já foi propositalmente deixado de fora do schema
+(is_superuser/roles, tabela de sessões/refresh tokens) — mesma lista, mesma razão.
 
 ---
 
 ## Conformidade
 
 - Dados 100% públicos do portal TST
-- Documentos privados processados apenas em memória
+- Documentos privados (PDF enviado pelo usuário) processados apenas em
+  memória — nunca tocam disco nem banco. O que É persistido (Postgres,
+  `public.conversas`, ver `conversations/db.py`) é só a EstruturaArgumentativa
+  já revisada e os resultados do `/query` — dado derivado/estruturado, não o
+  documento em si — pra manter o histórico de busca disponível entre sessões.
+  Cada busca bem-sucedida numa conversa (a original + cada "Refinar consulta")
+  vira uma versão própria no array `versoes` (V1, V2, ... — dropdown navegável
+  na página de Resultados), nenhuma sobrescreve as anteriores.
 - Conformidade com LGPD
 - Delay adaptativo entre requisições (mínimo 2s, aumenta automaticamente em caso de erro)
 
