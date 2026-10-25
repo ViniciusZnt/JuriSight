@@ -12,6 +12,7 @@ import {
   logoutUsuario,
   getUsuarioAtual,
   ApiError,
+  enviarCorrecaoProvimento,
   type EstruturaArgumentativa,
 } from "@/lib/api";
 
@@ -201,5 +202,24 @@ describe("getUsuarioAtual", () => {
   it("levanta ApiError 401 sem sessão válida", async () => {
     mockFetchOnce(401, { detail: "Não autenticado." });
     await expect(getUsuarioAtual()).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe("enviarCorrecaoProvimento", () => {
+  it("faz POST com JSON e cookie de sessão", async () => {
+    mockFetchOnce(200, { documento_id: "id-1", resultado: "provido", recorrente: "reclamante", favorece: "reclamante", atualizado_em: "x" });
+    await enviarCorrecaoProvimento("id-1", { resultado: "provido", recorrente: "reclamante", favorece: "reclamante" });
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toMatch(/\/provimento\/id-1\/correcao$/);
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+    expect(JSON.parse(init.body)).toEqual({ resultado: "provido", recorrente: "reclamante", favorece: "reclamante" });
+  });
+
+  it("levanta ApiError em 422", async () => {
+    mockFetchOnce(422, { detail: "valor inválido" });
+    await expect(
+      enviarCorrecaoProvimento("id-1", { resultado: "provido", recorrente: "reclamante", favorece: "reclamante" })
+    ).rejects.toThrow(ApiError);
   });
 });

@@ -6,6 +6,29 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export type TipoDocumento = "ACORDAO" | "SUMULA" | "OJ" | "PRECEDENTE";
 export type Provimento = "APROVADO" | "PARCIAL" | "NEGADO" | "NAO_APLICAVEL";
+export type ResultadoRecurso = "provido" | "parcialmente_provido" | "nao_provido" | "nao_conhecido" | "sem_recurso";
+export type Recorrente = "reclamante" | "reclamada" | "ambos" | "outro" | "indefinido";
+export type Favorece = "reclamante" | "reclamada" | "ambos_em_parte" | "indefinido";
+
+/** query/search/result_formatter.py::ClassificacaoProvimentoView — classificação do Jev. */
+export interface ClassificacaoProvimento {
+  resultado: ResultadoRecurso;
+  recorrente: Recorrente;
+  favorece: Favorece;
+  /** pergunta -> (opção -> probabilidade) */
+  probabilidades: Record<string, Record<string, number>>;
+  confianca_resultado: number | null;
+  confianca_recorrente: number | null;
+  confianca_favorece: number | null;
+  modelo: string;
+}
+
+export interface CorrecaoProvimento {
+  resultado: ResultadoRecurso;
+  recorrente: Recorrente;
+  favorece: Favorece;
+  comentario?: string | null;
+}
 
 /** query/enrichment/schema.py::EstruturaArgumentativa — todo campo tem default (RN05: o LLM
  *  nunca inventa; o que não foi encontrado no texto fica vazio/null). */
@@ -54,6 +77,8 @@ export interface ResultCard {
   provimento: Provimento;
   link_original: string | null;
   score_rrf: number;
+  /** Ausente/null em cards antigos (conversas salvas) e em documentos não classificados. */
+  classificacao_provimento?: ClassificacaoProvimento | null;
 }
 
 /** query/search/result_formatter.py::DocumentoDetalhe — DocumentoJuridico completo, devolvido
@@ -83,6 +108,7 @@ export interface DocumentoDetalhe {
   referencia_legislativa: string[];
   provimento: Provimento;
   link_original: string | null;
+  classificacao_provimento?: ClassificacaoProvimento | null;
 }
 
 export interface QueryRequestBody {
@@ -155,6 +181,18 @@ export async function queryJurisprudencia(body: QueryRequestBody): Promise<Resul
 /** GET /document/{id} — detalhe completo de um documento (404 se não existir). */
 export async function getDocument(id: string): Promise<DocumentoDetalhe> {
   return request<DocumentoDetalhe>(`/document/${encodeURIComponent(id)}`);
+}
+
+/** POST /provimento/{id}/correcao — registra a correção do usuário (substitui a anterior). */
+export async function enviarCorrecaoProvimento(
+  documentoId: string,
+  body: CorrecaoProvimento
+): Promise<CorrecaoProvimento & { documento_id: string; atualizado_em: string }> {
+  return request(`/provimento/${encodeURIComponent(documentoId)}/correcao`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 // --------------------------------------------------------------------------- //
