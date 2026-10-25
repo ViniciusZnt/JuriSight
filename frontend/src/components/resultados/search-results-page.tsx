@@ -25,7 +25,9 @@ import { MetaItem } from "@/components/ui/meta-item";
 import { ActionButton } from "@/components/ui/action-button";
 import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
-import { provimentoToOutcome, type Outcome } from "@/lib/outcome";
+import { type Outcome } from "@/lib/outcome";
+import { outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
+import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import {
   compareResultCards,
   matchedEntities,
@@ -166,7 +168,7 @@ export function SearchResultsPage() {
   }, [results, sortBy, sortDir]);
 
   const filteredResults = sortedResults
-    .filter((d) => filter === "all" || provimentoToOutcome(d.provimento) === filter)
+    .filter((d) => filter === "all" || outcomeDe(d) === filter)
     .filter((d) => inPeriod(d.data_julgamento));
 
   const toggleSave = (d: (typeof results)[number]) => {
@@ -176,7 +178,7 @@ export function SearchResultsPage() {
       court: d.tribunal,
       chamber: d.turma,
       date: d.data_julgamento ?? "",
-      outcome: provimentoToOutcome(d.provimento),
+      outcome: outcomeDe(d),
       relevance: relevancePercent(d.score_rrf, maxScore),
       rapporteur: d.relator,
       processNumber: d.numero_processo,
@@ -188,8 +190,8 @@ export function SearchResultsPage() {
   const formatDateLong = (dateStr: string | null) =>
     dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não informada";
 
-  const favorableCount = results.filter((d) => provimentoToOutcome(d.provimento) === "favorable").length;
-  const unfavorableCount = results.filter((d) => provimentoToOutcome(d.provimento) === "unfavorable").length;
+  const favorableCount = results.filter((d) => outcomeDe(d) === "favorable").length;
+  const unfavorableCount = results.filter((d) => outcomeDe(d) === "unfavorable").length;
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
@@ -201,7 +203,7 @@ export function SearchResultsPage() {
         `${idx + 1}. ${titleFromEmenta(d.ementa)}`,
         `   ${d.tribunal} — ${d.turma} · ${formatDateLong(d.data_julgamento)}`,
         `   Processo: ${d.numero_processo} · Rel. ${d.relator}`,
-        `   Provimento: ${d.provimento} · Relevância: ${relevancePercent(d.score_rrf, maxScore)}%`,
+        `   Provimento: ${d.classificacao_provimento ? resumoProvimento(d.classificacao_provimento) : PROVIMENTO_LABEL[d.provimento]} · Relevância: ${relevancePercent(d.score_rrf, maxScore)}%`,
         `   ${truncate(d.ementa, 600)}`,
       ].join("\n")
     );
@@ -488,7 +490,7 @@ export function SearchResultsPage() {
             {filteredResults.map((decision) => {
               const saved = isSaved(decision.id);
               const title = titleFromEmenta(decision.ementa);
-              const outcome = provimentoToOutcome(decision.provimento);
+              const outcome = outcomeDe(decision);
               const relevance = relevancePercent(decision.score_rrf, maxScore);
               const entidades = matchedEntities(estrutura, decision.ementa);
 
@@ -507,7 +509,11 @@ export function SearchResultsPage() {
                       </h3>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <OutcomeBadge outcome={outcome} size="sm" />
-                        <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]">
+                        <div
+                          title="Relevância relativa ao melhor resultado desta busca"
+                          aria-label={`Relevância relativa ao melhor resultado desta busca: ${relevance}%`}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]"
+                        >
                           <TrendingUp className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
                           <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
                             {relevance}%
@@ -527,6 +533,11 @@ export function SearchResultsPage() {
                         <span className="font-mono">{decision.numero_processo}</span>
                       </MetaItem>
                     </div>
+                  </div>
+
+                  {/* Provimento (Jev) */}
+                  <div className="px-6 py-3 border-b border-[#F0F0F6] dark:border-[#26262C]">
+                    <ProvimentoPanel compacto documentoId={decision.id} provimento={decision.provimento} classificacao={decision.classificacao_provimento} />
                   </div>
 
                   {/* Summary */}

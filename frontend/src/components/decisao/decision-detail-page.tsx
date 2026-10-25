@@ -30,7 +30,8 @@ import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
-import { provimentoToOutcome } from "@/lib/outcome";
+import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
+import { PROVIMENTO_LABEL, RESULTADO_LABEL, outcomeDe } from "@/lib/provimento";
 import { matchedEntities, relevancePercent, titleFromEmenta, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
 import { useSearchSession } from "@/lib/search-session";
@@ -149,7 +150,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   }
 
   const title = titleFromEmenta(doc.ementa);
-  const outcome = provimentoToOutcome(doc.provimento);
+  const outcome = outcomeDe(doc);
   const origin = doc.gabinete || doc.tribunal;
   const entidades = matchedEntities(estrutura, `${doc.ementa} ${doc.fundamentacao} ${doc.acordao}`);
   const fromResults = resultados?.find((r) => r.id === doc.id);
@@ -324,6 +325,14 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
             </div>
           )}
 
+          {/* Provimento (Jev) */}
+          <section className="px-5 sm:px-7 py-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
+            <div className="mb-3">
+              <SectionHeading icon={Scale} iconBg="bg-[#EFF4FA] dark:bg-[#1A2A3C]" iconColor="text-[#1A3A5C] dark:text-[#8AB0DC]" title="Provimento" />
+            </div>
+            <ProvimentoPanel documentoId={doc.id} provimento={doc.provimento} classificacao={doc.classificacao_provimento} />
+          </section>
+
           {/* Summary */}
           <CollapsibleSection
             icon={Quote}
@@ -467,7 +476,9 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
           <div className="px-5 sm:px-7 py-4 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C]">
             <div className="flex items-center gap-2">
               <Chip tone="blue">{TIPO_DOCUMENTO_LABEL[doc.tipo_documento]}</Chip>
-              <Chip tone="neutral">{doc.provimento.replace(/_/g, " ")}</Chip>
+              <Chip tone="neutral">
+                {doc.classificacao_provimento ? RESULTADO_LABEL[doc.classificacao_provimento.resultado] : PROVIMENTO_LABEL[doc.provimento]}
+              </Chip>
             </div>
           </div>
         </div>
