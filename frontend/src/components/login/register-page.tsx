@@ -63,7 +63,7 @@ export function RegisterPage() {
           <h1 className="text-[#0F1117] dark:text-[#ECECEF] tracking-[-0.02em]" style={{ fontSize: "22.4px", fontWeight: 600 }}>
             Criar conta
           </h1>
-          <p className="text-[#8A8A9A] dark:text-[#9494A2] mt-1 text-center" style={{ fontSize: "13.8px" }}>
+          <p className="text-[#6B6B80] dark:text-[#9494A2] mt-1 text-center" style={{ fontSize: "13.8px" }}>
             Cadastro de advogados e assistentes jurídicos
           </p>
         </div>
@@ -91,7 +91,7 @@ export function RegisterPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Seu nome"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E4E4EC] dark:border-[#2A2A32] bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] outline-none focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-2 focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10 transition-all"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E4E4EC] dark:border-[#2A2A32] bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#6B6B80] dark:placeholder:text-[#9494A2] outline-none focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-2 focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10 transition-all"
                 style={{ fontSize: "14.9px" }}
               />
             </div>
@@ -109,7 +109,7 @@ export function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="voce@escritorio.com.br"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E4E4EC] dark:border-[#2A2A32] bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] outline-none focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-2 focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10 transition-all"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E4E4EC] dark:border-[#2A2A32] bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#6B6B80] dark:placeholder:text-[#9494A2] outline-none focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-2 focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10 transition-all"
                 style={{ fontSize: "14.9px" }}
               />
             </div>
@@ -127,7 +127,7 @@ export function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={`Mínimo ${SENHA_MIN_LENGTH} caracteres`}
-                className={`w-full pl-9 pr-9 py-2.5 rounded-xl border bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] outline-none focus:ring-2 transition-all ${
+                className={`w-full pl-9 pr-9 py-2.5 rounded-xl border bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#6B6B80] dark:placeholder:text-[#9494A2] outline-none focus:ring-2 transition-all ${
                   passwordTooShort
                     ? "border-[#C44040] dark:border-[#D96B6B] focus:border-[#C44040] dark:focus:border-[#D96B6B] focus:ring-[#C44040]/10 dark:focus:ring-[#D96B6B]/10"
                     : "border-[#E4E4EC] dark:border-[#2A2A32] focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10"
@@ -137,7 +137,7 @@ export function RegisterPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#AEAEBF] dark:text-[#6E6E7C] hover:text-[#4A4A5A] dark:hover:text-[#C4C4CE] transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#AEAEBF] dark:text-[#6E6E7C] hover:text-[#4A4A5A] dark:hover:text-[#C4C4CE] transition-colors"
                 title={showPassword ? "Ocultar senha" : "Mostrar senha"}
                 aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                 aria-pressed={showPassword}
@@ -164,7 +164,7 @@ export function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Repita a senha"
-                className={`w-full pl-9 pr-3 py-2.5 rounded-xl border bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] outline-none focus:ring-2 transition-all ${
+                className={`w-full pl-9 pr-3 py-2.5 rounded-xl border bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#6B6B80] dark:placeholder:text-[#9494A2] outline-none focus:ring-2 transition-all ${
                   passwordsMismatch
                     ? "border-[#C44040] dark:border-[#D96B6B] focus:border-[#C44040] dark:focus:border-[#D96B6B] focus:ring-[#C44040]/10 dark:focus:ring-[#D96B6B]/10"
                     : "border-[#E4E4EC] dark:border-[#2A2A32] focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10"

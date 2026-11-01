@@ -38,7 +38,7 @@ export function ForgotPasswordPage() {
           <h1 className="text-[#0F1117] dark:text-[#ECECEF] tracking-[-0.02em]" style={{ fontSize: "22.4px", fontWeight: 600 }}>
             Recuperar senha
           </h1>
-          <p className="text-[#8A8A9A] dark:text-[#9494A2] mt-1 text-center" style={{ fontSize: "13.8px" }}>
+          <p className="text-[#6B6B80] dark:text-[#9494A2] mt-1 text-center" style={{ fontSize: "13.8px" }}>
             Informe seu e-mail para receber um link de redefinição
           </p>
         </div>
@@ -52,7 +52,7 @@ export function ForgotPasswordPage() {
               <p className="text-[#0F1117] dark:text-[#ECECEF] mb-1.5" style={{ fontSize: "15.5px", fontWeight: 600 }}>
                 Verifique seu e-mail
               </p>
-              <p className="text-[#8A8A9A] dark:text-[#9494A2] leading-relaxed" style={{ fontSize: "13.8px" }}>
+              <p className="text-[#6B6B80] dark:text-[#9494A2] leading-relaxed" style={{ fontSize: "13.8px" }}>
                 Se <strong className="text-[#4A4A5A] dark:text-[#C4C4CE]">{email}</strong> estiver cadastrado, você vai
                 receber um link para redefinir sua senha em instantes.
               </p>
@@ -80,7 +80,7 @@ export function ForgotPasswordPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="voce@escritorio.com.br"
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E4E4EC] dark:border-[#2A2A32] bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] outline-none focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-2 focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10 transition-all"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E4E4EC] dark:border-[#2A2A32] bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#6B6B80] dark:placeholder:text-[#9494A2] outline-none focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC] focus:ring-2 focus:ring-[#1A3A5C]/10 dark:focus:ring-[#8AB0DC]/10 transition-all"
                     style={{ fontSize: "14.9px" }}
                   />
                 </div>
