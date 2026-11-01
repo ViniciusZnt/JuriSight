@@ -1,4 +1,4 @@
-import { groupByRecency, type Conversation } from "@/lib/conversations";
+import { conversationTag, groupByRecency, type Conversation, type ConversationVersion } from "@/lib/conversations";
 
 // Meio-dia de N dias atrás, evitando flakiness perto da virada da meia-noite.
 function daysAgo(n: number): number {
@@ -54,5 +54,24 @@ describe("groupByRecency", () => {
 
   it("retorna lista vazia quando não há conversas", () => {
     expect(groupByRecency([])).toEqual([]);
+  });
+});
+
+describe("conversationTag", () => {
+  const agora = new Date(2026, 10, 1, 15, 0).getTime();
+  const v = { numero: 1 } as ConversationVersion;
+
+  it("mostra a hora para consultas de hoje ou de ontem", () => {
+    expect(conversationTag(conv("1", new Date(2026, 10, 1, 9, 5).getTime()), agora)).toBe("09:05");
+    expect(conversationTag(conv("1", new Date(2026, 9, 31, 22, 40).getTime()), agora)).toBe("22:40");
+  });
+
+  it("mostra dia/mês para consultas mais antigas", () => {
+    expect(conversationTag(conv("1", new Date(2026, 9, 20, 9, 5).getTime()), agora)).toBe("20/10");
+  });
+
+  it("acrescenta a última versão quando a consulta foi refinada", () => {
+    const c = { ...conv("1", new Date(2026, 10, 1, 9, 5).getTime()), versions: [v, v] };
+    expect(conversationTag(c, agora)).toBe("09:05 · V2");
   });
 });

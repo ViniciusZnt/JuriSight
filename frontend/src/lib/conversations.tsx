@@ -171,3 +171,16 @@ export function groupByRecency(convs: Conversation[]) {
   if (buckets.antigas.length) out.push({ label: "Mais antigas", items: buckets.antigas });
   return out;
 }
+
+/** Rótulo curto que diferencia consultas com o mesmo título na sidebar: hora (hoje/ontem) ou
+ *  dia/mês (mais antigas), mais a última versão quando há refinamentos ("14:32 · V2"). */
+export function conversationTag(c: Conversation, now = Date.now()): string {
+  const d = new Date(c.createdAt);
+  const hoje = new Date(now);
+  const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1).getTime();
+  const quando =
+    c.createdAt >= ontem
+      ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return c.versions.length > 1 ? `${quando} · V${c.versions.length}` : quando;
+}

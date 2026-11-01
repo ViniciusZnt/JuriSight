@@ -14,7 +14,7 @@ import {
   LogOut,
   type LucideIcon,
 } from "lucide-react";
-import { useConversations, groupByRecency } from "@/lib/conversations";
+import { useConversations, groupByRecency, conversationTag } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 import { useAuth } from "@/lib/auth";
 import { useProfile, initialsOf } from "@/lib/profile";
@@ -166,6 +166,7 @@ export function Sidebar() {
                     >
                       <button
                         onClick={() => abrir(c.id)}
+                        title={c.title}
                         className="flex flex-1 items-center gap-2.5 px-2 py-2 text-left min-w-0"
                       >
                         <MessageSquare
@@ -179,6 +180,9 @@ export function Sidebar() {
                           style={{ fontSize: "14.4px", fontWeight: activeId === c.id ? 500 : 400 }}
                         >
                           {c.title}
+                        </span>
+                        <span className="flex-shrink-0 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.1px" }}>
+                          {conversationTag(c)}
                         </span>
                       </button>
                       <button
