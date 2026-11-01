@@ -1,4 +1,4 @@
-# Deploy do JuriSight na Runstack — plano para 01/11
+# Deploy do JuriSight na VPS (MagnoHost) — plano para 01/11
 
 O app está pronto, mas o deploy ainda não. Hoje existem o código (testes passando) e o build de
 produção do front, que passa. Falta escrever os Dockerfiles, o compose de produção, o HTTPS, o
@@ -34,20 +34,24 @@ O arquivo `data/index/bm25.pkl` (1,1 GB) é do índice antigo e não vai.
 
 ## 1. O que contratar
 
-**Recomendado: CPU Pro (8 vCPU, 16 GB, 100 GB NVMe, R$ 297/mês).** O plano Pro (4 vCPU, R$ 197) também roda.
+**Escolhido: MagnoHost, Servidor VPS 9950x BR 06 (6 vCPU Ryzen 9 9950X, 16 GB DDR5, 160 GB NVMe,
+10 Gbps, Anti-DDoS), R$ 222,90/mês, sem adicionais.** Antes, a opção era a Runstack (CPU Pro, 8 vCPU,
+R$ 297); a MagnoHost sai mais barata e com CPU mais rápida.
 
-- **RAM:** em uso, o app ocupa de 8 a 10 GB: Llama 3B ~3 GB, BM25 ~2 a 3 GB, Qdrant ~1,5 GB, Postgres ~1 GB e o resto. Os 16 GB bastam nos dois planos.
-- **CPU:** é o gargalo. O enriquecimento (Llama 3.2 3B no Ollama) e o reranker rodam em CPU. Nesta máquina, com 16 threads, o reranker leva ~3 s por busca. Com 4 vCPU, espere de 2 a 4 vezes mais em cada etapa.
-- **Disco:** cerca de 25 GB ocupados, sobra folga nos 100 GB.
+- **RAM:** em uso, o app ocupa de 8 a 10 GB: Llama 3B ~3 GB, BM25 ~2 a 3 GB, Qdrant ~1,5 GB, Postgres ~1 GB e o resto. Os 16 GB bastam.
+- **CPU:** é o gargalo. O enriquecimento (Llama 3.2 3B no Ollama) e o reranker rodam em CPU. O Zen 5 tem núcleos rápidos e AVX-512, e os dois aproveitam isso.
+- **Disco:** cerca de 25 GB ocupados dos 160 GB.
 
-Opções no checkout:
-- **Sistema:** Ubuntu 24.04 LTS, não o Debian 13 que vem marcado. É o mais documentado para o Docker.
-- **Chave SSH:** cole a sua chave pública. Se não tiver, gere no WSL com `ssh-keygen -t ed25519 -C "vini@jurisight"` e cole `~/.ssh/id_ed25519.pub`.
-- **Hostname:** `jurisight-prod`.
-- **Pagamento:** mensal, por PIX.
+**Perguntar ao suporte antes de pagar:**
+- Tem Ubuntu 24.04 LTS? É escolhido no painel depois da compra?
+- O painel tem console de emergência (VNC)? Ele entra na VM sem passar pela rede e é a saída se uma configuração de SSH ou de firewall trancar o acesso.
+- Há backup da VM? Sem ele, o backup do Postgres precisa de uma cópia fora da VPS (Fase 8).
 
-Vale conferir no painel se existe console de emergência (VNC ou serial). Ele entra na VM sem
-passar pela rede e é a saída caso uma configuração de SSH ou de firewall tranque o acesso.
+**Na compra:**
+- Ciclo mensal.
+- Nenhum adicional.
+- Sistema: Ubuntu 24.04 LTS.
+- Se houver campo de chave SSH, cole `~/.ssh/id_ed25519.pub`. Se não houver, a Fase 3 instala a chave com `ssh-copy-id`.
 
 ## 2. Como a infra fica montada
 
@@ -75,7 +79,7 @@ o Caddy publica portas.
 
 | Camada | O que faz | Fase |
 |---|---|---|
-| Rede da Runstack | proteção contra DDoS (incluída no plano) | — |
+| Rede da MagnoHost | Anti-DDoS de até 20 Tbps (incluído) | — |
 | Firewall (`ufw`) com bloqueio por padrão | só 22, 80 e 443 | 3 |
 | SSH endurecido | só chave, sem senha, sem login de root, fail2ban | 3 |
 | Docker sem portas públicas | bancos e Ollama só na rede interna do Docker | 1 |
@@ -112,6 +116,8 @@ Pronto quando: `docker compose -f docker-compose.prod.yml up --build` sobe tudo 
 3. A `main` passa a ser a branch de produção: o que entra nela, com o CI verde, vai para a VPS.
 
 ## 6. Fase 3 — preparar a VPS (Vinicius, ~40 min)
+
+Se a compra não pediu chave SSH, instale a sua primeiro, desta máquina: `ssh-copy-id root@IP` (pede a senha de root do painel uma vez).
 
 Como root, logo depois da entrega (`ssh root@IP`):
 
@@ -221,7 +227,7 @@ docker compose -f docker-compose.prod.yml logs -f api   # espere "Application st
 
 ## 11. Fase 8 — backup (~10 min)
 
-- A Runstack faz o backup semanal da VM inteira.
+- Backup da VM pelo provedor: confirmar com a MagnoHost. Se não houver, o `pg_dump` diário também precisa sair da VPS: copiar `/opt/backups` para esta máquina (`rsync` a partir do WSL) ou para um bucket.
 - `pg_dump` diário: `crontab -e` no usuário `deploy` com `0 3 * * * /opt/jurisight/deploy/backup.sh`, que guarda 7 dias em `/opt/backups`.
 - Os índices (Qdrant e BM25) só mudam quando a coleta ou a classificação roda de novo; a cópia de `/opt/backups/inicial` serve de base até lá.
 
@@ -246,7 +252,7 @@ Pronto quando: o check fica verde no PR e a alteração do teste aparece no site
 | Risco | O que fazer |
 |---|---|
 | Uma mudança no SSH ou no `ufw` tranca o acesso | Sempre testar o login em outro terminal antes de fechar a sessão atual; em último caso, o console do painel. |
-| Busca lenta demais com 4 vCPU | Trocar para o CPU Pro no painel, ou tirar o reranker em produção (S2), que corta de 3 a 9 s por busca. |
+| Busca lenta demais | Adicionar núcleos no painel (+R$ 20 por núcleo), ou tirar o reranker em produção (S2), que corta de 3 a 9 s por busca. |
 | Memória estoura com o Llama carregado | O swap de 4 GB segura o pico. Se acontecer sempre, `OLLAMA_KEEP_ALIVE=5m` descarrega o modelo mais cedo. |
 | Um deploy quebra o site | Na VPS, `git checkout <commit anterior>` e `docker compose -f docker-compose.prod.yml up -d --build`. Os dados ficam nos volumes. |
 | Certificado não sai | Conferir se 80/443 estão abertas e se o domínio aponta para o IP; o erro aparece em `logs caddy`. |
@@ -258,7 +264,7 @@ A versão local continua funcionando com `./run.sh`; ela é o plano B para a ban
 
 | # | Fase | Quem | Tempo |
 |---|---|---|---|
-| 1 | Contratar (CPU Pro, Ubuntu 24.04, chave SSH) | Vinicius | 10 min |
+| 1 | Tirar as dúvidas com o suporte e contratar (MagnoHost 9950x BR 06, Ubuntu 24.04) | Vinicius | 15 min |
 | 2 | Arquivos de deploy no repo e teste local | Claude | 30 min |
 | 3 | Preparar a VPS (em paralelo com o item 2) | Vinicius | 40 min |
 | 4 | Push, PR e merge na `main` | Vinicius | 15 min |
