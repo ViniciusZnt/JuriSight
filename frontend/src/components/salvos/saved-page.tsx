@@ -41,6 +41,7 @@ export function SavedPage() {
             {saved.map((d) => (
               <div
                 key={d.id}
+                onMouseEnter={() => router.prefetch(`/decisao/${d.id}`)}
                 onClick={() => router.push(`/decisao/${d.id}`)}
                 className="group flex items-start justify-between gap-4 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all px-5 py-4 cursor-pointer"
               >

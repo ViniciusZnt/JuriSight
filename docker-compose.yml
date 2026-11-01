@@ -17,10 +17,10 @@ services:
       timeout: 5s
       retries: 5
 
-  # Runtime dos modelos locais (embeddings nomic-embed-text + LLM de enriquecimento).
+  # Runtime do LLM local de enriquecimento (Llama 3.2 3B). Os embeddings vêm da OpenAI.
   # Alternativa ao Ollama nativo; escolha um dos dois — ambos usam a porta 11434.
   # O modelo é baixado dentro do container e persiste no volume ollama_models:
-  #   docker compose exec ollama ollama pull nomic-embed-text
+  #   docker compose exec ollama ollama pull llama3.2:3b
   ollama:
     image: ollama/ollama
     container_name: jurisight_ollama

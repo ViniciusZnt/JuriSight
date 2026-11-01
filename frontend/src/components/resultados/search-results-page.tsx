@@ -25,7 +25,9 @@ import { MetaItem } from "@/components/ui/meta-item";
 import { ActionButton } from "@/components/ui/action-button";
 import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
-import { provimentoToOutcome, type Outcome } from "@/lib/outcome";
+import { type Outcome } from "@/lib/outcome";
+import { outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
+import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import {
   compareResultCards,
   matchedEntities,
@@ -35,6 +37,7 @@ import {
   TIPO_DOCUMENTO_LABEL,
 } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
+import { useConversations } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 
 /** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
@@ -120,7 +123,8 @@ function DropdownOption({ label, active, onClick }: { label: string; active: boo
  *  de provimento/data e ordenação operam sobre o mesmo lote já recebido. */
 export function SearchResultsPage() {
   const router = useRouter();
-  const { resultados, estrutura } = useSearchSession();
+  const { resultados, estrutura, versionNumero, loadVersion } = useSearchSession();
+  const { conversations, activeId } = useConversations();
   const { isSaved, toggle } = useSaved();
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
@@ -134,6 +138,11 @@ export function SearchResultsPage() {
   }, [resultados, router]);
 
   const results = useMemo(() => resultados ?? [], [resultados]);
+
+  // Versões da conversa ativa (V1, V2, ... — cada "Refinar consulta" bem-sucedido cria
+  // uma): já vêm todas carregadas junto com a lista de conversas, trocar de versão aqui é
+  // só um swap local (loadVersion), sem chamar a API de novo.
+  const versoes = conversations.find((c) => c.id === activeId)?.versions ?? [];
 
   const maxScore = useMemo(() => results.reduce((max, r) => Math.max(max, r.score_rrf), 0), [results]);
 
@@ -159,7 +168,7 @@ export function SearchResultsPage() {
   }, [results, sortBy, sortDir]);
 
   const filteredResults = sortedResults
-    .filter((d) => filter === "all" || provimentoToOutcome(d.provimento) === filter)
+    .filter((d) => filter === "all" || outcomeDe(d) === filter)
     .filter((d) => inPeriod(d.data_julgamento));
 
   const toggleSave = (d: (typeof results)[number]) => {
@@ -169,7 +178,7 @@ export function SearchResultsPage() {
       court: d.tribunal,
       chamber: d.turma,
       date: d.data_julgamento ?? "",
-      outcome: provimentoToOutcome(d.provimento),
+      outcome: outcomeDe(d),
       relevance: relevancePercent(d.score_rrf, maxScore),
       rapporteur: d.relator,
       processNumber: d.numero_processo,
@@ -181,8 +190,8 @@ export function SearchResultsPage() {
   const formatDateLong = (dateStr: string | null) =>
     dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não informada";
 
-  const favorableCount = results.filter((d) => provimentoToOutcome(d.provimento) === "favorable").length;
-  const unfavorableCount = results.filter((d) => provimentoToOutcome(d.provimento) === "unfavorable").length;
+  const favorableCount = results.filter((d) => outcomeDe(d) === "favorable").length;
+  const unfavorableCount = results.filter((d) => outcomeDe(d) === "unfavorable").length;
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
@@ -194,7 +203,7 @@ export function SearchResultsPage() {
         `${idx + 1}. ${titleFromEmenta(d.ementa)}`,
         `   ${d.tribunal} — ${d.turma} · ${formatDateLong(d.data_julgamento)}`,
         `   Processo: ${d.numero_processo} · Rel. ${d.relator}`,
-        `   Provimento: ${d.provimento} · Relevância: ${relevancePercent(d.score_rrf, maxScore)}%`,
+        `   Provimento: ${d.classificacao_provimento ? resumoProvimento(d.classificacao_provimento) : PROVIMENTO_LABEL[d.provimento]} · Relevância: ${relevancePercent(d.score_rrf, maxScore)}%`,
         `   ${truncate(d.ementa, 600)}`,
       ].join("\n")
     );
@@ -260,8 +269,29 @@ export function SearchResultsPage() {
           </div>
         </div>
 
-        {/* Refine query */}
-        <div className="w-full max-w-[800px] flex justify-end mb-3">
+        {/* Versões (V1/V2/...) e refinar consulta */}
+        <div className="w-full max-w-[800px] flex items-center justify-between gap-3 mb-3">
+          {versoes.length > 1 ? (
+            <DropdownPill label={`Versão V${versionNumero ?? versoes[versoes.length - 1].numero}`} active={false}>
+              {(close) => (
+                <>
+                  {[...versoes].reverse().map((v) => (
+                    <DropdownOption
+                      key={v.numero}
+                      label={`V${v.numero}${v.numero === versoes.length ? " (mais recente)" : ""}`}
+                      active={v.numero === versionNumero}
+                      onClick={() => {
+                        loadVersion(v);
+                        close();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            </DropdownPill>
+          ) : (
+            <span />
+          )}
           <button
             onClick={() => router.push("/revisao")}
             className="flex items-center gap-1.5 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
@@ -460,7 +490,7 @@ export function SearchResultsPage() {
             {filteredResults.map((decision) => {
               const saved = isSaved(decision.id);
               const title = titleFromEmenta(decision.ementa);
-              const outcome = provimentoToOutcome(decision.provimento);
+              const outcome = outcomeDe(decision);
               const relevance = relevancePercent(decision.score_rrf, maxScore);
               const entidades = matchedEntities(estrutura, decision.ementa);
 
@@ -468,6 +498,7 @@ export function SearchResultsPage() {
                 <div
                   key={decision.id}
                   className="bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group cursor-pointer"
+                  onMouseEnter={() => router.prefetch(`/decisao/${decision.id}`)}
                   onClick={() => router.push(`/decisao/${decision.id}`)}
                 >
                   {/* Header */}
@@ -478,7 +509,11 @@ export function SearchResultsPage() {
                       </h3>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <OutcomeBadge outcome={outcome} size="sm" />
-                        <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]">
+                        <div
+                          title="Relevância relativa ao melhor resultado desta busca"
+                          aria-label={`Relevância relativa ao melhor resultado desta busca: ${relevance}%`}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]"
+                        >
                           <TrendingUp className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
                           <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
                             {relevance}%
@@ -498,6 +533,11 @@ export function SearchResultsPage() {
                         <span className="font-mono">{decision.numero_processo}</span>
                       </MetaItem>
                     </div>
+                  </div>
+
+                  {/* Provimento (Jev) */}
+                  <div className="px-6 py-3 border-b border-[#F0F0F6] dark:border-[#26262C]">
+                    <ProvimentoPanel compacto documentoId={decision.id} provimento={decision.provimento} classificacao={decision.classificacao_provimento} />
                   </div>
 
                   {/* Summary */}

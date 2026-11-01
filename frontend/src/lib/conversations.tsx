@@ -1,46 +1,73 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
-import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import type { ConversaApi, EstruturaArgumentativa, NovaVersaoBody, ResultCard, VersaoApi } from "@/lib/api";
+import { adicionarVersaoConversa, apagarConversa, criarConversa, listarConversas, renomearConversa } from "@/lib/api";
 
-/** Snapshot do que essa conversa já produziu — o suficiente pra reabrir exatamente de
- *  onde parou (Revisão, se só enriqueceu; Resultados, se já buscou). Persistido só no
- *  navegador (localStorage), igual ao resto do app — ver RFC §6.1 (LGPD): nada disso
- *  é enviado/guardado no backend. */
-export interface ConversationSnapshot {
+/** Uma versão de busca dentro de uma conversa — o que vira "V{numero}" no dropdown de
+ *  versões da página de Resultados. Cada "Refinar consulta" bem-sucedido cria uma versão
+ *  nova; nenhuma sobrescreve as anteriores. Persistido no Postgres
+ *  (query/api/conversa_routes.py), escopado ao usuário da sessão — nunca o PDF enviado
+ *  nem seu texto, só a EstruturaArgumentativa revisada e os resultados do /query (ver
+ *  conversations/db.py no backend para o porquê). */
+export interface ConversationVersion {
+  numero: number;
   estrutura: EstruturaArgumentativa;
   hasFile: boolean;
   fileName: string | null;
   pdfExtraido: boolean | null;
   aviso: string | null;
   resultados: ResultCard[] | null;
+  createdAt: number; // epoch ms
 }
 
-/** Uma pesquisa salva (o "histórico" da sidebar). */
+/** O conteúdo de uma versão, sem o número (a API atribui o número — ver
+ *  ConversationsCtx.addVersion) nem o timestamp (o backend que grava). */
+export type ConversationSnapshot = Omit<ConversationVersion, "numero" | "createdAt">;
+
+/** Uma pesquisa salva (o "histórico" da sidebar) — pode ter várias versões. */
 export interface Conversation {
   id: string;
   title: string;
   createdAt: number; // epoch ms
-  snapshot?: ConversationSnapshot;
+  versions: ConversationVersion[];
 }
 
-const STORAGE_KEY = "jurisight:conversations";
+function versionFromApi(v: VersaoApi): ConversationVersion {
+  return {
+    numero: v.numero,
+    estrutura: v.estrutura,
+    hasFile: v.has_file,
+    fileName: v.file_name,
+    pdfExtraido: v.pdf_extraido,
+    aviso: v.aviso,
+    resultados: v.resultados,
+    createdAt: new Date(v.criado_em).getTime(),
+  };
+}
+
+function fromApi(c: ConversaApi): Conversation {
+  return {
+    id: c.id,
+    title: c.titulo,
+    createdAt: new Date(c.criado_em).getTime(),
+    versions: c.versoes.map(versionFromApi),
+  };
+}
 
 interface ConversationsCtx {
   conversations: Conversation[];
   activeId: string | null;
-  create: (title: string) => string; // devolve o id novo
-  rename: (id: string, title: string) => void;
-  remove: (id: string) => void;
+  /** true enquanto a lista inicial ainda está carregando da API. */
+  loading: boolean;
+  create: (title: string) => Promise<string>; // resolve com o id novo
+  rename: (id: string, title: string) => Promise<void>;
+  remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
-  /** Grava/substitui o snapshot de uma conversa (chamado após /enrich e após /query). */
-  setSnapshot: (id: string, snapshot: ConversationSnapshot) => void;
+  /** Acrescenta uma versão nova à conversa (nunca sobrescreve as anteriores) — chamado
+   *  toda vez que POST /query retorna com sucesso. Devolve a versão recém-criada (já com
+   *  o número atribuído pelo backend), pra quem chamou saber qual exibir. */
+  addVersion: (id: string, snapshot: ConversationSnapshot) => Promise<ConversationVersion>;
 }
 
 const Ctx = createContext<ConversationsCtx | null>(null);
@@ -48,59 +75,64 @@ const Ctx = createContext<ConversationsCtx | null>(null);
 export function ConversationsProvider({ children }: { children: React.ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Carrega do localStorage uma vez (client-only).
+  // Carrega do backend uma vez, ao montar (já dentro de <RequireAuth>, então a sessão já
+  // está confirmada). Falha de rede aqui não derruba o app — só fica com histórico vazio.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setConversations(JSON.parse(raw));
-    } catch {
-      /* storage indisponível — segue vazio */
-    }
-    setHydrated(true);
-  }, []);
-
-  // Persiste a cada mudança (só depois de hidratar, p/ não sobrescrever com []).
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
-    } catch {
-      /* ignora */
-    }
-  }, [conversations, hydrated]);
-
-  const create = useCallback((title: string) => {
-    const id = crypto.randomUUID();
-    const conv: Conversation = {
-      id,
-      title: title.trim() || "Nova pesquisa",
-      createdAt: Date.now(),
+    let cancelled = false;
+    listarConversas()
+      .then((lista) => {
+        if (!cancelled) setConversations(lista.map(fromApi));
+      })
+      .catch((err) => {
+        console.error("Falha ao carregar conversas:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
+  }, []);
+
+  const create = useCallback(async (title: string) => {
+    const criada = await criarConversa(title.trim() || "Nova pesquisa");
+    const conv = fromApi(criada);
     setConversations((prev) => [conv, ...prev]);
-    setActiveId(id);
-    return id;
+    setActiveId(conv.id);
+    return conv.id;
   }, []);
 
-  const rename = useCallback((id: string, title: string) => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, title: title.trim() || c.title } : c))
-    );
+  const rename = useCallback(async (id: string, title: string) => {
+    const atualizada = await renomearConversa(id, title.trim() || "Nova pesquisa");
+    setConversations((prev) => prev.map((c) => (c.id === id ? fromApi(atualizada) : c)));
   }, []);
 
-  const remove = useCallback((id: string) => {
+  const remove = useCallback(async (id: string) => {
+    await apagarConversa(id);
     setConversations((prev) => prev.filter((c) => c.id !== id));
     setActiveId((prev) => (prev === id ? null : prev));
   }, []);
 
-  const setSnapshot = useCallback((id: string, snapshot: ConversationSnapshot) => {
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, snapshot } : c)));
+  const addVersion = useCallback(async (id: string, snapshot: ConversationSnapshot) => {
+    const body: NovaVersaoBody = {
+      estrutura: snapshot.estrutura,
+      has_file: snapshot.hasFile,
+      file_name: snapshot.fileName,
+      pdf_extraido: snapshot.pdfExtraido,
+      aviso: snapshot.aviso,
+      resultados: snapshot.resultados,
+    };
+    const atualizada = await adicionarVersaoConversa(id, body);
+    const conv = fromApi(atualizada);
+    setConversations((prev) => prev.map((c) => (c.id === id ? conv : c)));
+    return conv.versions[conv.versions.length - 1];
   }, []);
 
   return (
     <Ctx.Provider
-      value={{ conversations, activeId, create, rename, remove, setActive: setActiveId, setSnapshot }}
+      value={{ conversations, activeId, loading, create, rename, remove, setActive: setActiveId, addVersion }}
     >
       {children}
     </Ctx.Provider>

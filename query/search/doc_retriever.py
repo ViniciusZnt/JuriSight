@@ -7,13 +7,16 @@ documento_id (UUID) que a busca híbrida devolveu.
 import psycopg
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
-# Mesmas colunas do _SELECT de indexing/doc_source.py, filtrando por id (UUID).
-_SELECT_BY_IDS = """
-SELECT id, id_documento, tipo_documento, hierarquia_categoria, data_filtro,
+# Mesmas colunas do _SELECT de indexing/doc_source.py. A ORDEM importa: _row_para_documento
+# lê por índice. Exposta para outros módulos (ex.: avaliacao.geracao) reusarem o mapeamento.
+COLUNAS_DOCUMENTO = """id, id_documento, tipo_documento, hierarquia_categoria, data_filtro,
        numero_processo, tribunal, classe_processo, sigla_classe,
        relator, turma, gabinete, data_julgamento, data_juntada,
        cabecalho, ementa, relatorio, fundamentacao, acordao, votos,
-       possui_ementa, referencia_legislativa, provimento, link_original
+       possui_ementa, referencia_legislativa, provimento, link_original"""
+
+_SELECT_BY_IDS = f"""
+SELECT {COLUNAS_DOCUMENTO}
 FROM documentos
 WHERE id = ANY(%s::uuid[])
 """
@@ -29,7 +32,6 @@ class DocRetriever:
         Returns: None.
         """
         self.database_url = database_url
-        self._conn = None
 
     def fetch(self, documento_ids: list[str]) -> dict[str, DocumentoJuridico]:
         """Busca os documentos pelos UUIDs e devolve um mapa id -> documento.
@@ -41,13 +43,14 @@ class DocRetriever:
         if not documento_ids:
             return {}
 
-        self._conn = psycopg.connect(self.database_url)
+        # Conexão local: a instância é compartilhada entre threads.
+        conn = psycopg.connect(self.database_url)
         try:
-            with self._conn.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(_SELECT_BY_IDS, (documento_ids,))
                 rows = cur.fetchall()
         finally:
-            self._conn.close()
+            conn.close()
 
         return {str(row[0]): _row_para_documento(row) for row in rows}
 

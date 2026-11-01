@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Imagem Docker de produção: server.js autocontido (frontend/Dockerfile).
+  output: "standalone",
 };
 
 export default nextConfig;

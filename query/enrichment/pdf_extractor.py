@@ -19,9 +19,17 @@ from typing import Callable
 import pdfplumber
 
 # Acima disso, o texto é dividido em blocos e resumido antes de seguir (FA04).
-LIMITE_CHARS_SEM_SUMARIZACAO = 8000
-# Tamanho alvo de cada bloco enviado ao LLM para resumo individual.
-TAMANHO_BLOCO = 4000
+# Llama 3.2 3B aceita até 128k tokens de contexto — o limite real aqui não é o
+# modelo, é o tempo de decode (CPU, lento) de cada chamada extra. Um limite
+# baixo (8000) forçava a maioria dos PDFs a passar pelo pipeline de blocos +
+# condensação (várias chamadas sequenciais ao LLM só pra depois fazer a extração
+# de verdade) mesmo quando o texto já cabia direto no prompt de extração.
+LIMITE_CHARS_SEM_SUMARIZACAO = 24000
+# Tamanho alvo de cada bloco enviado ao LLM para resumo individual. Maior =
+# menos blocos = menos chamadas sequenciais ao LLM (o gargalo é o número de
+# chamadas, não o tamanho do prompt — decode em CPU domina o tempo, e cada
+# resumo gera poucas dezenas de tokens independente do tamanho do bloco).
+TAMANHO_BLOCO = 12000
 # Teto de blocos processados — protege o tempo de resposta (RNF02: < 30s).
 # Blocos excedentes são descartados (o documento já é atípicamente longo).
 MAX_BLOCOS = 8

@@ -15,14 +15,14 @@ substitui get_current_user por um usuário fake em TODO teste, sem precisar
 repetir isso em cada um.
 """
 import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 import query.api.app as api_app
 from auth.store import Usuario
-from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid
+from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid, get_reranker
 from query.api.auth_routes import get_usuario_store
 from query.enrichment.pdf_extractor import PDFSemTextoError
 from query.enrichment.query_enrichment import _montar_conteudo
@@ -44,9 +44,21 @@ class _FakeHybrid:
         self._resultados = resultados
         self.calls: list[dict] = []
 
-    def search(self, query, n_results, where=None, *, bm25_query=None):
-        self.calls.append({"query": query, "n_results": n_results, "bm25_query": bm25_query})
+    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None):
+        self.calls.append(
+            {"query": query, "n_results": n_results, "bm25_query": bm25_query, "provimento": provimento}
+        )
         return self._resultados[:n_results]
+
+
+class _FakeReranker:
+    """Passthrough: devolve scores estritamente decrescentes na MESMA ordem de
+    entrada, então o sort por score em query/api/app.py não muda a ordem que
+    já veio do (fake) RRF — os testes abaixo continuam testando a lógica de
+    filtro/hierarquia/paginação sem precisar saber de re-ranking."""
+
+    def rerank_scores(self, query: str, passagens: list[str]) -> list[float]:
+        return [1.0 - i * 0.01 for i in range(len(passagens))]
 
 
 class _FakeDocRetriever:
@@ -101,6 +113,16 @@ def _usuario_autenticado():
     app.dependency_overrides[get_current_user] = lambda: _USUARIO_FAKE
     yield
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reranker_passthrough():
+    """O reranker real (query/search/reranker.py) baixa/carrega um modelo ONNX
+    — nunca deve rodar em teste. Os testes de /query abaixo testam filtro/
+    hierarquia/paginação, não a qualidade do re-ranking em si (isso é
+    tests/test_reranker.py)."""
+    app.dependency_overrides[get_reranker] = lambda: _FakeReranker()
+    yield
 
 
 # --------------------------------------------------------------------------- #
@@ -231,25 +253,38 @@ def test_enrich_pdf_corrompido_400(client):
 
 
 # --------------------------------------------------------------------------- #
+# _normalizar_scores (helper do re-ranking)                                   #
+# --------------------------------------------------------------------------- #
+
+def test_normalizar_scores_espalha_entre_0_e_1():
+    assert api_app._normalizar_scores([0.97, 0.98, 0.999]) == [0.0, pytest.approx((0.98 - 0.97) / (0.999 - 0.97)), 1.0]
+
+
+def test_normalizar_scores_vazio():
+    assert api_app._normalizar_scores([]) == []
+
+
+def test_normalizar_scores_sem_variacao_nao_divide_por_zero():
+    assert api_app._normalizar_scores([0.5]) == [1.0]
+    assert api_app._normalizar_scores([0.5, 0.5, 0.5]) == [1.0, 1.0, 1.0]
+
+
+# --------------------------------------------------------------------------- #
 # POST /query                                                                  #
 # --------------------------------------------------------------------------- #
 
 def test_query_fim_a_fim_ordena_e_formata(client):
-    sumula = _doc(tipo_documento=TipoDocumento.SUMULA, hierarquia_categoria=1)
-    acordao = _doc(tipo_documento=TipoDocumento.ACORDAO, hierarquia_categoria=4)
-    docs = {"sumula-id": sumula, "acordao-id": acordao}
+    docs = {"a-id": _doc(), "b-id": _doc()}
 
-    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid(
-        [("acordao-id", 9.0), ("sumula-id", 1.0)]
-    )
+    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
     app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
 
     resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
 
     assert resp.status_code == 200
     body = resp.json()
-    # a súmula tem hierarquia_categoria menor -> vem primeiro, mesmo com score menor.
-    assert [card["id"] for card in body] == ["sumula-id", "acordao-id"]
+    # a ordem final é a do reranker (o fake mantém a ordem de entrada).
+    assert [card["id"] for card in body] == ["a-id", "b-id"]
 
 
 def test_query_estrutura_vazia_422(client):
@@ -261,7 +296,7 @@ def test_query_estrutura_vazia_422(client):
     assert resp.status_code == 422
 
 
-def test_query_filtro_provimento_reduz_resultados_e_pede_pool_maior(client):
+def test_query_filtro_provimento_reduz_resultados_e_filtra_nos_canais(client):
     favoravel = _doc(provimento=Provimento.APROVADO)
     desfavoravel = _doc(provimento=Provimento.NEGADO)
     docs = {"favoravel": favoravel, "desfavoravel": desfavoravel}
@@ -278,10 +313,15 @@ def test_query_filtro_provimento_reduz_resultados_e_pede_pool_maior(client):
     assert resp.status_code == 200
     body = resp.json()
     assert [card["id"] for card in body] == ["favoravel"]
-    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_COM_FILTRO
+    # provimento filtrado dentro dos canais: pool normal, e o valor chega ao hybrid
+    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_PARA_RERANK
+    assert fake_hybrid.calls[0]["provimento"] == "APROVADO"
 
 
-def test_query_sem_filtro_usa_pool_padrao(client):
+def test_query_sem_filtro_usa_pool_de_rerank(client):
+    """Sem filtro, o pool pedido ao hybrid search é N_CANDIDATOS_PARA_RERANK
+    (maior que N_RESULTS_FINAL) — o re-ranking precisa de mais candidatos que
+    o corte final pra ter o que escolher (ver query/api/app.py::query)."""
     doc = _doc()
     fake_hybrid = _FakeHybrid([("doc-1", 1.0)])
     app.dependency_overrides[get_hybrid] = lambda: fake_hybrid
@@ -289,23 +329,29 @@ def test_query_sem_filtro_usa_pool_padrao(client):
 
     client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
 
-    assert fake_hybrid.calls[0]["n_results"] == api_app.N_RESULTS_FINAL
+    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_PARA_RERANK
 
 
-def test_query_ordenar_por_data(client):
-    recente = _doc(data_julgamento=date(2026, 1, 1))
-    antigo = _doc(data_julgamento=date(2020, 1, 1))
-    docs = {"antigo": antigo, "recente": recente}
+def test_query_reranking_promove_candidato_mal_rankeado_pelo_rrf(client):
+    """O re-ranking (query/search/reranker.py) reordena por relevância real —
+    um candidato que o RRF rankeou por último pode terminar primeiro, se o
+    cross-encoder achar que ele é o mais relevante pro conteúdo da tese."""
+    mesma_hierarquia = {"a": _doc(), "b": _doc(), "c": _doc()}  # todos ACORDAO (default)
 
-    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("antigo", 2.0), ("recente", 1.0)])
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
-
-    resp = client.post(
-        "/query",
-        json={"estrutura": {"tese_central": "insalubridade"}, "ordenar_por": "data"},
+    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid(
+        [("a", 3.0), ("b", 2.0), ("c", 1.0)]  # RRF: a > b > c
     )
+    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(mesma_hierarquia)
 
-    assert [card["id"] for card in resp.json()] == ["recente", "antigo"]
+    class _RerankerInverteOrdem:
+        def rerank_scores(self, query, passagens):
+            return list(range(len(passagens)))  # cresce com a posição -> inverte a ordem do RRF
+
+    app.dependency_overrides[get_reranker] = lambda: _RerankerInverteOrdem()
+
+    resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
+
+    assert [card["id"] for card in resp.json()] == ["c", "b", "a"]
 
 
 # --------------------------------------------------------------------------- #
@@ -333,3 +379,59 @@ def test_get_document_nao_encontrado_404(client):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# --------------------------------------------------------------------------- #
+# Classificação do Jev anexada aos cards                                       #
+# --------------------------------------------------------------------------- #
+
+import psycopg  # noqa: E402
+
+from query.api.provimento_routes import get_provimento_store  # noqa: E402
+
+_DETALHE = {
+    "resultado": "nao_provido", "recorrente": "reclamada", "favorece": "reclamante",
+    "probabilidades": {"resultado": {"nao_provido": 0.9, "provido": 0.1}},
+    "confianca_resultado": 0.9, "confianca_recorrente": 0.8, "confianca_favorece": 0.7,
+    "modelo": "jev-1.13.0",
+}
+
+
+class _FakeProvimentoStore:
+    def __init__(self, falha: bool = False):
+        self.falha = falha
+
+    def detalhes(self, ids):
+        if self.falha:
+            raise psycopg.OperationalError("banco fora")
+        return {i: _DETALHE for i in ids if i == "a-id"}
+
+
+def _instalar_busca():
+    docs = {"a-id": _doc(), "b-id": _doc()}
+    app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
+    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
+
+
+def test_query_anexa_classificacao(client):
+    _instalar_busca()
+    app.dependency_overrides[get_provimento_store] = lambda: _FakeProvimentoStore()
+    body = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}}).json()
+    por_id = {c["id"]: c for c in body}
+    assert por_id["a-id"]["classificacao_provimento"]["favorece"] == "reclamante"
+    assert por_id["b-id"]["classificacao_provimento"] is None
+
+
+def test_query_sem_classificacao_quando_store_falha(client):
+    _instalar_busca()
+    app.dependency_overrides[get_provimento_store] = lambda: _FakeProvimentoStore(falha=True)
+    resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
+    assert resp.status_code == 200
+    assert all(c["classificacao_provimento"] is None for c in resp.json())
+
+
+def test_document_anexa_classificacao(client):
+    _instalar_busca()
+    app.dependency_overrides[get_provimento_store] = lambda: _FakeProvimentoStore()
+    body = client.get("/document/a-id").json()
+    assert body["classificacao_provimento"]["recorrente"] == "reclamada"

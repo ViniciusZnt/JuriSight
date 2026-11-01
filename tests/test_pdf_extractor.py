@@ -88,7 +88,7 @@ def test_resumir_hierarquico_texto_curto_nao_chama_llm():
 def test_resumir_hierarquico_texto_longo_divide_resume_e_condensa():
     fake = _ResumidorFake()
     paragrafo = "frase relevante do processo. " * 50  # ~1500 chars
-    texto = "\n\n".join([paragrafo] * 10)  # bem acima do limite default
+    texto = "\n\n".join([paragrafo] * 20)  # bem acima do limite default
     assert len(texto) > LIMITE_CHARS_SEM_SUMARIZACAO
 
     resultado = resumir_hierarquico(texto, resumir_bloco=fake.resumir_bloco, condensar=fake.condensar)

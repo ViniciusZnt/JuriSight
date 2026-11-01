@@ -1,11 +1,11 @@
 """
 Testes do SAC Chunker (processing/chunking/sac_chunker.py).
 
-Unit tests puros — não dependem de PostgreSQL nem do Ollama. Cobrem os três
+Unit tests puros — não dependem de PostgreSQL nem da OpenAI. Cobrem os três
 primitivos (_count_tokens, _split_into_windows, _dispositivo_summary) e a
 orquestração em chunk_document, incluindo os casos-limite que motivaram os
-ajustes de tamanho de janela e teto de prefixo (evitar estourar os 2048 tokens
-do nomic).
+ajustes de tamanho de janela e teto de prefixo (evitar estourar os 8191 tokens
+do text-embedding-3-small).
 """
 from datetime import date
 
@@ -208,14 +208,14 @@ def test_chunk_documento_sem_conteudo_retorna_vazio():
 
 
 # --------------------------------------------------------------------------- #
-# Orçamento de tokens (regressão do estouro do nomic)                          #
+# Orçamento de tokens (regressão do estouro do modelo de embedding)            #
 # --------------------------------------------------------------------------- #
 
 def test_chunk_respeita_orcamento_de_tokens():
-    """Nem o pior caso (ementa longa + janela fundida) passa do limite do nomic.
+    """Nem o pior caso (ementa longa + janela fundida) passa do limite do text-embedding-3-small.
 
     Aproximação: TARGET (500) + fusão (< MIN) + prefixo capado (SUMMARY_MAX_WORDS)
-    ⇒ folga confortável sob 2048 tokens mesmo com ~1,8 token/palavra.
+    ⇒ folga confortável sob 8191 tokens mesmo com ~1,8 token/palavra.
     """
     ementa_longa = _words(1000, prefix="e")          # bem maior que o teto
     doc = _doc(ementa=ementa_longa, acordao=_words(TARGET_TOKENS * 3 + 40))

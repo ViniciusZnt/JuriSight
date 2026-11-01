@@ -102,13 +102,7 @@ def client(store: _FakeUsuarioStore) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_usuario_store] = lambda: store
-    client = TestClient(app)
-    # POST/registro/login/logout exigem X-Requested-With (defesa em profundidade
-    # contra CSRF, ver auth_routes._exigir_header_csrf) — setado aqui uma vez
-    # para todo o client, já que é o comportamento normal de um frontend real
-    # (fetch/XHR same-origin), não algo que cada teste deva repetir.
-    client.headers.update({"X-Requested-With": "XMLHttpRequest"})
-    return client
+    return TestClient(app)
 
 
 # --------------------------------------------------------------------------- #
@@ -137,19 +131,6 @@ def test_registro_senha_curta_422(client: TestClient):
 def test_registro_email_invalido_422(client: TestClient):
     resp = client.post("/auth/registro", json={"email": "nao-e-email", "password": "senha-forte-123"})
     assert resp.status_code == 422
-
-
-def test_registro_sem_header_csrf_e_rejeitado_403(client: TestClient):
-    # Regressão: um POST cross-site "simples" (via <form>, sem preflight) não
-    # consegue setar X-Requested-With — só um fetch/XHR same-origin (ou de uma
-    # origem já autorizada pelo CORS) consegue. Simula esse ataque removendo o
-    # header que o fixture `client` normalmente injeta.
-    resp = client.post(
-        "/auth/registro",
-        json={"email": "sem-header@example.com", "password": "senha-forte-123"},
-        headers={"X-Requested-With": ""},
-    )
-    assert resp.status_code == 403
 
 
 def test_registro_email_duplicado_409(client: TestClient):

@@ -35,9 +35,11 @@ class _FakeBM25:
     def __init__(self, hits=None):
         self._hits = hits or []
         self.calls: list[tuple[str, int]] = []
+        self.kwargs: list[dict] = []
 
-    def search(self, query: str, n: int):
+    def search(self, query: str, n: int, **kwargs):
         self.calls.append((query, n))
+        self.kwargs.append(kwargs)
         return self._hits
 
 
@@ -101,3 +103,40 @@ def test_search_funde_os_tres_canais():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# --------------------------------------------------------------------------- #
+# HybridSearch.search — filtro de provimento nos canais                        #
+# --------------------------------------------------------------------------- #
+
+def test_search_com_provimento_filtra_os_tres_canais():
+    embedder, chroma, bm25 = _FakeEmbedder(), _FakeChroma(), _FakeBM25()
+    hybrid = HybridSearch(embedder, chroma, bm25)
+
+    hybrid.search("tese", provimento="APROVADO")
+
+    assert len(chroma.calls) == 2
+    assert all(c["where"] == {"provimento": "APROVADO"} for c in chroma.calls)
+    assert bm25.kwargs == [{"provimento": "APROVADO"}]
+
+
+def test_search_junta_where_existente():
+    embedder, chroma, bm25 = _FakeEmbedder(), _FakeChroma(), _FakeBM25()
+    hybrid = HybridSearch(embedder, chroma, bm25)
+    where = {"tribunal": "TST"}
+
+    hybrid.search("tese", where=where, provimento="NEGADO")
+
+    assert all(c["where"] == {"tribunal": "TST", "provimento": "NEGADO"} for c in chroma.calls)
+    assert where == {"tribunal": "TST"}  # não muta o dict do chamador
+
+
+def test_sem_filtro_chamadas_identicas():
+    embedder, chroma, bm25 = _FakeEmbedder(), _FakeChroma(), _FakeBM25()
+    hybrid = HybridSearch(embedder, chroma, bm25)
+
+    hybrid.search("tese", n_results=10)
+
+    assert all(c["where"] is None for c in chroma.calls)
+    assert bm25.calls == [("tese", 50)]
+    assert bm25.kwargs == [{}]  # sem o kwarg provimento

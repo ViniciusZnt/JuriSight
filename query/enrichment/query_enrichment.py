@@ -121,7 +121,12 @@ class QueryEnricher:
                 {"role": "user", "content": conteudo},
             ],
             format=EstruturaArgumentativa.model_json_schema(),
-            options={"temperature": 0},
+            # num_predict trava o teto de tokens gerados — em CPU o decode é o
+            # gargalo, não o tamanho do prompt de entrada (mesmo raciocínio de
+            # resumir_bloco/condensar acima). O schema já é pequeno (uma
+            # dezena de campos curtos), 600 tokens é folga de sobra sem
+            # arriscar truncar um JSON válido no meio.
+            options={"temperature": 0, "num_predict": 600},
         )
         return EstruturaArgumentativa.model_validate_json(resp.message.content)
 
@@ -144,7 +149,11 @@ class QueryEnricher:
                 },
                 {"role": "user", "content": texto},
             ],
-            options={"temperature": 0},
+            # num_predict trava o teto de tokens gerados: em CPU o decode é o
+            # gargalo (poucos tokens/s), e um resumo de "até 3 frases" nunca
+            # precisa de mais que isso — sem o teto, uma resposta que foge do
+            # pedido pode gerar bem mais texto do que o necessário.
+            options={"temperature": 0, "num_predict": 200},
         )
         return resp.message.content.strip()
 
@@ -168,6 +177,6 @@ class QueryEnricher:
                 },
                 {"role": "user", "content": "\n\n".join(resumos)},
             ],
-            options={"temperature": 0},
+            options={"temperature": 0, "num_predict": 500},
         )
         return resp.message.content.strip()

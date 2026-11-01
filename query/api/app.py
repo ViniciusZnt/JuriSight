@@ -24,10 +24,12 @@ persistido — só leitura via DocRetriever sobre os documentos já coletados do
 """
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import date
-from typing import Literal
+
+import psycopg
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,31 +39,38 @@ from starlette.concurrency import run_in_threadpool
 
 from auth.db import ensure_schema
 from auth.store import UsuarioStore
+from conversations.db import ensure_schema as ensure_conversas_schema
+from conversations.store import ConversaStore
 from indexing.lexical.bm25_builder import BM25Builder
 from indexing.vector_store.qdrant_store import QdrantStore
 from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
-from query.enrichment import pdf_extractor, query_builder
+from query.api.conversa_routes import router as conversa_router
+from query.enrichment import pdf_extractor
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
-from query.search import categorical_sort
 from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
-from query.search.result_formatter import DocumentoDetalhe, ResultCard, format_results
+from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados em tests/test_api.py)
+    N_CANDIDATOS_COM_FILTRO,
+    N_CANDIDATOS_PARA_RERANK,
+    N_RESULTS_FINAL,
+    buscar,
+    normalizar_scores as _normalizar_scores,
+)
+from query.search.reranker import Reranker
+from query.api.provimento_routes import get_provimento_store
+from query.api.provimento_routes import router as provimento_router
+from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
+from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema_correcoes
 from scraper.schema import Provimento
+
+logger = logging.getLogger(__name__)
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 DATABASE_URL = os.getenv("DATABASE_URL")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
-
-# Top-N final devolvido por /query (RFC: RRF Fusion "retorna os top-20").
-N_RESULTS_FINAL = 20
-# Pool de candidatos maior quando algum filtro (provimento/período) está ativo —
-# o filtro é aplicado em Python DEPOIS da busca (ver _aplicar_filtros), então um
-# pool maior evita perder recall.
-N_CANDIDATOS_COM_FILTRO = 80
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -73,8 +82,13 @@ async def lifespan(app: FastAPI):
     app.state.hybrid = HybridSearch(embedder, store, bm25)
     app.state.doc_retriever = DocRetriever(DATABASE_URL)
     app.state.enricher = QueryEnricher()
+    app.state.reranker = Reranker()  # ~150MB, carregado uma vez (ver query/search/reranker.py)
     ensure_schema(DATABASE_URL)  # idempotente — cria auth.usuarios se ainda não existir
     app.state.usuario_store = UsuarioStore(DATABASE_URL)
+    ensure_conversas_schema(DATABASE_URL)  # depende de auth.usuarios (FK) — roda depois
+    app.state.conversa_store = ConversaStore(DATABASE_URL)
+    ensure_schema_correcoes(DATABASE_URL)  # depende de auth.usuarios (FK)
+    app.state.provimento_store = ProvimentoJevStore(DATABASE_URL)
     yield
 
 
@@ -103,6 +117,24 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(conversa_router)
+app.include_router(provimento_router)
+
+
+def com_classificacao(cards: list, store: ProvimentoJevStore | None) -> list:
+    """Anexa a classificação do Jev aos cards. Falha no banco não derruba a busca."""
+    if store is None or not cards:
+        return cards
+    try:
+        detalhes = store.detalhes([c.id for c in cards])
+    except psycopg.Error as exc:
+        logger.warning("Sem classificação do provimento nos resultados: %s", exc)
+        return cards
+    return [
+        c.model_copy(update={"classificacao_provimento": ClassificacaoProvimentoView(**detalhes[c.id])})
+        if c.id in detalhes else c
+        for c in cards
+    ]
 
 
 def get_hybrid(request: Request) -> HybridSearch:
@@ -115,6 +147,10 @@ def get_doc_retriever(request: Request) -> DocRetriever:
 
 def get_enricher(request: Request) -> QueryEnricher:
     return request.app.state.enricher
+
+
+def get_reranker(request: Request) -> Reranker:
+    return request.app.state.reranker
 
 
 # --------------------------------------------------------------------------- #
@@ -185,31 +221,6 @@ class QueryRequest(BaseModel):
     provimento: Provimento | None = None
     data_inicio: date | None = None
     data_fim: date | None = None
-    ordenar_por: Literal["relevancia", "data"] = "relevancia"
-
-
-def _aplicar_filtros(
-    triplos: list[tuple[str, object, float]],
-    provimento: Provimento | None,
-    data_inicio: date | None,
-    data_fim: date | None,
-) -> list[tuple[str, object, float]]:
-    """Filtra os triplos (documento_id, doc, score) por provimento/período.
-
-    Feito em Python pós-recuperação (não via `where` do Qdrant): hybrid_search.py
-    já documenta que o BM25 não filtra por metadados e que um filtro rígido deve
-    ser aplicado depois, sobre o DocumentoJuridico recuperado.
-    """
-    def ok(doc) -> bool:
-        if provimento is not None and doc.provimento != provimento:
-            return False
-        if data_inicio is not None and (doc.data_julgamento is None or doc.data_julgamento < data_inicio):
-            return False
-        if data_fim is not None and (doc.data_julgamento is None or doc.data_julgamento > data_fim):
-            return False
-        return True
-
-    return [t for t in triplos if ok(t[1])]
 
 
 @app.post("/query", response_model=list[ResultCard], dependencies=[Depends(get_current_user)])
@@ -217,26 +228,23 @@ async def query(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
     retriever: DocRetriever = Depends(get_doc_retriever),
+    reranker: Reranker = Depends(get_reranker),
+    provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
 ) -> list[ResultCard]:
     try:
-        bm25_query = query_builder.build_bm25_query(body.estrutura)
-        frase_tese = query_builder.build_frase_tese(body.estrutura)
+        cards = await run_in_threadpool(
+            buscar,
+            body.estrutura,
+            hybrid=hybrid,
+            retriever=retriever,
+            reranker=reranker,
+            provimento=body.provimento,
+            data_inicio=body.data_inicio,
+            data_fim=body.data_fim,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    tem_filtro = body.provimento is not None or body.data_inicio is not None or body.data_fim is not None
-    n_candidatos = N_CANDIDATOS_COM_FILTRO if tem_filtro else N_RESULTS_FINAL
-
-    rankings = await run_in_threadpool(hybrid.search, frase_tese, n_candidatos, bm25_query=bm25_query)
-    docs = await run_in_threadpool(retriever.fetch, [doc_id for doc_id, _ in rankings])
-
-    triplos = [(doc_id, docs[doc_id], score) for doc_id, score in rankings if doc_id in docs]
-    if tem_filtro:
-        triplos = _aplicar_filtros(triplos, body.provimento, body.data_inicio, body.data_fim)
-    triplos = triplos[:N_RESULTS_FINAL]
-
-    ordenados = categorical_sort.ordenar(triplos, body.ordenar_por)
-    return format_results(ordenados)
+    return await run_in_threadpool(com_classificacao, cards, provimento_store)
 
 
 # --------------------------------------------------------------------------- #
@@ -247,9 +255,11 @@ async def query(
 async def get_document(
     documento_id: str,
     retriever: DocRetriever = Depends(get_doc_retriever),
+    provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
 ) -> DocumentoDetalhe:
     docs = await run_in_threadpool(retriever.fetch, [documento_id])
     doc = docs.get(documento_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Documento não encontrado.")
-    return DocumentoDetalhe(id=documento_id, **doc.model_dump())
+    detalhe = DocumentoDetalhe(id=documento_id, **doc.model_dump())
+    return (await run_in_threadpool(com_classificacao, [detalhe], provimento_store))[0]

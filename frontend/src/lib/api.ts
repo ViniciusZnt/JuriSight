@@ -6,7 +6,29 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 export type TipoDocumento = "ACORDAO" | "SUMULA" | "OJ" | "PRECEDENTE";
 export type Provimento = "APROVADO" | "PARCIAL" | "NEGADO" | "NAO_APLICAVEL";
-export type OrdenarPor = "relevancia" | "data";
+export type ResultadoRecurso = "provido" | "parcialmente_provido" | "nao_provido" | "nao_conhecido" | "sem_recurso";
+export type Recorrente = "reclamante" | "reclamada" | "ambos" | "outro" | "indefinido";
+export type Favorece = "reclamante" | "reclamada" | "ambos_em_parte" | "indefinido";
+
+/** query/search/result_formatter.py::ClassificacaoProvimentoView — classificação do Jev. */
+export interface ClassificacaoProvimento {
+  resultado: ResultadoRecurso;
+  recorrente: Recorrente;
+  favorece: Favorece;
+  /** pergunta -> (opção -> probabilidade) */
+  probabilidades: Record<string, Record<string, number>>;
+  confianca_resultado: number | null;
+  confianca_recorrente: number | null;
+  confianca_favorece: number | null;
+  modelo: string;
+}
+
+export interface CorrecaoProvimento {
+  resultado: ResultadoRecurso;
+  recorrente: Recorrente;
+  favorece: Favorece;
+  comentario?: string | null;
+}
 
 /** query/enrichment/schema.py::EstruturaArgumentativa — todo campo tem default (RN05: o LLM
  *  nunca inventa; o que não foi encontrado no texto fica vazio/null). */
@@ -55,6 +77,8 @@ export interface ResultCard {
   provimento: Provimento;
   link_original: string | null;
   score_rrf: number;
+  /** Ausente/null em cards antigos (conversas salvas) e em documentos não classificados. */
+  classificacao_provimento?: ClassificacaoProvimento | null;
 }
 
 /** query/search/result_formatter.py::DocumentoDetalhe — DocumentoJuridico completo, devolvido
@@ -84,6 +108,7 @@ export interface DocumentoDetalhe {
   referencia_legislativa: string[];
   provimento: Provimento;
   link_original: string | null;
+  classificacao_provimento?: ClassificacaoProvimento | null;
 }
 
 export interface QueryRequestBody {
@@ -91,7 +116,6 @@ export interface QueryRequestBody {
   provimento?: Provimento | null;
   data_inicio?: string | null; // yyyy-mm-dd
   data_fim?: string | null;
-  ordenar_por?: OrdenarPor;
 }
 
 /** Erro de API com o `detail` do FastAPI já extraído (HTTPException / 422 de validação). */
@@ -136,12 +160,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** Toda rota de /auth/* que muda estado exige este header (defesa contra CSRF —
- *  ver query/api/auth_routes.py::_exigir_header_csrf). Um POST cross-site "simples"
- *  (via <form>, sem JS) não consegue setar headers arbitrários; fetch/XHR same-origin
- *  consegue sempre. */
-const CSRF_HEADER = { "X-Requested-With": "XMLHttpRequest" };
-
 /** POST /enrich — extrai a EstruturaArgumentativa do PDF e/ou da intenção digitada. Precisa de
  *  ao menos um dos dois (o backend responde 422 se ambos vierem vazios). */
 export async function enrich(params: { pdf?: File | null; intencao?: string | null }): Promise<EnrichResponse> {
@@ -165,6 +183,18 @@ export async function getDocument(id: string): Promise<DocumentoDetalhe> {
   return request<DocumentoDetalhe>(`/document/${encodeURIComponent(id)}`);
 }
 
+/** POST /provimento/{id}/correcao — registra a correção do usuário (substitui a anterior). */
+export async function enviarCorrecaoProvimento(
+  documentoId: string,
+  body: CorrecaoProvimento
+): Promise<CorrecaoProvimento & { documento_id: string; atualizado_em: string }> {
+  return request(`/provimento/${encodeURIComponent(documentoId)}/correcao`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // --------------------------------------------------------------------------- //
 // Autenticação (query/api/auth_routes.py) — sessão via cookie httpOnly, nunca   //
 // um token no corpo/localStorage (ver o módulo do backend para o porquê).      //
@@ -184,7 +214,7 @@ export interface UsuarioPublico {
 export async function registrarUsuario(params: { email: string; password: string; nome?: string | null }): Promise<UsuarioPublico> {
   return request<UsuarioPublico>("/auth/registro", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...CSRF_HEADER },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
 }
@@ -194,18 +224,95 @@ export async function registrarUsuario(params: { email: string; password: string
 export async function loginUsuario(params: { email: string; password: string }): Promise<UsuarioPublico> {
   return request<UsuarioPublico>("/auth/login", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...CSRF_HEADER },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
 }
 
 /** POST /auth/logout — limpa o cookie de sessão no backend. */
 export async function logoutUsuario(): Promise<void> {
-  await request<void>("/auth/logout", { method: "POST", headers: { ...CSRF_HEADER } });
+  await request<void>("/auth/logout", { method: "POST" });
 }
 
 /** GET /auth/me — usuário da sessão atual a partir do cookie. Lança ApiError(401)
  *  se não houver sessão válida — use isso para checar se o usuário está logado. */
 export async function getUsuarioAtual(): Promise<UsuarioPublico> {
   return request<UsuarioPublico>("/auth/me");
+}
+
+// --------------------------------------------------------------------------- //
+// Conversas (query/api/conversa_routes.py) — histórico de busca persistido no  //
+// Postgres, escopado ao usuário da sessão. Nunca inclui o PDF enviado nem seu  //
+// texto — só a EstruturaArgumentativa revisada e os resultados do /query.     //
+// --------------------------------------------------------------------------- //
+
+/** query/api/conversa_routes.py::VersaoResponse — uma busca dentro de uma
+ *  conversa ("V{numero}" no dropdown de versões). */
+export interface VersaoApi {
+  numero: number;
+  estrutura: EstruturaArgumentativa;
+  has_file: boolean;
+  file_name: string | null;
+  pdf_extraido: boolean | null;
+  aviso: string | null;
+  resultados: ResultCard[] | null;
+  criado_em: string; // ISO datetime
+}
+
+/** query/api/conversa_routes.py::ConversaResponse. */
+export interface ConversaApi {
+  id: string;
+  titulo: string;
+  criado_em: string; // ISO datetime
+  atualizado_em: string;
+  versoes: VersaoApi[];
+}
+
+export interface NovaVersaoBody {
+  estrutura: EstruturaArgumentativa;
+  has_file: boolean;
+  file_name?: string | null;
+  pdf_extraido?: boolean | null;
+  aviso?: string | null;
+  resultados?: ResultCard[] | null;
+}
+
+/** GET /conversas — todas as conversas do usuário da sessão, mais recente primeiro. */
+export async function listarConversas(): Promise<ConversaApi[]> {
+  return request<ConversaApi[]>("/conversas");
+}
+
+/** POST /conversas — cria uma conversa nova, ainda sem snapshot. */
+export async function criarConversa(titulo: string): Promise<ConversaApi> {
+  return request<ConversaApi>("/conversas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ titulo }),
+  });
+}
+
+/** PATCH /conversas/{id} — renomeia. */
+export async function renomearConversa(id: string, titulo: string): Promise<ConversaApi> {
+  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ titulo }),
+  });
+}
+
+/** DELETE /conversas/{id}. */
+export async function apagarConversa(id: string): Promise<void> {
+  await request<void>(`/conversas/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** POST /conversas/{id}/versoes — acrescenta uma versão nova (nunca sobrescreve as
+ *  anteriores). Chamado toda vez que POST /query retorna com sucesso — a primeira busca
+ *  vira V1, cada "Refinar consulta" bem-sucedido vira a próxima versão. Devolve a conversa
+ *  inteira (todas as versões), pro dropdown V1/V2/... ficar completo sem outra chamada. */
+export async function adicionarVersaoConversa(id: string, versao: NovaVersaoBody): Promise<ConversaApi> {
+  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}/versoes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(versao),
+  });
 }

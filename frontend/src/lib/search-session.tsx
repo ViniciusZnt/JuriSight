@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useState } from "react";
 import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
-import type { ConversationSnapshot } from "@/lib/conversations";
+import type { ConversationVersion } from "@/lib/conversations";
 
 interface SearchSessionState {
   /** EstruturaArgumentativa retornada por /enrich (ou editada na Revisão). null = nenhuma
@@ -14,6 +14,9 @@ interface SearchSessionState {
   aviso: string | null;
   /** Resultado do último POST /query. null = nenhuma busca feita ainda. */
   resultados: ResultCard[] | null;
+  /** Número da versão (V1, V2, ...) atualmente exibida — null antes da primeira busca
+   *  completar (ainda não existe versão pra essa conversa). Ver @/lib/conversations. */
+  versionNumero: number | null;
 }
 
 interface EnrichResultInput {
@@ -27,10 +30,11 @@ interface EnrichResultInput {
 interface SearchSessionCtx extends SearchSessionState {
   setEnrichResult: (data: EnrichResultInput) => void;
   setEstrutura: (estrutura: EstruturaArgumentativa) => void;
-  setResultados: (resultados: ResultCard[]) => void;
-  /** Restaura a sessão a partir do snapshot salvo numa conversa (clique no histórico da
-   *  sidebar) — ao contrário de setEnrichResult, também repõe os resultados, se houver. */
-  loadSnapshot: (snapshot: ConversationSnapshot) => void;
+  /** Troca a sessão pra uma versão específica da conversa ativa — usado tanto ao reabrir
+   *  uma conversa pela sidebar (a versão mais recente) quanto ao trocar de versão pelo
+   *  dropdown V1/V2/... na página de Resultados (sem chamar a API de novo — a versão já
+   *  veio inteira do backend). */
+  loadVersion: (version: ConversationVersion) => void;
   reset: () => void;
 }
 
@@ -41,6 +45,7 @@ const initialState: SearchSessionState = {
   pdfExtraido: null,
   aviso: null,
   resultados: null,
+  versionNumero: null,
 };
 
 const Ctx = createContext<SearchSessionCtx | null>(null);
@@ -60,6 +65,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       pdfExtraido: data.pdfExtraido,
       aviso: data.aviso,
       resultados: null, // nova consulta invalida os resultados anteriores
+      versionNumero: null, // ainda não existe versão — só depois do 1º /query bem-sucedido
     }));
   }, []);
 
@@ -67,25 +73,22 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
     setState((prev) => ({ ...prev, estrutura }));
   }, []);
 
-  const setResultados = useCallback((resultados: ResultCard[]) => {
-    setState((prev) => ({ ...prev, resultados }));
-  }, []);
-
-  const loadSnapshot = useCallback((snapshot: ConversationSnapshot) => {
+  const loadVersion = useCallback((version: ConversationVersion) => {
     setState({
-      estrutura: snapshot.estrutura,
-      hasFile: snapshot.hasFile,
-      fileName: snapshot.fileName,
-      pdfExtraido: snapshot.pdfExtraido,
-      aviso: snapshot.aviso,
-      resultados: snapshot.resultados,
+      estrutura: version.estrutura,
+      hasFile: version.hasFile,
+      fileName: version.fileName,
+      pdfExtraido: version.pdfExtraido,
+      aviso: version.aviso,
+      resultados: version.resultados,
+      versionNumero: version.numero,
     });
   }, []);
 
   const reset = useCallback(() => setState(initialState), []);
 
   return (
-    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, setResultados, loadSnapshot, reset }}>
+    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, loadVersion, reset }}>
       {children}
     </Ctx.Provider>
   );

@@ -6,9 +6,8 @@ Este pacote substitui o mock client-side descrito em
 verificação de servidor) pelas duas primitivas que um backend de autenticação
 real precisa:
 
-  - `auth.password`: hashing/verificação de senha (Argon2id, com fallback de
-    verificação em bcrypt) e um `DUMMY_HASH` para mitigar enumeração de
-    usuários por timing attack.
+  - `auth.password`: hashing/verificação de senha (Argon2id) e um
+    `DUMMY_HASH` para mitigar enumeração de usuários por timing attack.
   - `auth.tokens`: emissão/verificação de JWT (HS256) para tokens de acesso.
 
 Este pacote NÃO conhece o schema do Postgres (peça de outro agente, em

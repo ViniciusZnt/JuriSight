@@ -1,8 +1,8 @@
 """
 Result Formatter (RFC Tabela 6) — última etapa do pipeline de busca.
 
-Serializa os (documento_id, DocumentoJuridico, score_rrf) já ordenados por
-categorical_sort.ordenar() nos cards de resposta da API — tipo, ementa, relator,
+Serializa os (documento_id, DocumentoJuridico, score_rrf) já ordenados pelo
+reranker (query/search/pipeline.py) nos cards de resposta da API — tipo, ementa, relator,
 provimento e link (RF05/RF06/RF09).
 """
 from __future__ import annotations
@@ -12,6 +12,19 @@ from datetime import date
 from pydantic import BaseModel
 
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
+
+
+class ClassificacaoProvimentoView(BaseModel):
+    """Classificação do Jev (public.provimento_jev) mostrada no frontend."""
+
+    resultado: str
+    recorrente: str
+    favorece: str
+    probabilidades: dict[str, dict[str, float]]
+    confianca_resultado: float | None = None
+    confianca_recorrente: float | None = None
+    confianca_favorece: float | None = None
+    modelo: str
 
 
 class ResultCard(BaseModel):
@@ -29,6 +42,7 @@ class ResultCard(BaseModel):
     provimento: Provimento
     link_original: str | None
     score_rrf: float
+    classificacao_provimento: ClassificacaoProvimentoView | None = None
 
 
 class DocumentoDetalhe(DocumentoJuridico):
@@ -36,12 +50,13 @@ class DocumentoDetalhe(DocumentoJuridico):
     de propósito (é devolvido à parte pelo DocRetriever). Usado por GET /document/{id}."""
 
     id: str
+    classificacao_provimento: ClassificacaoProvimentoView | None = None
 
 
 def format_results(resultados: list[tuple[str, DocumentoJuridico, float]]) -> list[ResultCard]:
     """Projeta os triplos ordenados em cards de resposta.
 
-    Não reordena — resultados já deve vir ordenado de categorical_sort.ordenar().
+    Não reordena — resultados já deve vir ordenado pelo pipeline.
 
     Input:  resultados — lista de (documento_id, DocumentoJuridico, score_rrf).
     Returns: lista de ResultCard, na mesma ordem de entrada.

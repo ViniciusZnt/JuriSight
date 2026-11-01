@@ -12,6 +12,7 @@ import {
   logoutUsuario,
   getUsuarioAtual,
   ApiError,
+  enviarCorrecaoProvimento,
   type EstruturaArgumentativa,
 } from "@/lib/api";
 
@@ -86,7 +87,7 @@ describe("enrich", () => {
 describe("queryJurisprudencia", () => {
   it("envia JSON com Content-Type correto", async () => {
     mockFetchOnce(200, []);
-    await queryJurisprudencia({ estrutura, provimento: "APROVADO", ordenar_por: "data" });
+    await queryJurisprudencia({ estrutura, provimento: "APROVADO" });
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/query$/);
@@ -95,7 +96,6 @@ describe("queryJurisprudencia", () => {
     const body = JSON.parse(init.body);
     expect(body.estrutura).toEqual(estrutura);
     expect(body.provimento).toBe("APROVADO");
-    expect(body.ordenar_por).toBe("data");
   });
 
   it("retorna a lista de ResultCard", async () => {
@@ -155,26 +155,24 @@ describe("credentials", () => {
 // --------------------------------------------------------------------------- //
 
 describe("registrarUsuario", () => {
-  it("envia POST /auth/registro com o header anti-CSRF", async () => {
+  it("envia POST /auth/registro com JSON", async () => {
     mockFetchOnce(200, { id: "1", email: "a@b.com", nome: null, is_active: true, criado_em: "" });
     await registrarUsuario({ email: "a@b.com", password: "segredo123" });
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/auth\/registro$/);
     expect(init.method).toBe("POST");
-    expect(init.headers["X-Requested-With"]).toBe("XMLHttpRequest");
     expect(init.headers["Content-Type"]).toBe("application/json");
   });
 });
 
 describe("loginUsuario", () => {
-  it("envia POST /auth/login com o header anti-CSRF", async () => {
+  it("envia POST /auth/login com JSON", async () => {
     mockFetchOnce(200, { id: "1", email: "a@b.com", nome: null, is_active: true, criado_em: "" });
     await loginUsuario({ email: "a@b.com", password: "segredo123" });
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/auth\/login$/);
-    expect(init.headers["X-Requested-With"]).toBe("XMLHttpRequest");
   });
 
   it("levanta ApiError 401 em credenciais inválidas", async () => {
@@ -184,14 +182,13 @@ describe("loginUsuario", () => {
 });
 
 describe("logoutUsuario", () => {
-  it("envia POST /auth/logout com o header anti-CSRF", async () => {
+  it("envia POST /auth/logout", async () => {
     mockFetchOnce(204, undefined);
     await logoutUsuario();
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/auth\/logout$/);
     expect(init.method).toBe("POST");
-    expect(init.headers["X-Requested-With"]).toBe("XMLHttpRequest");
   });
 });
 
@@ -205,5 +202,24 @@ describe("getUsuarioAtual", () => {
   it("levanta ApiError 401 sem sessão válida", async () => {
     mockFetchOnce(401, { detail: "Não autenticado." });
     await expect(getUsuarioAtual()).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe("enviarCorrecaoProvimento", () => {
+  it("faz POST com JSON e cookie de sessão", async () => {
+    mockFetchOnce(200, { documento_id: "id-1", resultado: "provido", recorrente: "reclamante", favorece: "reclamante", atualizado_em: "x" });
+    await enviarCorrecaoProvimento("id-1", { resultado: "provido", recorrente: "reclamante", favorece: "reclamante" });
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toMatch(/\/provimento\/id-1\/correcao$/);
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+    expect(JSON.parse(init.body)).toEqual({ resultado: "provido", recorrente: "reclamante", favorece: "reclamante" });
+  });
+
+  it("levanta ApiError em 422", async () => {
+    mockFetchOnce(422, { detail: "valor inválido" });
+    await expect(
+      enviarCorrecaoProvimento("id-1", { resultado: "provido", recorrente: "reclamante", favorece: "reclamante" })
+    ).rejects.toThrow(ApiError);
   });
 });
