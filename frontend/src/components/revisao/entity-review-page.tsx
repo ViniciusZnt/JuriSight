@@ -398,7 +398,6 @@ export function EntityReviewPage() {
     <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
       <PageTopbar
         hideFirstOnMobile
-        queriesLeft={47}
         crumbs={[{ label: "Início", onClick: () => router.push("/") }, { label: "Revisão de contexto" }]}
       />
 

@@ -284,7 +284,7 @@ export function Sidebar() {
                 {profile.name}
               </p>
               <p className="text-[#AEAEBF] dark:text-[#6E6E7C] truncate" style={{ fontSize: "12.6px" }}>
-                Plano Pro
+                {profile.email}
               </p>
             </div>
           </button>
