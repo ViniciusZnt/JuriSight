@@ -149,11 +149,6 @@ export const SearchInput = forwardRef<
             </div>
 
             <div className="flex items-center gap-2">
-              {query.length > 0 && (
-                <span className="text-[#C0C0D0]" style={{ fontSize: "12.6px" }}>
-                  ⇧ Enter para nova linha
-                </span>
-              )}
               <button
                 disabled={!canSubmit}
                 onClick={submit}
@@ -181,12 +176,16 @@ export const SearchInput = forwardRef<
           />
         </div>
 
-        <p className="text-center text-[#C0C0CE] dark:text-[#5E5E6A] mt-3" style={{ fontSize: "13.2px" }}>
-          Pressione{" "}
+        {/* Dica de teclado: só faz sentido com teclado físico, então some no celular. */}
+        <p className="hidden sm:block text-center text-[#C0C0CE] dark:text-[#5E5E6A] mt-3" style={{ fontSize: "13.2px" }}>
           <kbd className="px-1 py-0.5 rounded bg-[#EEEEF2] dark:bg-[#26262C] text-[#9090A0] dark:text-[#7C7C88] border border-[#DCDCE4] dark:border-[#2A2A32]" style={{ fontSize: "12.1px" }}>
             Enter
           </kbd>{" "}
-          para pesquisar • Suporte a PDF ou texto livre
+          pesquisa •{" "}
+          <kbd className="px-1 py-0.5 rounded bg-[#EEEEF2] dark:bg-[#26262C] text-[#9090A0] dark:text-[#7C7C88] border border-[#DCDCE4] dark:border-[#2A2A32]" style={{ fontSize: "12.1px" }}>
+            Shift + Enter
+          </kbd>{" "}
+          quebra a linha
         </p>
       </div>
     );
