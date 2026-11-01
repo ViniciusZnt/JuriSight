@@ -1,0 +1,15 @@
+.git
+.venv
+data
+frontend
+logs
+docs
+tests
+evaluation
+dumps
+*.zip
+*.log
+**/__pycache__
+.superpowers
+.env
+.env.*

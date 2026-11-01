@@ -1,0 +1,21 @@
+# HTTPS automático (Let's Encrypt) para o domínio do .env. Mesma origem para front e API:
+# /api/* vai para o FastAPI sem o prefixo; o resto vai para o Next.js.
+{$DOMINIO} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
