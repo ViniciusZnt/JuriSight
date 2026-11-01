@@ -213,7 +213,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
               <h1 className="text-[#0F1117] dark:text-[#ECECEF] leading-tight flex-1" style={{ fontSize: "20.7px", fontWeight: 600 }}>
                 {title}
               </h1>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                 <OutcomeBadge outcome={outcome} size="md" suffix=" à tese" />
                 {relevance !== null && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]">
@@ -255,7 +255,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
             </div>
 
             {/* Actions bar */}
-            <div className="flex items-center gap-2 pt-3 border-t border-[#F0F0F6] dark:border-[#26262C] flex-wrap *:flex-1 sm:*:flex-none">
+            <div className="flex items-center gap-2 pt-3 border-t border-[#F0F0F6] dark:border-[#26262C] flex-wrap *:grow sm:*:grow-0">
               <ActionButton
                 icon={Bookmark}
                 label={isSavedCtx(doc.id) ? "Salvo" : "Salvar"}

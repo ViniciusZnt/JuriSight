@@ -252,7 +252,7 @@ export function SearchResultsPage() {
               )}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap sm:flex-shrink-0 items-center gap-2">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EDF7F2] dark:bg-[#122A1E] border border-[#BDE0CF] dark:border-[#1E4A34]">
               <div className="w-1.5 h-1.5 rounded-full bg-[#2D8A5F] dark:bg-[#3DA372]" />
               <span className="text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
@@ -514,7 +514,7 @@ export function SearchResultsPage() {
                           {title}
                         </Link>
                       </h3>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                         <OutcomeBadge outcome={outcome} size="sm" />
                         <div
                           title={`${rank}º mais relevante de ${results.length} nesta busca`}
