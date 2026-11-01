@@ -47,6 +47,11 @@ R$ 297); a MagnoHost sai mais barata e com CPU mais rápida.
 - O painel tem console de emergência (VNC)? Ele entra na VM sem passar pela rede e é a saída se uma configuração de SSH ou de firewall trancar o acesso.
 - Há backup da VM? Confirmado: sim, guardado fora da VPS.
 
+**Na instalação (painel da MagnoHost, VirtFusion):** cadastre antes a chave pública em "Chaves
+SSH" e selecione-a. Depois: nome e hostname `jurisight-prod`, fuso `America/Sao_Paulo`, sistema
+"Ubuntu Server 24.04 LTS (Noble Numbat) Minimal", IPv6 desligado, VNC ligado (console de
+emergência) e DNS padrão.
+
 **Na compra:**
 - Ciclo mensal.
 - Nenhum adicional.
@@ -123,6 +128,8 @@ Como root, logo depois da entrega (`ssh root@IP`):
 
 ```bash
 apt update && apt -y upgrade
+# a imagem "Minimal" da MagnoHost vem sem estes pacotes
+apt -y install curl git rsync ca-certificates nano
 timedatectl set-timezone America/Sao_Paulo
 
 # usuário de trabalho, com a mesma chave SSH do root
