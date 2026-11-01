@@ -87,7 +87,7 @@ o Caddy publica portas.
 | App | sessão em cookie `httpOnly` + `Secure`; todas as rotas exigem login | já existe |
 | Segredos | `.env` só no servidor, com permissão 600; senhas novas | 4 |
 | Atualizações | `unattended-upgrades` para correções de segurança do sistema | 3 |
-| Backup | semanal da Runstack mais `pg_dump` diário | 8 |
+| Backup | `pg_dump` diário, com cópia fora da VPS se o provedor não fizer backup | 8 |
 
 ## 3. Domínio e HTTPS
 
