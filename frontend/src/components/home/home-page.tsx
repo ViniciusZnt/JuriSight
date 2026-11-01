@@ -18,22 +18,22 @@ const LARGE_FILE_BYTES = 8 * 1024 * 1024;
 const features = [
   {
     icon: FileSearch,
-    title: "Busca contextual",
-    description: "Pesquisa por semelhança semântica de teses argumentativas, não apenas por palavras-chave.",
+    title: "Busca híbrida",
+    description: "Combina palavras-chave e semelhança semântica, e reordena os melhores resultados com um reranker.",
     color: "#1A3A5C",
     bg: "#EFF4FA",
   },
   {
     icon: Gavel,
-    title: "Jurisprudência atualizada",
-    description: "Acesso às últimas decisões do TST, TRT e STF com indexação em tempo real.",
+    title: "Acervo da Justiça do Trabalho",
+    description: "Cerca de 69 mil acórdãos de Tribunais Regionais do Trabalho (TRTs).",
     color: "#1E6B4A",
     bg: "#EDF7F2",
   },
   {
     icon: BookOpen,
-    title: "Análise argumentativa",
-    description: "IA identifica decisões favoráveis e desfavoráveis alinhadas à sua linha de defesa.",
+    title: "Análise do provimento",
+    description: "IA indica quem recorreu, o resultado do recurso e se a decisão favorece o trabalhador ou a empresa.",
     color: "#7A4A1A",
     bg: "#FBF4EC",
   },
@@ -166,8 +166,8 @@ export function HomePage() {
           className="text-center text-[#7A7A8E] dark:text-[#9E9EAC] mt-4 max-w-[480px] leading-relaxed px-2"
           style={{ fontSize: "17.8px", fontWeight: 400 }}
         >
-          Encontre decisões alinhadas à sua tese argumentativa com inteligência semântica.
-          TST, TRT e STF indexados em tempo real.
+          Encontre decisões alinhadas à sua tese argumentativa entre cerca de 69 mil acórdãos
+          de TRTs, com busca por palavras e por significado.
         </p>
 
         <div className="w-full max-w-[720px] mt-8 sm:mt-10">

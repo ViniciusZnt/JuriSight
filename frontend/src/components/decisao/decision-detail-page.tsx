@@ -483,7 +483,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
         </div>
 
         <p className="text-[#C8C8D4] dark:text-[#5E5E6A] mt-5" style={{ fontSize: "12.6px" }}>
-          Clique nas seções para expandir ou recolher • Decisão indexada em tempo real
+          Clique nas seções para expandir ou recolher
         </p>
       </div>
     </main>
