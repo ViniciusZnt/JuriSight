@@ -26,7 +26,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { type Outcome } from "@/lib/outcome";
-import { outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
+import { contarDesfechos, outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import {
   compareResultCards,
@@ -190,8 +190,7 @@ export function SearchResultsPage() {
   const formatDateLong = (dateStr: string | null) =>
     dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não informada";
 
-  const favorableCount = results.filter((d) => outcomeDe(d) === "favorable").length;
-  const unfavorableCount = results.filter((d) => outcomeDe(d) === "unfavorable").length;
+  const { favorable: favorableCount, unfavorable: unfavorableCount, neutral: neutralCount } = contarDesfechos(results);
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
@@ -252,7 +251,7 @@ export function SearchResultsPage() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EDF7F2] dark:bg-[#122A1E] border border-[#BDE0CF] dark:border-[#1E4A34]">
               <div className="w-1.5 h-1.5 rounded-full bg-[#2D8A5F] dark:bg-[#3DA372]" />
               <span className="text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
@@ -263,6 +262,12 @@ export function SearchResultsPage() {
               <div className="w-1.5 h-1.5 rounded-full bg-[#C44040] dark:bg-[#D96B6B]" />
               <span className="text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
                 {unfavorableCount} desfavorável{unfavorableCount === 1 ? "" : "eis"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F5F5F8] dark:bg-[#1C1C21] border border-[#DCDCE8] dark:border-[#2A2A32]">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#9090A8] dark:bg-[#7C7C88]" />
+              <span className="text-[#6A6A7A] dark:text-[#9494A2]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
+                {neutralCount} neutro{neutralCount === 1 ? "" : "s"}
               </span>
             </div>
           </div>

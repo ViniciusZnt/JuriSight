@@ -65,6 +65,13 @@ export function outcomeDe(d: { provimento: Provimento; classificacao_provimento?
   return "neutral";
 }
 
+/** Quantos resultados caem em cada selo — os três somam o total, para o resumo fechar a conta. */
+export function contarDesfechos(ds: Parameters<typeof outcomeDe>[0][]): Record<Outcome, number> {
+  const n: Record<Outcome, number> = { favorable: 0, unfavorable: 0, neutral: 0 };
+  for (const d of ds) n[outcomeDe(d)]++;
+  return n;
+}
+
 const RECURSO_DE: Record<Recorrente, string> = {
   reclamante: "Recurso do reclamante (trabalhador)",
   reclamada: "Recurso da reclamada (empresa)",

@@ -1,5 +1,5 @@
 import type { ClassificacaoProvimento } from "@/lib/api";
-import { nivelConfianca, outcomeDe, probabilidadesOrdenadas, resumoProvimento } from "@/lib/provimento";
+import { contarDesfechos, nivelConfianca, outcomeDe, probabilidadesOrdenadas, resumoProvimento } from "@/lib/provimento";
 
 const base: ClassificacaoProvimento = {
   resultado: "nao_provido",
@@ -46,5 +46,19 @@ describe("outcomeDe", () => {
 describe("resumoProvimento", () => {
   it("monta recorrente, resultado e a quem favorece", () => {
     expect(resumoProvimento(base)).toBe("Recurso da reclamada (empresa) · Não provido · Favorece: Trabalhador");
+  });
+});
+
+describe("contarDesfechos", () => {
+  it("conta favoráveis, desfavoráveis e neutros, e os três somam o total", () => {
+    const ds = [
+      { provimento: "NEGADO" as const }, // sem classificação: heurística → favorável
+      { provimento: "APROVADO" as const }, // → desfavorável
+      { provimento: "PARCIAL" as const }, // → neutro
+      { provimento: "NEGADO" as const, classificacao_provimento: { ...base, confianca_favorece: 0.3 } }, // confiança baixa → neutro
+    ];
+    const n = contarDesfechos(ds);
+    expect(n).toEqual({ favorable: 1, unfavorable: 1, neutral: 2 });
+    expect(n.favorable + n.unfavorable + n.neutral).toBe(ds.length);
   });
 });
