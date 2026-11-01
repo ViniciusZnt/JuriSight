@@ -31,7 +31,7 @@ import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import {
   compareResultCards,
   matchedEntities,
-  relevancePercent,
+  relevanceRanks,
   titleFromEmenta,
   truncate,
   TIPO_DOCUMENTO_LABEL,
@@ -144,7 +144,7 @@ export function SearchResultsPage() {
   // só um swap local (loadVersion), sem chamar a API de novo.
   const versoes = conversations.find((c) => c.id === activeId)?.versions ?? [];
 
-  const maxScore = useMemo(() => results.reduce((max, r) => Math.max(max, r.score_rrf), 0), [results]);
+  const ranks = useMemo(() => relevanceRanks(results), [results]);
 
   const formatDateShort = (isoDate: string) =>
     new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -179,7 +179,7 @@ export function SearchResultsPage() {
       chamber: d.turma,
       date: d.data_julgamento ?? "",
       outcome: outcomeDe(d),
-      relevance: relevancePercent(d.score_rrf, maxScore),
+      relevance: ranks.get(d.id) ?? 0,
       rapporteur: d.relator,
       processNumber: d.numero_processo,
     });
@@ -203,7 +203,7 @@ export function SearchResultsPage() {
         `${idx + 1}. ${titleFromEmenta(d.ementa)}`,
         `   ${d.tribunal} — ${d.turma} · ${formatDateLong(d.data_julgamento)}`,
         `   Processo: ${d.numero_processo} · Rel. ${d.relator}`,
-        `   Provimento: ${d.classificacao_provimento ? resumoProvimento(d.classificacao_provimento) : PROVIMENTO_LABEL[d.provimento]} · Relevância: ${relevancePercent(d.score_rrf, maxScore)}%`,
+        `   Provimento: ${d.classificacao_provimento ? resumoProvimento(d.classificacao_provimento) : PROVIMENTO_LABEL[d.provimento]} · Relevância: #${ranks.get(d.id)} de ${results.length}`,
         `   ${truncate(d.ementa, 600)}`,
       ].join("\n")
     );
@@ -490,7 +490,7 @@ export function SearchResultsPage() {
               const saved = isSaved(decision.id);
               const title = titleFromEmenta(decision.ementa);
               const outcome = outcomeDe(decision);
-              const relevance = relevancePercent(decision.score_rrf, maxScore);
+              const rank = ranks.get(decision.id);
               const entidades = matchedEntities(estrutura, decision.ementa);
 
               return (
@@ -509,13 +509,13 @@ export function SearchResultsPage() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <OutcomeBadge outcome={outcome} size="sm" />
                         <div
-                          title="Relevância relativa ao melhor resultado desta busca"
-                          aria-label={`Relevância relativa ao melhor resultado desta busca: ${relevance}%`}
+                          title={`${rank}º mais relevante de ${results.length} nesta busca`}
+                          aria-label={`${rank}º mais relevante de ${results.length} nesta busca`}
                           className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]"
                         >
                           <TrendingUp className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
                           <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                            {relevance}%
+                            #{rank}
                           </span>
                         </div>
                       </div>

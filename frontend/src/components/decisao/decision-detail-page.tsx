@@ -32,7 +32,7 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import { PROVIMENTO_LABEL, RESULTADO_LABEL, outcomeDe } from "@/lib/provimento";
-import { matchedEntities, relevancePercent, titleFromEmenta, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
+import { matchedEntities, relevanceRanks, titleFromEmenta, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
 import { useSearchSession } from "@/lib/search-session";
 import { getDocument, ApiError, type DocumentoDetalhe } from "@/lib/api";
@@ -153,9 +153,8 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   const outcome = outcomeDe(doc);
   const origin = doc.gabinete || doc.tribunal;
   const entidades = matchedEntities(estrutura, `${doc.ementa} ${doc.fundamentacao} ${doc.acordao}`);
-  const fromResults = resultados?.find((r) => r.id === doc.id);
-  const maxScore = resultados?.reduce((max, r) => Math.max(max, r.score_rrf), 0) ?? 0;
-  const relevance = fromResults ? relevancePercent(fromResults.score_rrf, maxScore) : null;
+  const relevance = resultados ? (relevanceRanks(resultados).get(doc.id) ?? null) : null;
+  const relevanceLabel = `#${relevance} de ${resultados?.length} em relevância`;
 
   const buildFullDocument = () => {
     const lines: string[] = [];
@@ -165,7 +164,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
     lines.push(`Processo: ${doc.numero_processo}`);
     lines.push(`Relator: ${doc.relator}`);
     lines.push(`Origem: ${origin}`);
-    if (relevance !== null) lines.push(`Relevância: ${relevance}%`);
+    if (relevance !== null) lines.push(`Relevância: ${relevanceLabel}`);
     lines.push("");
     if (entidades.length) {
       lines.push("ENTIDADES CORRESPONDENTES");
@@ -220,7 +219,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]">
                     <TrendingUp className="w-3.5 h-3.5 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
                     <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "13.2px", fontWeight: 600 }}>
-                      {relevance}% relevância
+                      {relevanceLabel}
                     </span>
                   </div>
                 )}

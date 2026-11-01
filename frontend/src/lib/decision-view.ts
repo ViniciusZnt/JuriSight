@@ -32,11 +32,12 @@ export function matchedEntities(estrutura: EstruturaArgumentativa | null, texto:
   });
 }
 
-/** O score do RRF (query/search/hybrid_search.py) não tem escala absoluta interpretável como
- *  "% de relevância" — normaliza relativo ao maior score do próprio conjunto de resultados. */
-export function relevancePercent(score: number, maxScore: number): number {
-  if (maxScore <= 0) return 0;
-  return Math.round((score / maxScore) * 100);
+/** Posição de cada resultado na ordem de relevância da busca (1 = mais relevante). O score vem
+ *  normalizado só dentro do lote (query/search/pipeline.py), sem escala absoluta — um "%"
+ *  repetia 100% em vários cards; a posição é o que o score de fato informa. */
+export function relevanceRanks(results: { id: string; score_rrf: number }[]): Map<string, number> {
+  const ordem = [...results].sort((a, b) => b.score_rrf - a.score_rrf);
+  return new Map(ordem.map((r, i) => [r.id, i + 1]));
 }
 
 /** Reordena no cliente o mesmo lote de resultados, sem chamar a API de novo — hierarquia
