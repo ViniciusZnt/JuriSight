@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Filter,
@@ -499,17 +500,19 @@ export function SearchResultsPage() {
               const entidades = matchedEntities(estrutura, decision.ementa);
 
               return (
+                // O título é o link (Ctrl+clique, nova aba, Tab); o ::after dele cobre o card inteiro
+                // para o clique em qualquer ponto abrir a decisão. Controles internos ficam com z-10.
                 <div
                   key={decision.id}
-                  className="bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group cursor-pointer"
-                  onMouseEnter={() => router.prefetch(`/decisao/${decision.id}`)}
-                  onClick={() => router.push(`/decisao/${decision.id}`)}
+                  className="relative bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group"
                 >
                   {/* Header */}
                   <div className="px-6 pt-5 pb-4 border-b border-[#F0F0F6] dark:border-[#26262C]">
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4 mb-3">
                       <h3 className="text-[#0F1117] dark:text-[#ECECEF] leading-snug group-hover:text-[#1A3A5C] dark:group-hover:text-[#8AB0DC] transition-colors flex-1" style={{ fontSize: "16.7px", fontWeight: 600 }}>
-                        {title}
+                        <Link href={`/decisao/${decision.id}`} className="after:absolute after:inset-0">
+                          {title}
+                        </Link>
                       </h3>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <OutcomeBadge outcome={outcome} size="sm" />
@@ -540,7 +543,7 @@ export function SearchResultsPage() {
                   </div>
 
                   {/* Provimento (Jev) */}
-                  <div className="px-6 py-3 border-b border-[#F0F0F6] dark:border-[#26262C]">
+                  <div className="relative z-10 px-6 py-3 border-b border-[#F0F0F6] dark:border-[#26262C]">
                     <ProvimentoPanel compacto documentoId={decision.id} provimento={decision.provimento} classificacao={decision.classificacao_provimento} />
                   </div>
 
@@ -582,10 +585,8 @@ export function SearchResultsPage() {
                       tone={saved ? "accent" : "neutral"}
                       size="sm"
                       iconFill={saved}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleSave(decision);
-                      }}
+                      className="relative z-10"
+                      onClick={() => toggleSave(decision)}
                     />
                   </div>
                 </div>
