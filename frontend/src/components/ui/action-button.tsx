@@ -43,7 +43,7 @@ export function ActionButton({
     <button
       onClick={onClick}
       title={title}
-      className={`flex items-center gap-2 ${padding} rounded-lg border transition-all ${TONE_CLASSES[tone]} ${className}`}
+      className={`flex items-center justify-center gap-2 ${padding} rounded-lg border transition-all ${TONE_CLASSES[tone]} ${className}`}
       style={{ fontSize, fontWeight: tone === "neutral" ? 400 : 500 }}
     >
       <Icon className="w-3.5 h-3.5" strokeWidth={1.8} fill={iconFill ? "currentColor" : "none"} />

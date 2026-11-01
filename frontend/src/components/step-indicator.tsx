@@ -54,13 +54,14 @@ export function StepIndicator({ current, manual = false }: { current: number; ma
                   />
                 )}
               </div>
+              {/* No celular só o passo atual mostra o rótulo; os outros ficam só com o ícone. */}
               <span
                 className={
                   done
-                    ? "text-[#1A5C3A] dark:text-[#6FCB9A]"
+                    ? "hidden sm:inline text-[#1A5C3A] dark:text-[#6FCB9A]"
                     : active
                       ? "text-[#1A3A5C] dark:text-[#8AB0DC]"
-                      : "text-[#9090A8] dark:text-[#7C7C88]"
+                      : "hidden sm:inline text-[#9090A8] dark:text-[#7C7C88]"
                 }
                 style={{ fontSize: "14.4px", fontWeight: active ? 600 : 500 }}
               >

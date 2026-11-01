@@ -195,7 +195,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
       />
 
       {/* Body */}
-      <div className="flex-1 flex flex-col items-center px-8 py-6 pb-10">
+      <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-6 pb-10">
         <div className="w-full max-w-[800px] mb-4">
           <button
             onClick={() => router.push("/resultados")}
@@ -210,7 +210,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-2xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_4px_32px_rgba(0,0,0,0.07)] dark:shadow-none overflow-hidden">
           {/* Header */}
           <div className="px-5 sm:px-7 pt-6 pb-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
-            <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 mb-4">
               <h1 className="text-[#0F1117] dark:text-[#ECECEF] leading-tight flex-1" style={{ fontSize: "20.7px", fontWeight: 600 }}>
                 {title}
               </h1>
@@ -256,7 +256,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
             </div>
 
             {/* Actions bar */}
-            <div className="flex items-center gap-2 pt-3 border-t border-[#F0F0F6] dark:border-[#26262C] flex-wrap">
+            <div className="flex items-center gap-2 pt-3 border-t border-[#F0F0F6] dark:border-[#26262C] flex-wrap *:flex-1 sm:*:flex-none">
               <ActionButton
                 icon={Bookmark}
                 label={isSavedCtx(doc.id) ? "Salvo" : "Salvar"}
@@ -296,8 +296,8 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
                 onClick={() => router.push("/revisao")}
               />
               {doc.link_original && (
-                <a href={doc.link_original} target="_blank" rel="noopener noreferrer" className="ml-auto">
-                  <ActionButton icon={ExternalLink} label="Ver no site oficial" />
+                <a href={doc.link_original} target="_blank" rel="noopener noreferrer" className="sm:ml-auto">
+                  <ActionButton icon={ExternalLink} label="Ver no site oficial" className="w-full" />
                 </a>
               )}
             </div>

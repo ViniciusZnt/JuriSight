@@ -232,7 +232,7 @@ export function SearchResultsPage() {
       />
 
       {/* Body */}
-      <div className="flex-1 flex flex-col items-center px-8 py-4 pb-10">
+      <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-4 pb-10">
         <StepIndicator current={2} />
 
         {/* Summary banner */}
@@ -502,7 +502,7 @@ export function SearchResultsPage() {
                 >
                   {/* Header */}
                   <div className="px-6 pt-5 pb-4 border-b border-[#F0F0F6] dark:border-[#26262C]">
-                    <div className="flex items-start justify-between gap-4 mb-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4 mb-3">
                       <h3 className="text-[#0F1117] dark:text-[#ECECEF] leading-snug group-hover:text-[#1A3A5C] dark:group-hover:text-[#8AB0DC] transition-colors flex-1" style={{ fontSize: "16.7px", fontWeight: 600 }}>
                         {title}
                       </h3>

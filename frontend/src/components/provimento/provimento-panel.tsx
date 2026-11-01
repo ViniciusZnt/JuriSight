@@ -93,9 +93,9 @@ export function ProvimentoPanel({ documentoId, provimento, classificacao, compac
     <div onClick={(e) => e.stopPropagation()} className="cursor-default">
       {compacto && (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px" }}>
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${nivelResultado.barra}`} title={`Confiança ${nivelResultado.label}`} />
-            <span className="truncate">{resumoProvimento(classificacao)}</span>
+          <div className="flex items-start gap-2 min-w-0 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px" }}>
+            <span className={`w-2 h-2 mt-1.5 rounded-full flex-shrink-0 ${nivelResultado.barra}`} title={`Confiança ${nivelResultado.label}`} />
+            <span>{resumoProvimento(classificacao)}</span>
           </div>
           <button
             onClick={() => setAberto((v) => !v)}
