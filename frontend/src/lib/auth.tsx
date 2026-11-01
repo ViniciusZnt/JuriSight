@@ -49,11 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    if (!temMarcaSessao()) {
-      setHydrated(true);
-      return;
-    }
-    getUsuarioAtual()
+    (temMarcaSessao() ? getUsuarioAtual() : Promise.resolve(null))
       .then(setUsuario)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) marcarSessao(false);
