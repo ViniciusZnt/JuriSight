@@ -7,6 +7,21 @@ ordem e com os comandos.
 
 Tempo estimado: de 4 a 6 horas. O que mais pesa é o upload de ~7 GB de dados.
 
+## Estado em 01/11, 17h35: no ar
+
+**https://16-5-6-82.sslip.io** (VPS `16.5.6.82`, usuário `deploy`, app em `/opt/jurisight`).
+
+| Fase | Estado |
+|---|---|
+| 3. VPS | feita: `deploy` com sudo, SSH só por chave e sem root, `ufw` (22/80/443), fail2ban, swap de 4 GB, Docker 29.9 |
+| 4. Código e `.env` | feitos: clonada a `feat/benchmark-etapa2` (trocar para a `main` depois do merge); senhas geradas no servidor; chave da OpenAI copiada do `.env` local sem exibir |
+| 5. Dados | feitos: hashes conferidos; 69.349 documentos e 69.340 classificações do Jev |
+| 6 e 7. App | no ar; certificado Let's Encrypt até 30/01/2027; só 22, 80 e 443 abertas |
+| 8. Backup | `pg_dump` diário às 3h em `/opt/backups` (o primeiro, de 413 MB, já existe) |
+| 9. CI/CD | chave `~/.ssh/jurisight_ci` instalada **restrita**: no servidor, ela só roda o comando de deploy. Faltam os secrets no GitHub e o merge na `main` |
+
+Latência medida de fora: enriquecimento (Llama 3B em CPU) ~27 s; busca 3,4 a 4,8 s; detalhe 0,18 s.
+
 ## 0. Situação de partida (verificada em 01/11)
 
 | Item | Estado |
