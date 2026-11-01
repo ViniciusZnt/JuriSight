@@ -45,7 +45,7 @@ R$ 297); a MagnoHost sai mais barata e com CPU mais rápida.
 **Perguntar ao suporte antes de pagar:**
 - Tem Ubuntu 24.04 LTS? É escolhido no painel depois da compra?
 - O painel tem console de emergência (VNC)? Ele entra na VM sem passar pela rede e é a saída se uma configuração de SSH ou de firewall trancar o acesso.
-- Há backup da VM? Sem ele, o backup do Postgres precisa de uma cópia fora da VPS (Fase 8).
+- Há backup da VM? Confirmado: sim, guardado fora da VPS.
 
 **Na compra:**
 - Ciclo mensal.
@@ -87,7 +87,7 @@ o Caddy publica portas.
 | App | sessão em cookie `httpOnly` + `Secure`; todas as rotas exigem login | já existe |
 | Segredos | `.env` só no servidor, com permissão 600; senhas novas | 4 |
 | Atualizações | `unattended-upgrades` para correções de segurança do sistema | 3 |
-| Backup | `pg_dump` diário, com cópia fora da VPS se o provedor não fizer backup | 8 |
+| Backup | backup da VM pela MagnoHost (fora da VPS) mais `pg_dump` diário | 8 |
 
 ## 3. Domínio e HTTPS
 
@@ -227,7 +227,7 @@ docker compose -f docker-compose.prod.yml logs -f api   # espere "Application st
 
 ## 11. Fase 8 — backup (~10 min)
 
-- Backup da VM pelo provedor: confirmar com a MagnoHost. Se não houver, o `pg_dump` diário também precisa sair da VPS: copiar `/opt/backups` para esta máquina (`rsync` a partir do WSL) ou para um bucket.
+- A MagnoHost faz o backup da VM num armazenamento fora da VPS (confirmado com o suporte em 01/11).
 - `pg_dump` diário: `crontab -e` no usuário `deploy` com `0 3 * * * /opt/jurisight/deploy/backup.sh`, que guarda 7 dias em `/opt/backups`.
 - Os índices (Qdrant e BM25) só mudam quando a coleta ou a classificação roda de novo; a cópia de `/opt/backups/inicial` serve de base até lá.
 
