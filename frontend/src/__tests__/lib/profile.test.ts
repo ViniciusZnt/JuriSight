@@ -1,4 +1,4 @@
-import { initialsOf } from "@/lib/profile";
+import { initialsOf, nomeExibido } from "@/lib/profile";
 
 describe("initialsOf", () => {
   it("usa a primeira e a última palavra do nome", () => {
@@ -24,5 +24,20 @@ describe("initialsOf", () => {
 
   it("sempre retorna maiúsculas", () => {
     expect(initialsOf("marcos almeida")).toBe("MA");
+  });
+});
+
+describe("nomeExibido", () => {
+  it("usa o nome da conta quando existe", () => {
+    expect(nomeExibido("Vinicius Zanatta", "vini@exemplo.com")).toBe("Vinicius Zanatta");
+  });
+
+  it("sem nome, usa a parte do e-mail antes do @", () => {
+    expect(nomeExibido(null, "vini.z@exemplo.com")).toBe("vini.z");
+    expect(nomeExibido("   ", "vini.z@exemplo.com")).toBe("vini.z");
+  });
+
+  it("sem sessão, fica vazio (nunca um nome de exemplo)", () => {
+    expect(nomeExibido(undefined, undefined)).toBe("");
   });
 });

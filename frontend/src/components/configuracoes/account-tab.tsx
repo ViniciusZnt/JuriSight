@@ -3,7 +3,7 @@
 import { useProfile } from "@/lib/profile";
 import { LogoutButton } from "@/components/settings/logout-button";
 
-/** Aba Conta — plano e sessão. Dados pessoais editáveis ficam na aba Perfil. */
+/** Aba Conta — conta logada e sessão. Telefone, OAB e papel ficam na aba Perfil. */
 export function AccountTab() {
   const { profile } = useProfile();
 
@@ -13,7 +13,7 @@ export function AccountTab() {
         {profile.name}
       </p>
       <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
-        Plano Pro • em breve
+        {profile.email}
       </p>
       <LogoutButton />
     </div>

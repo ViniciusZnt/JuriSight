@@ -113,7 +113,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   if (error) {
     return (
       <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
-        <PageTopbar bordered queriesLeft={46} crumbs={[{ label: "Início", onClick: () => router.push("/resultados") }, { label: "Decisão" }]} />
+        <PageTopbar bordered crumbs={[{ label: "Início", onClick: () => router.push("/resultados") }, { label: "Decisão" }]} />
         <div className="flex-1 flex flex-col items-center justify-center px-8 py-20 text-center">
           <div className="w-12 h-12 rounded-xl bg-[#FBF0F0] dark:bg-[#2A1517] flex items-center justify-center mb-4">
             <FileX className="w-5 h-5 text-[#C44040] dark:text-[#D96B6B]" strokeWidth={1.8} />
@@ -140,7 +140,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   if (!doc) {
     return (
       <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
-        <PageTopbar bordered queriesLeft={46} crumbs={[{ label: "Início", onClick: () => router.push("/resultados") }, { label: "Decisão" }]} />
+        <PageTopbar bordered crumbs={[{ label: "Início", onClick: () => router.push("/resultados") }, { label: "Decisão" }]} />
         <div className="flex-1 flex flex-col items-center justify-center py-24">
           <Loader2 className="w-6 h-6 text-[#1A3A5C] dark:text-[#8AB0DC] animate-spin" strokeWidth={2} />
           <p className="mt-3 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "14.4px" }}>Carregando decisão…</p>
@@ -187,7 +187,6 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
     <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#F7F7F9] dark:bg-[#0E0E11]">
       <PageTopbar
         bordered
-        queriesLeft={46}
         crumbs={[
           { label: "Início", onClick: () => router.push("/resultados") },
           { label: "Jurisprudências", onClick: () => router.push("/resultados") },
