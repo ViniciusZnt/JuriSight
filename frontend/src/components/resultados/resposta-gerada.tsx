@@ -126,7 +126,9 @@ export function RespostaGerada({ estrutura, ordem, onIr }: Props) {
         <>
           <div className="space-y-3 text-[#0F1117] dark:text-[#ECECEF] leading-relaxed" style={{ fontSize: "14.9px" }}>
             <p style={{ fontWeight: 600 }}>{frase(estado.frases[0], 0)}</p>
-            {estado.frases.length > 1 && <p>{estado.frases.slice(1).map((f, i) => frase(f, i + 1))}</p>}
+            {/* fundamento; a última frase (a divergência) em parágrafo próprio */}
+            {estado.frases.length > 1 && <p>{estado.frases.slice(1, estado.frases.length > 2 ? -1 : undefined).map((f, i) => frase(f, i + 1))}</p>}
+            {estado.frases.length > 2 && <p>{frase(estado.frases[estado.frases.length - 1], estado.frases.length - 1)}</p>}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mt-4">
