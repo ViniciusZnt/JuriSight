@@ -19,6 +19,8 @@ import {
   ArrowDown,
   AlertTriangle,
   Download,
+  Copy,
+  CheckCircle2,
 } from "lucide-react";
 import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
@@ -33,6 +35,9 @@ import { SinteseResultados } from "@/components/resultados/sintese-resultados";
 import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
+  ementaComCitacao,
+  ementasRepetidas,
+  formatarData,
   matchedEntities,
   relevanceRanks,
   titleFromEmenta,
@@ -42,6 +47,7 @@ import {
 import { useSaved } from "@/lib/saved";
 import { useConversations } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
+import { copiarTexto } from "@/lib/utils";
 
 /** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
 function DropdownPill({
@@ -135,6 +141,8 @@ export function SearchResultsPage() {
   const [dateFrom, setDateFrom] = useState<string>(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState<string>("");
   const [citacao, setCitacao] = useState<string | null>(null); // chip da "Base citada"
+  const [expandidas, setExpandidas] = useState<Set<string>>(new Set()); // "Ver ementa completa"
+  const [copiada, setCopiada] = useState<string | null>(null);
 
   // Acesso direto à URL sem ter passado por Home/Revisão — não há busca em andamento.
   useEffect(() => {
@@ -151,6 +159,7 @@ export function SearchResultsPage() {
   const ranks = useMemo(() => relevanceRanks(results), [results]);
   const sintese = useMemo(() => sintetizar(results), [results]);
   const porId = useMemo(() => new Map(results.map((d) => [d.id, d])), [results]);
+  const repetidas = useMemo(() => ementasRepetidas([...results].sort((a, b) => b.score_rrf - a.score_rrf)), [results]);
   const idsCitacao = new Set(sintese?.base.find((b) => b.rotulo === citacao)?.ids ?? []);
 
   const limparFiltros = () => {
@@ -205,10 +214,14 @@ export function SearchResultsPage() {
     });
   };
 
-  const formatDate = (dateStr: string | null) =>
-    dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "Data não informada";
-  const formatDateLong = (dateStr: string | null) =>
-    dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não informada";
+  const formatDate = (dateStr: string | null) => formatarData(dateStr, "short");
+  const formatDateLong = (dateStr: string | null) => formatarData(dateStr, "long");
+  const alternarEmenta = (id: string) =>
+    setExpandidas((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   const { favorable: favorableCount, unfavorable: unfavorableCount, neutral: neutralCount } = contarDesfechos(results);
 
@@ -516,6 +529,8 @@ export function SearchResultsPage() {
               const outcome = outcomeDe(decision);
               const rank = ranks.get(decision.id);
               const entidades = matchedEntities(estrutura, decision.ementa);
+              const original = repetidas.get(decision.id);
+              const expandida = expandidas.has(decision.id);
 
               return (
                 // O título é o link (Ctrl+clique, nova aba, Tab); o ::after dele cobre o card inteiro
@@ -568,9 +583,20 @@ export function SearchResultsPage() {
 
                   {/* Summary */}
                   <div className="px-6 py-4">
-                    <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3" style={{ fontSize: "14.4px" }}>
-                      {truncate(decision.ementa, 400)}
+                    <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 whitespace-pre-line" style={{ fontSize: "14.4px" }}>
+                      {expandida ? decision.ementa.trim() : truncate(decision.ementa, 400)}
                     </p>
+                    {decision.ementa.trim().length > 400 && (
+                      <button
+                        onClick={() => alternarEmenta(decision.id)}
+                        aria-expanded={expandida}
+                        className="relative z-10 flex items-center gap-1 -mt-1 mb-3 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
+                        style={{ fontSize: "13.2px", fontWeight: 500 }}
+                      >
+                        {expandida ? "Recolher ementa" : "Ver ementa completa"}
+                        <ChevronDown className={`w-3 h-3 transition-transform ${expandida ? "rotate-180" : ""}`} strokeWidth={2} />
+                      </button>
+                    )}
 
                     {entidades.length > 0 && (
                       <div className="flex items-start gap-2 mb-3">
@@ -590,23 +616,44 @@ export function SearchResultsPage() {
                       <Chip tone="blue" size="sm">
                         {TIPO_DOCUMENTO_LABEL[decision.tipo_documento]}
                       </Chip>
+                      {original && (
+                        <Chip tone="amber" size="sm">
+                          Ementa igual à de #{ranks.get(original)}
+                        </Chip>
+                      )}
                     </div>
                   </div>
 
                   {/* Footer actions */}
-                  <div className="px-6 py-3 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C] flex items-center justify-between">
-                    <span className="text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "12.6px" }}>
+                  <div className="px-6 py-3 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C] flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[#6B6B80] dark:text-[#A6A6B4]" style={{ fontSize: "12.6px" }}>
                       Rel. {decision.relator}
                     </span>
-                    <ActionButton
-                      icon={Bookmark}
-                      label={saved ? "Salvo" : "Salvar"}
-                      tone={saved ? "accent" : "neutral"}
-                      size="sm"
-                      iconFill={saved}
-                      className="relative z-10"
-                      onClick={() => toggleSave(decision)}
-                    />
+                    <div className="flex items-center gap-2">
+                      <ActionButton
+                        icon={copiada === decision.id ? CheckCircle2 : Copy}
+                        label={copiada === decision.id ? "Copiada!" : "Copiar ementa"}
+                        tone={copiada === decision.id ? "success" : "neutral"}
+                        size="sm"
+                        className="relative z-10"
+                        title="Copiar a ementa com a linha de citação (tribunal, turma, processo, data, relator)"
+                        onClick={() =>
+                          copiarTexto(ementaComCitacao(decision)).then(() => {
+                            setCopiada(decision.id);
+                            setTimeout(() => setCopiada(null), 2000);
+                          })
+                        }
+                      />
+                      <ActionButton
+                        icon={Bookmark}
+                        label={saved ? "Salvo" : "Salvar"}
+                        tone={saved ? "accent" : "neutral"}
+                        size="sm"
+                        iconFill={saved}
+                        className="relative z-10"
+                        onClick={() => toggleSave(decision)}
+                      />
+                    </div>
                   </div>
                 </div>
               );
