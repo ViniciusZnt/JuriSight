@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   Loader2,
   FileX,
+  ScrollText,
 } from "lucide-react";
 import { PageTopbar } from "@/components/ui/page-topbar";
 import { MetaItem } from "@/components/ui/meta-item";
@@ -32,10 +33,49 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import { PROVIMENTO_LABEL, RESULTADO_LABEL, outcomeDe } from "@/lib/provimento";
-import { matchedEntities, relevanceRanks, titleFromEmenta, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
+import {
+  dispositivoDe,
+  ementaComCitacao,
+  formatarData,
+  matchedEntities,
+  paragrafos,
+  relevanceRanks,
+  titleFromEmenta,
+  TIPO_DOCUMENTO_LABEL,
+} from "@/lib/decision-view";
+import { copiarTexto } from "@/lib/utils";
 import { useSaved } from "@/lib/saved";
 import { useSearchSession } from "@/lib/search-session";
 import { getDocument, ApiError, type DocumentoDetalhe } from "@/lib/api";
+
+/** Texto do documento em parágrafos, alinhado à esquerda; acima de ~3 mil caracteres mostra o
+ *  começo e um botão para ler o resto sem sair da página. */
+function TextoLongo({ texto, vazio }: { texto: string; vazio: string }) {
+  const [inteiro, setInteiro] = useState(false);
+  if (!texto.trim()) {
+    return <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "14.4px" }}>{vazio}</p>;
+  }
+  const longo = texto.length > 3000;
+  return (
+    <>
+      {paragrafos(longo && !inteiro ? `${texto.slice(0, 3000).replace(/\s+\S*$/, "")}…` : texto).map((p, idx) => (
+        <p key={idx} className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 last:mb-0" style={{ fontSize: "14.4px" }}>
+          {p}
+        </p>
+      ))}
+      {longo && (
+        <button
+          onClick={() => setInteiro((v) => !v)}
+          aria-expanded={inteiro}
+          className="mt-1 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
+          style={{ fontSize: "13.8px", fontWeight: 500 }}
+        >
+          {inteiro ? "Mostrar menos" : `Ler o texto todo (${Math.round(texto.length / 1000)} mil caracteres)`}
+        </button>
+      )}
+    </>
+  );
+}
 
 /** Detalhe do acórdão (Figuras 6-7 da RFC). Busca o DocumentoJuridico completo via GET
  *  /document/{id}; a relevância (score_rrf) e a EstruturaArgumentativa pesquisada vêm do
@@ -48,6 +88,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   const [doc, setDoc] = useState<DocumentoDetalhe | null>(null);
   const [error, setError] = useState<{ notFound: boolean; message: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [ementaCopiada, setEmentaCopiada] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["summary", "matches", "grounds", "decision"])
@@ -78,8 +119,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
     };
   }, [decisionId]);
 
-  const formatDate = (dateStr: string | null) =>
-    dateStr ? new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" }) : "Data não informada";
+  const formatDate = (dateStr: string | null) => formatarData(dateStr, "long");
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => {
@@ -90,25 +130,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
     });
   };
 
-  const copyText = async (text: string, onDone: () => void) => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-      } catch {
-        /* clipboard indisponível */
-      }
-      document.body.removeChild(ta);
-    }
-    onDone();
-  };
+  const copyText = (text: string, onDone: () => void) => copiarTexto(text).then(onDone);
 
   if (error) {
     return (
@@ -155,6 +177,8 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   const entidades = matchedEntities(estrutura, `${doc.ementa} ${doc.fundamentacao} ${doc.acordao}`);
   const relevance = resultados ? (relevanceRanks(resultados).get(doc.id) ?? null) : null;
   const relevanceLabel = `#${relevance} de ${resultados?.length} em relevância`;
+  const dispositivo = dispositivoDe(doc.acordao);
+  const identificacao = [TIPO_DOCUMENTO_LABEL[doc.tipo_documento], doc.sigla_classe, doc.tribunal, doc.turma].filter(Boolean).join(" · ");
 
   const buildFullDocument = () => {
     const lines: string[] = [];
@@ -173,7 +197,8 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
     lines.push("EMENTA", doc.ementa, "");
     if (doc.relatorio) lines.push("RELATÓRIO", doc.relatorio, "");
     if (doc.fundamentacao) lines.push("FUNDAMENTAÇÃO", doc.fundamentacao, "");
-    if (doc.acordao) lines.push("DISPOSITIVO", doc.acordao, "");
+    if (dispositivo) lines.push("DISPOSITIVO", dispositivo, "");
+    if (doc.acordao) lines.push("INTEIRO TEOR", doc.acordao, "");
     if (doc.votos) lines.push("VOTOS", doc.votos, "");
     if (doc.referencia_legislativa.length) {
       lines.push("DISPOSITIVOS LEGAIS CITADOS", doc.referencia_legislativa.map((r) => `• ${r}`).join("\n"), "");
@@ -210,9 +235,14 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
           {/* Header */}
           <div className="px-5 sm:px-7 pt-6 pb-5 border-b border-[#F0F0F6] dark:border-[#26262C]">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 mb-4">
-              <h1 className="text-[#0F1117] dark:text-[#ECECEF] leading-tight flex-1" style={{ fontSize: "20.7px", fontWeight: 600 }}>
-                {title}
-              </h1>
+              <div className="flex-1">
+                <p className="text-[#6B6B80] dark:text-[#A6A6B4] mb-1" style={{ fontSize: "13.2px", fontWeight: 600 }}>
+                  {identificacao}
+                </p>
+                <h1 className="text-[#0F1117] dark:text-[#ECECEF] leading-tight" style={{ fontSize: "20.7px", fontWeight: 600 }}>
+                  {title}
+                </h1>
+              </div>
               <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                 <OutcomeBadge outcome={outcome} size="md" suffix=" à tese" />
                 {relevance !== null && (
@@ -302,6 +332,31 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
             </div>
           </div>
 
+          {/* Summary */}
+          <CollapsibleSection
+            icon={Quote}
+            iconBg="bg-[#EFF4FA] dark:bg-[#1A2A3C]"
+            iconColor="text-[#1A3A5C] dark:text-[#8AB0DC]"
+            title="Ementa"
+            expanded={expandedSections.has("summary")}
+            onToggle={() => toggleSection("summary")}
+          >
+            <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed whitespace-pre-line" style={{ fontSize: "14.9px" }}>
+              {doc.ementa || "Ementa não disponível para este documento."}
+            </p>
+            {doc.ementa && (
+              <ActionButton
+                icon={ementaCopiada ? CheckCircle2 : Copy}
+                label={ementaCopiada ? "Copiada!" : "Copiar ementa com citação"}
+                tone={ementaCopiada ? "success" : "neutral"}
+                size="sm"
+                className="mt-3"
+                title="Copiar a ementa com a linha de citação (tribunal, turma, processo, data, relator)"
+                onClick={() => copyText(ementaComCitacao(doc), () => { setEmentaCopiada(true); setTimeout(() => setEmentaCopiada(false), 2000); })}
+              />
+            )}
+          </CollapsibleSection>
+
           {/* Matched entities */}
           {entidades.length > 0 && (
             <div className="px-5 sm:px-7 py-4 bg-[#FAFBFF] dark:bg-[#15191F] border-b border-[#F0F0F6] dark:border-[#26262C]">
@@ -331,20 +386,6 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
             <ProvimentoPanel documentoId={doc.id} provimento={doc.provimento} classificacao={doc.classificacao_provimento} />
           </section>
 
-          {/* Summary */}
-          <CollapsibleSection
-            icon={Quote}
-            iconBg="bg-[#EFF4FA] dark:bg-[#1A2A3C]"
-            iconColor="text-[#1A3A5C] dark:text-[#8AB0DC]"
-            title="Ementa"
-            expanded={expandedSections.has("summary")}
-            onToggle={() => toggleSection("summary")}
-          >
-            <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed" style={{ fontSize: "14.9px", textAlign: "justify" }}>
-              {doc.ementa || "Ementa não disponível para este documento."}
-            </p>
-          </CollapsibleSection>
-
           {/* Relatório (opcional — nem todo documento tem esta seção preenchida) */}
           {doc.relatorio && (
             <CollapsibleSection
@@ -355,11 +396,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
               expanded={expandedSections.has("relatorio")}
               onToggle={() => toggleSection("relatorio")}
             >
-              {doc.relatorio.split("\n\n").map((paragraph, idx) => (
-                <p key={idx} className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 last:mb-0" style={{ fontSize: "14.4px", textAlign: "justify" }}>
-                  {paragraph}
-                </p>
-              ))}
+              <TextoLongo texto={doc.relatorio} vazio="" />
             </CollapsibleSection>
           )}
 
@@ -397,43 +434,37 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
             expanded={expandedSections.has("grounds")}
             onToggle={() => toggleSection("grounds")}
           >
-            <div className="prose-sm max-w-none">
-              {doc.fundamentacao ? (
-                doc.fundamentacao.split("\n\n").map((paragraph, idx) => (
-                  <p key={idx} className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 last:mb-0" style={{ fontSize: "14.4px", textAlign: "justify" }}>
-                    {paragraph}
-                  </p>
-                ))
-              ) : (
-                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "14.4px" }}>
-                  Fundamentação não disponível para este documento.
-                </p>
-              )}
-            </div>
+            <TextoLongo texto={doc.fundamentacao} vazio="Fundamentação não disponível para este documento." />
+            {doc.fundamentacao.length < 1500 && doc.acordao.length > 5000 && (
+              <p className="mt-3 text-[#6B6B80] dark:text-[#A6A6B4]" style={{ fontSize: "13.2px" }}>
+                Na fonte, esta seção veio curta; o texto completo está em &ldquo;Inteiro teor&rdquo;, abaixo.
+              </p>
+            )}
           </CollapsibleSection>
 
-          {/* Decision */}
+          {/* Dispositivo: trecho final do inteiro teor (o campo `acordao` traz o acórdão inteiro) */}
+          {dispositivo && (
+            <CollapsibleSection
+              icon={Scale}
+              iconBg="bg-[#EFF4FA] dark:bg-[#1A2A3C]"
+              iconColor="text-[#1A3A5C] dark:text-[#8AB0DC]"
+              title="Dispositivo"
+              expanded={expandedSections.has("decision")}
+              onToggle={() => toggleSection("decision")}
+            >
+              <TextoLongo texto={dispositivo} vazio="" />
+            </CollapsibleSection>
+          )}
+
           <CollapsibleSection
-            icon={Scale}
-            iconBg="bg-[#EFF4FA] dark:bg-[#1A2A3C]"
-            iconColor="text-[#1A3A5C] dark:text-[#8AB0DC]"
-            title="Dispositivo"
-            expanded={expandedSections.has("decision")}
-            onToggle={() => toggleSection("decision")}
+            icon={ScrollText}
+            iconBg="bg-[#F5F5F8] dark:bg-[#1C1C21]"
+            iconColor="text-[#6A6A7A] dark:text-[#9494A2]"
+            title="Inteiro teor"
+            expanded={expandedSections.has("teor")}
+            onToggle={() => toggleSection("teor")}
           >
-            <div className="bg-[#FAFAFA] dark:bg-[#1C1C21] rounded-xl p-4 border border-[#EBEBF2] dark:border-[#26262C]">
-              {doc.acordao ? (
-                doc.acordao.split("\n\n").map((paragraph, idx) => (
-                  <p key={idx} className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 last:mb-0" style={{ fontSize: "14.4px", textAlign: "justify" }}>
-                    {paragraph}
-                  </p>
-                ))
-              ) : (
-                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "14.4px" }}>
-                  Dispositivo não disponível para este documento.
-                </p>
-              )}
-            </div>
+            <TextoLongo texto={doc.acordao} vazio="Inteiro teor não disponível para este documento." />
           </CollapsibleSection>
 
           {/* Votos (opcional) */}
@@ -446,11 +477,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
               expanded={expandedSections.has("votos")}
               onToggle={() => toggleSection("votos")}
             >
-              {doc.votos.split("\n\n").map((paragraph, idx) => (
-                <p key={idx} className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 last:mb-0" style={{ fontSize: "14.4px", textAlign: "justify" }}>
-                  {paragraph}
-                </p>
-              ))}
+              <TextoLongo texto={doc.votos} vazio="" />
             </CollapsibleSection>
           )}
 

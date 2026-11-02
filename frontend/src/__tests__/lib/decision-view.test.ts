@@ -1,4 +1,4 @@
-import { ementaComCitacao, ementasRepetidas, relevanceRanks, titleFromEmenta } from "@/lib/decision-view";
+import { dispositivoDe, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, titleFromEmenta } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -55,5 +55,33 @@ describe("ementaComCitacao", () => {
     expect(
       ementaComCitacao({ ementa: " Texto. ", tribunal: "TRT2", turma: "11ª Turma", numero_processo: "0001", data_julgamento: "2025-12-17", relator: "Fulana" })
     ).toBe("Texto.\n\n(TRT2, 11ª Turma, Processo 0001, julgado em 17/12/2025, Rel. Fulana.)");
+  });
+});
+
+describe("paragrafos", () => {
+  it("respeita as quebras do original e, sem elas, quebra antes de itens numerados", () => {
+    expect(paragrafos("Um.\n\nDois.")).toEqual(["Um.", "Dois."]);
+    expect(paragrafos("CASO. I. CASO EM EXAME 1. Recurso da ré, art. 895, I, da CLT. II. QUESTÃO em discussão")).toEqual([
+      "CASO.",
+      "I. CASO EM EXAME",
+      "1. Recurso da ré, art. 895, I, da CLT.",
+      "II. QUESTÃO em discussão",
+    ]);
+  });
+});
+
+describe("dispositivoDe", () => {
+  it("pega do último ACORDAM em diante; sem ele, do último 'exposto'", () => {
+    expect(dispositivoDe("Fundamentos. Ante o exposto, nego. ACORDAM os Magistrados em negar provimento.")).toBe(
+      "ACORDAM os Magistrados em negar provimento."
+    );
+    expect(dispositivoDe("Ante o exposto, A. Diante do exposto, dou provimento.")).toBe("Diante do exposto, dou provimento.");
+    expect(dispositivoDe("Sem dispositivo reconhecível.")).toBeNull();
+  });
+
+  it("corta textos longos numa frase", () => {
+    expect(dispositivoDe("ACORDAM em dar provimento. Participaram os desembargadores fulano e beltrano.", 40)).toBe(
+      "ACORDAM em dar provimento. […]"
+    );
   });
 });

@@ -114,3 +114,23 @@ export const TIPO_DOCUMENTO_LABEL: Record<TipoDocumento, string> = {
   OJ: "Orientação Jurisprudencial",
   PRECEDENTE: "Precedente",
 };
+
+/** Parágrafos de um texto do documento: usa as quebras do original; sem elas (o inteiro teor vem
+ *  numa linha só), quebra antes de itens numerados ("1. Recurso…", "II. QUESTÃO…"). */
+export function paragrafos(texto: string): string[] {
+  const t = texto.trim();
+  const partes = t.includes("\n\n") ? t.split(/\n\s*\n/) : t.split(/\s(?=(?:[IVX]{1,4}|\d{1,2})\.\s+\p{Lu})/u);
+  return partes.map((p) => p.trim()).filter(Boolean);
+}
+
+/** O campo `acordao` traz o inteiro teor; o dispositivo é o trecho a partir do último "ACORDAM"
+ *  (ou do último "Ante/Diante do exposto", "Isto posto", "Posto isso"), cortado numa frase. */
+export function dispositivoDe(teor: string, max = 1500): string | null {
+  const ultimo = (re: RegExp) => [...teor.matchAll(re)].pop()?.index;
+  const i = ultimo(/\bacordam\b/gi) ?? ultimo(/\b(?:ante|diante) do exposto|\bisto posto|\bposto isso/gi);
+  if (i === undefined) return null;
+  const trecho = teor.slice(i, i + max).trim();
+  if (teor.length - i <= max) return trecho;
+  const fim = trecho.lastIndexOf(". ");
+  return `${fim > 0 ? trecho.slice(0, fim + 1) : trecho} […]`;
+}
