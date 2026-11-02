@@ -1,4 +1,4 @@
-import { dispositivoDe, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta } from "@/lib/decision-view";
+import { dispositivoDe, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -55,6 +55,14 @@ describe("ementaComCitacao", () => {
     expect(
       ementaComCitacao({ ementa: " Texto. ", tribunal: "TRT2", turma: "11ª Turma", numero_processo: "0001", data_julgamento: "2025-12-17", relator: "Fulana" })
     ).toBe("Texto.\n\n(TRT2, 11ª Turma, Processo 0001, julgado em 17/12/2025, Rel. Fulana.)");
+  });
+});
+
+describe("tituloDoCard", () => {
+  it("põe classe e identificação antes da verbetação; sem classe (cards antigos), só tribunal e turma", () => {
+    const d = { ementa: "ADICIONAL DE INSALUBRIDADE. RUÍDO. Texto da ementa.", tribunal: "TRT2", turma: "11ª Turma" };
+    expect(tituloDoCard({ ...d, sigla_classe: "RORSum" })).toBe("RORSum · TRT2 · 11ª Turma — ADICIONAL DE INSALUBRIDADE. RUÍDO.");
+    expect(tituloDoCard(d)).toBe("TRT2 · 11ª Turma — ADICIONAL DE INSALUBRIDADE. RUÍDO.");
   });
 });
 

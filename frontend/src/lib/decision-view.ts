@@ -68,6 +68,13 @@ export function ementaComCitacao(d: Citavel): string {
   return `${d.ementa.trim()}\n\n(${citacaoDe(d)}.)`;
 }
 
+/** Título do card: classe e identificação antes da verbetação, para cards de mesmo tema não ficarem
+ *  iguais ("RORSum · TRT2 · 11ª Turma — ADICIONAL DE INSALUBRIDADE. RUÍDO."). */
+export function tituloDoCard(d: Pick<ResultCard, "ementa" | "tribunal" | "turma" | "sigla_classe">): string {
+  const id = [d.sigla_classe, d.tribunal, d.turma].filter(Boolean).join(" · ");
+  return id ? `${id} — ${titleFromEmenta(d.ementa)}` : titleFromEmenta(d.ementa);
+}
+
 /** Resposta gerada em texto para colar numa peça: cada frase com "[1, 3]" e, no fim, a citação
  *  completa de cada decisão citada. `porNumero`: número do card -> decisão. */
 export function respostaParaCopiar(

@@ -42,6 +42,7 @@ import {
   matchedEntities,
   relevanceRanks,
   titleFromEmenta,
+  tituloDoCard,
   truncate,
   TIPO_DOCUMENTO_LABEL,
 } from "@/lib/decision-view";
@@ -555,7 +556,7 @@ export function SearchResultsPage() {
           <div className="w-full max-w-[800px] space-y-4">
             {filteredResults.map((decision) => {
               const saved = isSaved(decision.id);
-              const title = titleFromEmenta(decision.ementa);
+              const title = tituloDoCard(decision);
               const outcome = outcomeDe(decision);
               const rank = ranks.get(decision.id);
               const entidades = matchedEntities(estrutura, decision.ementa);
