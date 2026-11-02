@@ -58,8 +58,8 @@ export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, orde
   return { chave, vazia: ids.length === 0, estado, posicoes };
 }
 
-// Parágrafos: resposta direta (negrito) | fundamento + base legal | o que provar | divergência.
-const PARAGRAFO: Record<FraseResposta["tipo"], number> = { resposta: 0, fundamento: 1, base_legal: 1, prova: 2, divergencia: 3 };
+// Parágrafos: resposta direta (negrito) | fundamento | base legal | o que provar | divergência.
+const PARAGRAFO: Record<FraseResposta["tipo"], number> = { resposta: 0, fundamento: 1, base_legal: 2, prova: 3, divergencia: 4 };
 
 interface Props {
   resposta: ReturnType<typeof useRespostaGerada>;
@@ -121,7 +121,7 @@ export function RespostaGerada({ resposta: { chave, vazia, estado }, ordem, onIr
     </span>
   );
   const frases = estado.status === "ok" ? estado.resposta.frases : [];
-  const paragrafos = [0, 1, 2, 3].map((p) => frases.map((f, i) => [f, i] as const).filter(([f]) => PARAGRAFO[f.tipo] === p)).filter((p) => p.length > 0);
+  const paragrafos = [0, 1, 2, 3, 4].map((p) => frases.map((f, i) => [f, i] as const).filter(([f]) => PARAGRAFO[f.tipo] === p)).filter((p) => p.length > 0);
   const fontes = [...new Set(frases.flatMap((f) => f.citacoes))].sort((a, b) => a - b).filter((n) => porNumero.has(n));
 
   return (
@@ -145,6 +145,12 @@ export function RespostaGerada({ resposta: { chave, vazia, estado }, ordem, onIr
           <div className="space-y-3 text-[#0F1117] dark:text-[#ECECEF] leading-relaxed" style={{ fontSize: "14.9px" }}>
             {paragrafos.map((p, k) => (
               <p key={k} style={p[0][0].tipo === "resposta" ? { fontWeight: 600 } : undefined}>
+                {/* a base legal não sai das ementas (por isso não tem chip): o rótulo diz de onde vem */}
+                {p[0][0].tipo === "base_legal" && (
+                  <span className="text-[#6B6B80] dark:text-[#A6A6B4]" style={{ fontWeight: 600 }}>
+                    Base legal:{" "}
+                  </span>
+                )}
                 {p.map(([f, i]) => frase(f, i))}
               </p>
             ))}

@@ -88,6 +88,10 @@ describe("sintetizar", () => {
     const ds = [doc("a", 0.9, cls("indefinido")), doc("b", 0.8, cls("reclamante")), doc("c", 0.7, cls("reclamante")), doc("d", 0.6, null)];
     const s = sintetizar(ds, new Map([["a", "deferiu"], ["b", "fato_diferente"], ["c", "negou"], ["d", "deferiu"]]))!;
     expect([s.trabalhador, s.empresa, s.outrosFatos, s.porResposta]).toEqual([["a", "d"], ["c"], ["b"], true]);
+    expect(s.abertura).toBe("A maioria das decisões defere o pedido.");
+    expect(s.tendencia).toBe("Das 4 decisões lidas pela resposta, 2 deferiram o pedido, 1 negou pelo direito, 1 negou com outros fatos e 0 tratam de outra questão.");
+    const semContraria = sintetizar(ds, new Map([["a", "deferiu"], ["b", "fato_diferente"]]))!;
+    expect(semContraria.abertura).toBe("Nenhuma decisão nega o pedido com os mesmos fatos da tese.");
     expect(sintetizar(ds)!).toMatchObject({ trabalhador: ["b", "c"], outrosFatos: [], porResposta: false });
   });
 });

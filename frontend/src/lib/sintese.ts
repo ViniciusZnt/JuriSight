@@ -53,7 +53,7 @@ export function sintetizar(resultados: Item[], posicoes?: Map<string, PosicaoTes
   const n = resultados.length;
   if (n === 0) return null;
   const { favorable: f, unfavorable: e, neutral: z } = contarDesfechos(resultados);
-  const abertura =
+  let abertura =
     f >= 0.6 * n && f >= 2 * e
       ? "A maioria das decisões encontradas favorece o trabalhador."
       : e >= 0.6 * n && e >= 2 * f
@@ -61,7 +61,22 @@ export function sintetizar(resultados: Item[], posicoes?: Map<string, PosicaoTes
         : z >= 0.6 * n
           ? "A maioria das decisões não tem um lado claro na classificação automática."
           : "As decisões se dividem.";
-  const tendencia = `${n === 1 ? "Da única decisão" : `Das ${n} decisões`}, ${plural(f, "favorece", "favorecem")} o trabalhador, ${e} a empresa e ${z} sem lado claro.`;
+  let tendencia = `${n === 1 ? "Da única decisão" : `Das ${n} decisões`}, ${plural(f, "favorece", "favorecem")} o trabalhador, ${e} a empresa e ${z} sem lado claro.`;
+  if (posicoes?.size) {
+    // Com a resposta gerada, o panorama conta pelas posições dela, para não dizer "se dividem" ao lado
+    // de um "Sim" cujas contrárias só tinham outros fatos.
+    const c = { deferiu: 0, negou: 0, fato_diferente: 0, outro: 0 };
+    for (const p of posicoes.values()) c[p]++;
+    abertura =
+      c.negou === 0 && c.deferiu > 0
+        ? "Nenhuma decisão nega o pedido com os mesmos fatos da tese."
+        : c.deferiu >= 2 * c.negou
+          ? "A maioria das decisões defere o pedido."
+          : c.negou >= 2 * c.deferiu
+            ? "A maioria das decisões nega o pedido."
+            : "As decisões se dividem.";
+    tendencia = `Das ${posicoes.size} decisões lidas pela resposta, ${plural(c.deferiu, "deferiu", "deferiram")} o pedido, ${plural(c.negou, "negou", "negaram")} pelo direito, ${plural(c.fato_diferente, "negou", "negaram")} com outros fatos e ${plural(c.outro, "trata", "tratam")} de outra questão.`;
+  }
 
   const porCitacao = new Map<string, string[]>();
   for (const d of resultados) for (const c of citacoesDe(d.ementa)) porCitacao.set(c, [...(porCitacao.get(c) ?? []), d.id]);
