@@ -1,4 +1,4 @@
-import type { PosicaoTese, ResultCard } from "@/lib/api";
+import type { ResultCard } from "@/lib/api";
 import { contarDesfechos, outcomeDe } from "@/lib/provimento";
 
 type Item = Parameters<typeof outcomeDe>[0] & Pick<ResultCard, "id" | "ementa" | "score_rrf">;
@@ -39,21 +39,18 @@ export interface Sintese {
   tendencia: string;
   /** Normas/precedentes citados em 2 ou mais ementas, com os ids das decisões que os citam. */
   base: { rotulo: string; ids: string[] }[];
-  /** Até 2 decisões mais relevantes de cada lado. Com a posição lida pela resposta gerada, os lados
-   *  são os dela (deferiu / negou / negou com outros fatos), para o painel citar as mesmas decisões. */
+  /** Até 2 decisões mais relevantes de cada lado. */
   trabalhador: string[];
   empresa: string[];
-  outrosFatos: string[];
-  porResposta: boolean;
 }
 
 /** Resposta-síntese do topo de /resultados: só o que os próprios resultados mostram (mesma regra
  *  e mesmo corte de confiança do selo), sem inventar nada. */
-export function sintetizar(resultados: Item[], posicoes?: Map<string, PosicaoTese> | null): Sintese | null {
+export function sintetizar(resultados: Item[]): Sintese | null {
   const n = resultados.length;
   if (n === 0) return null;
   const { favorable: f, unfavorable: e, neutral: z } = contarDesfechos(resultados);
-  let abertura =
+  const abertura =
     f >= 0.6 * n && f >= 2 * e
       ? "A maioria das decisões encontradas favorece o trabalhador."
       : e >= 0.6 * n && e >= 2 * f
@@ -61,22 +58,7 @@ export function sintetizar(resultados: Item[], posicoes?: Map<string, PosicaoTes
         : z >= 0.6 * n
           ? "A maioria das decisões não tem um lado claro na classificação automática."
           : "As decisões se dividem.";
-  let tendencia = `${n === 1 ? "Da única decisão" : `Das ${n} decisões`}, ${plural(f, "favorece", "favorecem")} o trabalhador, ${e} a empresa e ${z} sem lado claro.`;
-  if (posicoes?.size) {
-    // Com a resposta gerada, o panorama conta pelas posições dela, para não dizer "se dividem" ao lado
-    // de um "Sim" cujas contrárias só tinham outros fatos.
-    const c = { deferiu: 0, negou: 0, fato_diferente: 0, outro: 0 };
-    for (const p of posicoes.values()) c[p]++;
-    abertura =
-      c.negou === 0 && c.deferiu > 0
-        ? "Nenhuma decisão nega o pedido com os mesmos fatos da tese."
-        : c.deferiu >= 2 * c.negou
-          ? "A maioria das decisões defere o pedido."
-          : c.negou >= 2 * c.deferiu
-            ? "A maioria das decisões nega o pedido."
-            : "As decisões se dividem.";
-    tendencia = `Das ${posicoes.size} decisões lidas pela resposta, ${plural(c.deferiu, "deferiu", "deferiram")} o pedido, ${plural(c.negou, "negou", "negaram")} pelo direito, ${plural(c.fato_diferente, "negou", "negaram")} com outros fatos e ${plural(c.outro, "trata", "tratam")} de outra questão.`;
-  }
+  const tendencia = `${n === 1 ? "Da única decisão" : `Das ${n} decisões`}, ${plural(f, "favorece", "favorecem")} o trabalhador, ${e} a empresa e ${z} sem lado claro.`;
 
   const porCitacao = new Map<string, string[]>();
   for (const d of resultados) for (const c of citacoesDe(d.ementa)) porCitacao.set(c, [...(porCitacao.get(c) ?? []), d.id]);
@@ -87,15 +69,6 @@ export function sintetizar(resultados: Item[], posicoes?: Map<string, PosicaoTes
     .slice(0, 8);
 
   const porRelevancia = [...resultados].sort((a, b) => b.score_rrf - a.score_rrf);
-  const lado = (o: string, p: PosicaoTese) =>
-    porRelevancia.filter((d) => (posicoes ? posicoes.get(d.id) === p : outcomeDe(d) === o)).slice(0, 2).map((d) => d.id);
-  return {
-    abertura,
-    tendencia,
-    base,
-    trabalhador: lado("favorable", "deferiu"),
-    empresa: lado("unfavorable", "negou"),
-    outrosFatos: posicoes ? lado("", "fato_diferente") : [],
-    porResposta: !!posicoes,
-  };
+  const lado = (o: string) => porRelevancia.filter((d) => outcomeDe(d) === o).slice(0, 2).map((d) => d.id);
+  return { abertura, tendencia, base, trabalhador: lado("favorable"), empresa: lado("unfavorable") };
 }

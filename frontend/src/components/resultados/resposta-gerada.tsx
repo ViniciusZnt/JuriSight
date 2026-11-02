@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Copy, Info, ThumbsDown, ThumbsUp } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
-import { gerarResposta, type EstruturaArgumentativa, type FraseResposta, type PosicaoTese, type RespostaIA, type ResultCard } from "@/lib/api";
+import { gerarResposta, type EstruturaArgumentativa, type FraseResposta, type RespostaIA, type ResultCard } from "@/lib/api";
 import { formatarData, respostaParaCopiar } from "@/lib/decision-view";
 import { copiarTexto } from "@/lib/utils";
 
@@ -45,17 +45,12 @@ export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, orde
   }, [chave]);
 
   const pronta = cache.get(chave);
-  const posicoes = useMemo(
-    () => (pronta ? new Map<string, PosicaoTese>(pronta.posicoes.flatMap((p) => (ids[p.numero - 1] ? [[ids[p.numero - 1], p.posicao]] : []))) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pronta, chave]
-  );
   const estado: EstadoResposta = pronta
     ? { status: "ok", resposta: pronta }
     : recebida?.chave === chave && recebida.erro !== undefined
       ? { status: "erro", mensagem: recebida.erro }
       : { status: "carregando" };
-  return { chave, vazia: ids.length === 0, estado, posicoes };
+  return { chave, vazia: ids.length === 0, estado };
 }
 
 // Parágrafos: resposta direta (negrito) | fundamento | base legal | o que provar | divergência.
