@@ -39,6 +39,7 @@ class ResultCard(BaseModel):
     relator: str
     data_julgamento: date | None
     ementa: str
+    sigla_classe: str = ""  # default: cards antigos salvos nas conversas não têm
     provimento: Provimento
     link_original: str | None
     score_rrf: float
@@ -72,6 +73,7 @@ def format_results(resultados: list[tuple[str, DocumentoJuridico, float]]) -> li
             relator=doc.relator,
             data_julgamento=doc.data_julgamento,
             ementa=doc.ementa,
+            sigla_classe=doc.sigla_classe,
             provimento=doc.provimento,
             link_original=doc.link_original,
             score_rrf=score,
