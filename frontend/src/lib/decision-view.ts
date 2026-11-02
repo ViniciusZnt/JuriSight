@@ -14,8 +14,9 @@ export function titleFromEmenta(ementa: string): string {
     const t = seg.trim().replace(/\.$/, "");
     const minusculas = t.match(/\p{Ll}/gu)?.length ?? 0;
     if (!t || minusculas > t.length * 0.2 || /^([IVX]+|\d+)$|CASO EM EXAME/.test(t)) break;
-    if (!GENERICO.test(t)) temas.push(t);
-    if (temas.join(". ").length > 110) break;
+    if (GENERICO.test(t)) continue;
+    if (temas.length && `${temas.join(". ")}. ${t}`.length > 100) break;
+    temas.push(t);
   }
   const titulo = temas.length ? `${temas.join(". ")}.` : (trimmed.split(/(?<=[.!?])\s/)[0] ?? trimmed);
   return titulo.length > 140 ? `${titulo.slice(0, 140).replace(/\s+\S*$/, "")}…` : titulo;
