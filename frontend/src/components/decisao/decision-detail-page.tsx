@@ -341,9 +341,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
             expanded={expandedSections.has("summary")}
             onToggle={() => toggleSection("summary")}
           >
-            <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed whitespace-pre-line" style={{ fontSize: "14.9px" }}>
-              {doc.ementa || "Ementa não disponível para este documento."}
-            </p>
+            <TextoLongo texto={doc.ementa} vazio="Ementa não disponível para este documento." />
             {doc.ementa && (
               <ActionButton
                 icon={ementaCopiada ? CheckCircle2 : Copy}
