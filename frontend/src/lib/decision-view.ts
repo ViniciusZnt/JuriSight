@@ -76,6 +76,26 @@ export function tituloDoCard(d: Pick<ResultCard, "ementa" | "tribunal" | "turma"
   return id ? `${id} — ${titleFromEmenta(d.ementa)}` : titleFromEmenta(d.ementa);
 }
 
+/** Itens de uma frase-lista da resposta ("a; b; c"), para mostrar como lista. Com `semPrefixo`,
+ *  tira o começo até o primeiro ":" ("Para o pedido, é preciso provar: …"). Cada item começa com
+ *  maiúscula e sem ponto final. */
+export function itensDaFrase(texto: string, semPrefixo = false): string[] {
+  const corpo = semPrefixo && texto.includes(":") ? texto.slice(texto.indexOf(":") + 1) : texto;
+  return corpo
+    .split(";")
+    .map((i) => i.trim().replace(/\.$/, ""))
+    .filter(Boolean)
+    .map((i) => i[0].toUpperCase() + i.slice(1));
+}
+
+/** "CLT art. 189: se …" → ["CLT art. 189", "Se …"], para o dispositivo vir em negrito; sem ":", [null, item]. */
+export function dispositivoETexto(item: string): [string | null, string] {
+  const i = item.indexOf(":");
+  if (i <= 0) return [null, item];
+  const resto = item.slice(i + 1).trim();
+  return [item.slice(0, i).trim(), resto && resto[0].toUpperCase() + resto.slice(1)];
+}
+
 /** Resposta gerada em texto para colar numa peça: cada frase com "[1, 3]" e, no fim, a citação
  *  completa de cada decisão citada. `porNumero`: número do card -> decisão. */
 export function respostaParaCopiar(
