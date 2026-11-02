@@ -141,6 +141,7 @@ export function SearchResultsPage() {
   const [dateFrom, setDateFrom] = useState<string>(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState<string>("");
   const [citacao, setCitacao] = useState<string | null>(null); // chip da "Base citada"
+  const [tribunal, setTribunal] = useState<string | null>(null);
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set()); // "Ver ementa completa"
   const [copiada, setCopiada] = useState<string | null>(null);
 
@@ -159,6 +160,11 @@ export function SearchResultsPage() {
   const ranks = useMemo(() => relevanceRanks(results), [results]);
   const sintese = useMemo(() => sintetizar(results), [results]);
   const porId = useMemo(() => new Map(results.map((d) => [d.id, d])), [results]);
+  const tribunais = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const d of results) n.set(d.tribunal, (n.get(d.tribunal) ?? 0) + 1);
+    return [...n].sort((a, b) => a[0].localeCompare(b[0], "pt-BR", { numeric: true }));
+  }, [results]);
   const repetidas = useMemo(() => ementasRepetidas([...results].sort((a, b) => b.score_rrf - a.score_rrf)), [results]);
   const idsCitacao = new Set(sintese?.base.find((b) => b.rotulo === citacao)?.ids ?? []);
 
@@ -167,6 +173,7 @@ export function SearchResultsPage() {
     setDateFrom("");
     setDateTo("");
     setCitacao(null);
+    setTribunal(null);
   };
   // "Decisões que sustentam": tira os filtros para o card existir na lista e rola até ele.
   const irPara = (id: string) => {
@@ -198,7 +205,8 @@ export function SearchResultsPage() {
   const filteredResults = sortedResults
     .filter((d) => filter === "all" || outcomeDe(d) === filter)
     .filter((d) => inPeriod(d.data_julgamento))
-    .filter((d) => !citacao || idsCitacao.has(d.id));
+    .filter((d) => !citacao || idsCitacao.has(d.id))
+    .filter((d) => !tribunal || d.tribunal === tribunal);
 
   const toggleSave = (d: (typeof results)[number]) => {
     toggle({
@@ -381,7 +389,25 @@ export function SearchResultsPage() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownPill label={tribunal ?? "Todos os tribunais"} active={tribunal !== null}>
+              {(close) => (
+                <div className="p-1 max-h-[320px] overflow-y-auto">
+                  {[[null, results.length] as const, ...tribunais].map(([t, n]) => (
+                    <DropdownOption
+                      key={t ?? "todos"}
+                      label={`${t ?? "Todos os tribunais"} (${n})`}
+                      active={tribunal === t}
+                      onClick={() => {
+                        setTribunal(t);
+                        close();
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </DropdownPill>
+
             <DropdownPill label={periodLabel} active={dateFrom !== "" || dateTo !== ""}>
               {(close) => (
                 <div className="p-1">
@@ -502,7 +528,7 @@ export function SearchResultsPage() {
               filtros de provimento e período.
             </p>
             <div className="flex items-center gap-3 mt-5">
-              {(filter !== "all" || dateFrom || dateTo || citacao) && (
+              {(filter !== "all" || dateFrom || dateTo || citacao || tribunal) && (
                 <button
                   onClick={limparFiltros}
                   className="px-3.5 py-2 rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 transition-all"
