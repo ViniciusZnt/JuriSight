@@ -43,7 +43,7 @@ class _FakeRetriever:
 def _gerada(**campos) -> RespostaGerada:
     """Resposta do modelo com as partes vazias, exceto as dadas."""
     vazia = Citada(citacoes=[], texto="")
-    base = dict(desfechos=[], resposta=vazia, fundamentos=[], base_legal="", prova=vazia,
+    base = dict(desfechos=[], resposta=vazia, fundamentos=[], base_legal=vazia, prova=vazia,
                 negaram_por_outros_fatos=vazia, negaram_pelo_direito=vazia)
     return RespostaGerada(**{**base, **campos})
 
@@ -96,7 +96,7 @@ def test_partes_viram_frases_na_ordem_e_ementas_vem_do_banco_numeradas(usar, mon
         desfechos=[_d(1, "deferiu"), _d(2, "negou"), _d(3, "negou", fatos_da_premissa=False)],
         resposta=_c("Sim, quando a perícia confirma.", [1, 3, 1]),
         fundamentos=[_fund("A 11ª Turma do TRT2 entende assim.", [1])],
-        base_legal="CLT, art. 189.",
+        base_legal=_c("CLT, art. 189: insalubre dá adicional.", [1, 1]),
         prova=_c("Para o pedido, é preciso provar: perícia.", [1]),
         negaram_por_outros_fatos=_c("As que negaram partiram de EPI eficaz.", [3]),
         negaram_pelo_direito=_c("As decisões contrárias negaram porque…", [2]),
@@ -107,7 +107,7 @@ def test_partes_viram_frases_na_ordem_e_ementas_vem_do_banco_numeradas(usar, mon
         "frases": [
             {"tipo": "resposta", "texto": "Sim, quando a perícia confirma.", "citacoes": [1, 3]},
             {"tipo": "fundamento", "texto": "A 11ª Turma do TRT2 entende assim.", "citacoes": [1]},
-            {"tipo": "base_legal", "texto": "CLT, art. 189.", "citacoes": []},
+            {"tipo": "base_legal", "texto": "CLT, art. 189: insalubre dá adicional.", "citacoes": [1]},
             {"tipo": "prova", "texto": "Para o pedido, é preciso provar: perícia.", "citacoes": [1]},
             {"tipo": "divergencia", "texto": "As decisões contrárias negaram porque…", "citacoes": [2]},
             {"tipo": "divergencia", "texto": "As que negaram partiram de EPI eficaz.", "citacoes": [3]},
@@ -256,3 +256,8 @@ def test_chave_muda_com_a_lista_a_tese_e_o_modelo(monkeypatch):
     assert base != chave_da_resposta(EstruturaArgumentativa(tese_central="calor"), IDS)
     monkeypatch.setenv("OPENAI_GEN_MODEL", "outro-modelo")
     assert base != chave_da_resposta(tese, IDS)
+
+
+def test_base_legal_sem_citacao_some(usar):
+    usar(_FakeOpenAI(_gerada(**_UMA_FRASE, base_legal=_c("CLT art. 12: inventado.", []))))
+    assert [f["tipo"] for f in client.post("/resposta", json=CORPO).json()["frases"]] == ["resposta"]

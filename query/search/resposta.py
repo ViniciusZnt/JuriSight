@@ -4,8 +4,9 @@ cada uma citando as decisões (#1..#N, a numeração dos cards) que a sustentam,
 posição de cada decisão em relação à tese (deferiu / negou / fato diferente / outro).
 
 Ao modelo vão SÓ a EstruturaArgumentativa (que já vai à OpenAI no embedding) e as
-ementas públicas dos resultados — nunca o PDF nem texto do caso. Frase sem citação
-(exceto a única de base legal) ou com número fora das decisões enviadas é descartada aqui.
+ementas públicas dos resultados — nunca o PDF nem texto do caso. Frase sem citação ou com
+número fora das decisões enviadas é descartada aqui (a base legal também: com o 4o-mini, sem
+âncora ela inventava artigos).
 """
 from __future__ import annotations
 
@@ -50,11 +51,10 @@ _PROMPT = (
     "nunca diga que esse precedente decidiu o pedido da tese. É proibido "
     "escrever que o STF ou o TST decidiu, estabelece ou entende algo sobre o pedido, salvo se a "
     "decisão citada for desse tribunal.\n"
-    "- `base_legal`: UMA frase só, com os dispositivos separados por \";\", com artigos de lei, NR e anexo, súmulas e OJs do TST que regem "
-    "exatamente o pedido da tese (não outros pedidos que as ementas também julgam; nada de STF, "
-    "temas ou acórdãos), as que favorecem e as que limitam o "
-    "pedido, com o que cada uma diz com exatidão, na forma \"<norma>: se <condição>, <efeito>\", mesmo que "
-    "não estejam nas ementas, só as que você conhece com segurança (número e conteúdo certos).\n"
+    "- `base_legal`: UMA frase só, com os dispositivos separados por \";\", só com artigos de lei, "
+    "NR e anexo, súmulas e OJs que as ementas citadas CITAM e que regem o pedido da tese, na forma "
+    "\"<norma como a ementa a cita>: <o que a ementa diz dela>\"; cite em `citacoes` as decisões que "
+    "as citam. Nada de norma que não esteja nas ementas; texto vazio se nenhuma cita.\n"
     "- `prova`: UMA frase \"Para o pedido, é preciso provar: …\" com o que as decisões exigiram para "
     "deferir, os itens separados por \";\".\n"
     "- `negaram_por_outros_fatos`: UMA frase só com as que negaram tendo `fatos_da_premissa` false: "
@@ -64,7 +64,7 @@ _PROMPT = (
     "- `negaram_pelo_direito`: UMA frase só com as que negaram tendo `fatos_da_premissa` true, com "
     "o motivo jurídico delas (\"As decisões contrárias negaram porque …\"); texto vazio se não há.\n"
     "Sem contagem; não julgue quem está certo.\n"
-    "Cada frase, exceto a base legal, cita em `citacoes` os números (no máximo 4, os mais claros) das "
+    "Cada frase cita em `citacoes` os números (no máximo 4, os mais claros) das "
     "decisões que a sustentam e só menciona lei, súmula, OJ ou NR que apareça nelas. Não escreva "
     "números de decisão no texto (nem \"#3\", nem \"casos 5 e 6\")."
 )
@@ -76,7 +76,7 @@ PosicaoTese = Literal["deferiu", "negou", "fato_diferente", "outro"]
 class Frase(BaseModel):
     tipo: TipoFrase
     texto: str
-    citacoes: list[int]  # vazio só na "base_legal"
+    citacoes: list[int]
 
 
 class PosicaoDecisao(BaseModel):
@@ -115,7 +115,7 @@ class RespostaGerada(BaseModel):
     desfechos: list[Desfecho]
     resposta: Citada
     fundamentos: list[Fundamento]
-    base_legal: str
+    base_legal: Citada
     prova: Citada
     negaram_por_outros_fatos: Citada  # só "fato_diferente"; o servidor confere com os desfechos
     negaram_pelo_direito: Citada  # só "negou"
@@ -177,8 +177,8 @@ def gerar_resposta(
 
     Input:  estrutura — a tese revisada; decisoes — número do card (#n) -> documento.
     Returns: frases na ordem resposta, fundamentos, base legal, prova, divergência, cada uma com
-             citações que são todas números de `decisoes` (sem repetição) — só a base legal vem
-             sem citação (e sempre sem chips) — e a posição de cada decisão em relação à tese.
+             citações que são todas números de `decisoes` (sem repetição), e a posição de cada
+             decisão em relação à tese.
     Raises: openai.OpenAIError (rede, timeout, status) — o endpoint vira 503.
     """
     if not decisoes:
@@ -206,7 +206,7 @@ def gerar_resposta(
     # uma decisão que só tinha outros fatos.
     partes: list[tuple[TipoFrase, Citada | Fundamento, str | None]] = [
         ("resposta", g.resposta, None), *(("fundamento", f, None) for f in g.fundamentos),
-        ("prova", g.prova, None), ("divergencia", g.negaram_pelo_direito, "negou"),
+        ("base_legal", g.base_legal, None), ("prova", g.prova, None), ("divergencia", g.negaram_pelo_direito, "negou"),
         ("divergencia", g.negaram_por_outros_fatos, "fato_diferente"),  # de direito antes, se houver
     ]
     frases: list[Frase] = []
@@ -214,9 +214,6 @@ def gerar_resposta(
         citacoes = [c for c in dict.fromkeys(_do_tribunal_nomeado(f, decisoes)) if exigida is None or posicoes.get(c) == exigida]
         if f.texto.strip() and citacoes and all(c in decisoes for c in citacoes) and _sem_erro_de_precedente(f):
             frases.append(Frase(tipo=tipo, texto=f.texto.strip(), citacoes=citacoes))
-    if g.base_legal.strip():  # sem chips: não vem das ementas; entra antes da prova
-        i = next((k for k, f in enumerate(frases) if f.tipo in ("prova", "divergencia")), len(frases))
-        frases.insert(i, Frase(tipo="base_legal", texto=g.base_legal.strip(), citacoes=[]))
     return Resposta(
         frases=frases,
         posicoes=[PosicaoDecisao(numero=n, posicao=p) for n, p in sorted(posicoes.items())],

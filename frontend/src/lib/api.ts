@@ -180,8 +180,7 @@ export async function queryJurisprudencia(body: QueryRequestBody): Promise<Resul
   });
 }
 
-/** Frase da resposta gerada; `citacoes` são os números dos cards (#1 = ids[0]). Só a "base_legal"
- *  vem sem citação (não sai das ementas, por isso não tem chip). */
+/** Frase da resposta gerada; `citacoes` são os números dos cards (#1 = ids[0]). */
 export interface FraseResposta {
   tipo: "resposta" | "fundamento" | "base_legal" | "prova" | "divergencia";
   texto: string;
