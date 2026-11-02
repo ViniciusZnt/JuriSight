@@ -21,6 +21,8 @@ export interface SearchSubmitPayload {
 export interface SearchInputHandle {
   /** Remove o arquivo anexado e reabre o seletor — usado pelo alerta da FA02 ("Reenviar arquivo"). */
   clearAndReopenFile: () => void;
+  /** Preenche o campo com um texto (exemplos de pesquisa da Home) e põe o foco nele. */
+  preencher: (texto: string) => void;
 }
 
 /** Campo de consulta: textarea auto-expansível + anexar PDF + enviar.
@@ -55,6 +57,16 @@ export const SearchInput = forwardRef<
       clearAndReopenFile: () => {
         removeFile();
         fileInputRef.current?.click();
+      },
+      preencher: (texto) => {
+        setQuery(texto);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+          el.focus();
+        });
       },
     }));
 
