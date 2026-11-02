@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
-import { Paperclip, ArrowUp, FileText, X, Sparkles, Loader2 } from "lucide-react";
+import { Paperclip, ArrowUp, FileText, X, Loader2 } from "lucide-react";
 
 interface UploadedFile {
   file: File;
@@ -149,15 +149,6 @@ export const SearchInput = forwardRef<
                 <span style={{ fontSize: "13.8px" }}>Anexar PDF</span>
               </button>
 
-              <div className="w-px h-4 bg-[#E8E8EC] mx-1" />
-
-              <button
-                disabled={disabled}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#7A7A8E] dark:text-[#9E9EAC] hover:bg-[#F6F6F9] hover:text-[#1A3A5C] transition-all disabled:opacity-50 disabled:pointer-events-none"
-              >
-                <Sparkles className="w-3.5 h-3.5" strokeWidth={1.8} />
-                <span style={{ fontSize: "13.8px" }}>Contextual</span>
-              </button>
             </div>
 
             <div className="flex items-center gap-2">
