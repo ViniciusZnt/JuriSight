@@ -12,6 +12,7 @@ import {
 import {
   PERGUNTAS,
   PROVIMENTO_LABEL,
+  favoreceIncerto,
   nivelConfianca,
   probabilidadesOrdenadas,
   resumoProvimento,
@@ -93,9 +94,9 @@ export function ProvimentoPanel({ documentoId, provimento, classificacao, compac
     <div onClick={(e) => e.stopPropagation()} className="cursor-default">
       {compacto && (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px" }}>
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${nivelResultado.barra}`} title={`Confiança ${nivelResultado.label}`} />
-            <span className="truncate">{resumoProvimento(classificacao)}</span>
+          <div className="flex items-start gap-2 min-w-0 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px" }}>
+            <span className={`w-2 h-2 mt-1.5 rounded-full flex-shrink-0 ${nivelResultado.barra}`} title={`Confiança ${nivelResultado.label}`} />
+            <span>{resumoProvimento(classificacao)}</span>
           </div>
           <button
             onClick={() => setAberto((v) => !v)}
@@ -128,7 +129,7 @@ export function ProvimentoPanel({ documentoId, provimento, classificacao, compac
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "14.4px", fontWeight: 600 }}>
-                    {labels[escolha]}
+                    {chave === "favorece" && favoreceIncerto(classificacao) ? "Incerto" : labels[escolha]}
                   </span>
                   {probs.length > 1 && (
                     <button

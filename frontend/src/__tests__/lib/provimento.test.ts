@@ -1,5 +1,5 @@
 import type { ClassificacaoProvimento } from "@/lib/api";
-import { nivelConfianca, outcomeDe, probabilidadesOrdenadas, resumoProvimento } from "@/lib/provimento";
+import { contarDesfechos, nivelConfianca, outcomeDe, probabilidadesOrdenadas, resumoProvimento, rotuloSelo } from "@/lib/provimento";
 
 const base: ClassificacaoProvimento = {
   resultado: "nao_provido",
@@ -43,8 +43,38 @@ describe("outcomeDe", () => {
   });
 });
 
+describe("rotuloSelo", () => {
+  it("'Em parte' só quando a linha do card diz 'Favorece: Ambos em parte' (o selo segue contando como neutro)", () => {
+    const ambos = { ...base, favorece: "ambos_em_parte" as const, confianca_favorece: 0.9 };
+    expect(rotuloSelo({ provimento: "PARCIAL", classificacao_provimento: ambos })).toBe("Em parte");
+    expect(rotuloSelo({ provimento: "PARCIAL", classificacao_provimento: { ...ambos, confianca_favorece: 0.4 } })).toBeUndefined();
+    expect(rotuloSelo({ provimento: "PARCIAL", classificacao_provimento: base })).toBeUndefined();
+    expect(rotuloSelo({ provimento: "PARCIAL" })).toBeUndefined();
+  });
+});
+
 describe("resumoProvimento", () => {
   it("monta recorrente, resultado e a quem favorece", () => {
     expect(resumoProvimento(base)).toBe("Recurso da reclamada (empresa) · Não provido · Favorece: Trabalhador");
+  });
+
+  it("com confiança baixa em a quem favorece, não afirma lado (o selo fica Neutro)", () => {
+    const c = { ...base, favorece: "reclamada" as const, confianca_favorece: 0.23 };
+    expect(resumoProvimento(c)).toBe("Recurso da reclamada (empresa) · Não provido · A quem favorece: incerto");
+    expect(outcomeDe({ provimento: "NEGADO", classificacao_provimento: c })).toBe("neutral");
+  });
+});
+
+describe("contarDesfechos", () => {
+  it("conta favoráveis, desfavoráveis e neutros, e os três somam o total", () => {
+    const ds = [
+      { provimento: "NEGADO" as const }, // sem classificação: heurística → favorável
+      { provimento: "APROVADO" as const }, // → desfavorável
+      { provimento: "PARCIAL" as const }, // → neutro
+      { provimento: "NEGADO" as const, classificacao_provimento: { ...base, confianca_favorece: 0.3 } }, // confiança baixa → neutro
+    ];
+    const n = contarDesfechos(ds);
+    expect(n).toEqual({ favorable: 1, unfavorable: 1, neutral: 2 });
+    expect(n.favorable + n.unfavorable + n.neutral).toBe(ds.length);
   });
 });

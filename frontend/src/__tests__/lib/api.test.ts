@@ -13,6 +13,7 @@ import {
   getUsuarioAtual,
   ApiError,
   enviarCorrecaoProvimento,
+  gerarResposta,
   type EstruturaArgumentativa,
 } from "@/lib/api";
 
@@ -221,5 +222,23 @@ describe("enviarCorrecaoProvimento", () => {
     await expect(
       enviarCorrecaoProvimento("id-1", { resultado: "provido", recorrente: "reclamante", favorece: "reclamante" })
     ).rejects.toThrow(ApiError);
+  });
+});
+
+describe("gerarResposta", () => {
+  it("manda a estrutura e no máximo 20 ids e devolve as frases e as posições", async () => {
+    const resposta = { frases: [{ tipo: "resposta", texto: "Sim.", citacoes: [1] }], posicoes: [{ numero: 1, posicao: "deferiu" }] };
+    mockFetchOnce(200, resposta);
+    const ids = Array.from({ length: 25 }, (_, i) => `id-${i}`);
+    await expect(gerarResposta(estrutura, ids)).resolves.toEqual(resposta);
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toMatch(/\/resposta$/);
+    expect(init.credentials).toBe("include");
+    expect(JSON.parse(init.body)).toEqual({ estrutura, ids: ids.slice(0, 20) });
+  });
+
+  it("503 vira ApiError com o detail do backend", async () => {
+    mockFetchOnce(503, { detail: "A resposta gerada está indisponível agora." });
+    await expect(gerarResposta(estrutura, ["a"])).rejects.toEqual(new ApiError("A resposta gerada está indisponível agora.", 503));
   });
 });

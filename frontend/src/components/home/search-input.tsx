@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
-import { Paperclip, ArrowUp, FileText, X, Sparkles, Loader2 } from "lucide-react";
+import { Paperclip, ArrowUp, FileText, X, Loader2 } from "lucide-react";
 
 interface UploadedFile {
   file: File;
@@ -21,6 +21,8 @@ export interface SearchSubmitPayload {
 export interface SearchInputHandle {
   /** Remove o arquivo anexado e reabre o seletor — usado pelo alerta da FA02 ("Reenviar arquivo"). */
   clearAndReopenFile: () => void;
+  /** Preenche o campo com um texto (exemplos de pesquisa da Home) e põe o foco nele. */
+  preencher: (texto: string) => void;
 }
 
 /** Campo de consulta: textarea auto-expansível + anexar PDF + enviar.
@@ -55,6 +57,16 @@ export const SearchInput = forwardRef<
       clearAndReopenFile: () => {
         removeFile();
         fileInputRef.current?.click();
+      },
+      preencher: (texto) => {
+        setQuery(texto);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+          el.focus();
+        });
       },
     }));
 
@@ -137,23 +149,9 @@ export const SearchInput = forwardRef<
                 <span style={{ fontSize: "13.8px" }}>Anexar PDF</span>
               </button>
 
-              <div className="w-px h-4 bg-[#E8E8EC] mx-1" />
-
-              <button
-                disabled={disabled}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#7A7A8E] dark:text-[#9E9EAC] hover:bg-[#F6F6F9] hover:text-[#1A3A5C] transition-all disabled:opacity-50 disabled:pointer-events-none"
-              >
-                <Sparkles className="w-3.5 h-3.5" strokeWidth={1.8} />
-                <span style={{ fontSize: "13.8px" }}>Contextual</span>
-              </button>
             </div>
 
             <div className="flex items-center gap-2">
-              {query.length > 0 && (
-                <span className="text-[#C0C0D0]" style={{ fontSize: "12.6px" }}>
-                  ⇧ Enter para nova linha
-                </span>
-              )}
               <button
                 disabled={!canSubmit}
                 onClick={submit}
@@ -181,12 +179,16 @@ export const SearchInput = forwardRef<
           />
         </div>
 
-        <p className="text-center text-[#C0C0CE] dark:text-[#5E5E6A] mt-3" style={{ fontSize: "13.2px" }}>
-          Pressione{" "}
+        {/* Dica de teclado: só faz sentido com teclado físico, então some no celular. */}
+        <p className="hidden sm:block text-center text-[#C0C0CE] dark:text-[#5E5E6A] mt-3" style={{ fontSize: "13.2px" }}>
           <kbd className="px-1 py-0.5 rounded bg-[#EEEEF2] dark:bg-[#26262C] text-[#9090A0] dark:text-[#7C7C88] border border-[#DCDCE4] dark:border-[#2A2A32]" style={{ fontSize: "12.1px" }}>
             Enter
           </kbd>{" "}
-          para pesquisar • Suporte a PDF ou texto livre
+          pesquisa •{" "}
+          <kbd className="px-1 py-0.5 rounded bg-[#EEEEF2] dark:bg-[#26262C] text-[#9090A0] dark:text-[#7C7C88] border border-[#DCDCE4] dark:border-[#2A2A32]" style={{ fontSize: "12.1px" }}>
+            Shift + Enter
+          </kbd>{" "}
+          quebra a linha
         </p>
       </div>
     );

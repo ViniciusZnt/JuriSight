@@ -8,6 +8,7 @@ Endpoints (Tabela 6 / Tabela 13) — todos exigem sessão (cookie httpOnly, ver
 query/api/auth_routes.py::get_current_user), exceto /health:
   - POST /enrich          — extrai a EstruturaArgumentativa do PDF e/ou da intenção.
   - POST /query           — busca híbrida sobre a EstruturaArgumentativa revisada.
+  - POST /resposta        — resposta curta gerada (OpenAI) e ancorada nas ementas dos resultados.
   - GET  /document/{id}   — detalhe completo de um documento.
   - GET  /health          — liveness (público).
 
@@ -26,14 +27,16 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 
+import openai
 import psycopg
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 from starlette.concurrency import run_in_threadpool
 
@@ -60,6 +63,7 @@ from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados
     normalizar_scores as _normalizar_scores,
 )
 from query.search.reranker import Reranker
+from query.search.resposta import Resposta, gerar_resposta
 from query.api.provimento_routes import get_provimento_store
 from query.api.provimento_routes import router as provimento_router
 from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
@@ -89,6 +93,7 @@ async def lifespan(app: FastAPI):
     app.state.conversa_store = ConversaStore(DATABASE_URL)
     ensure_schema_correcoes(DATABASE_URL)  # depende de auth.usuarios (FK)
     app.state.provimento_store = ProvimentoJevStore(DATABASE_URL)
+    app.state.openai = openai.OpenAI(max_retries=0)  # timeout curto por chamada (query/search/resposta.py)
     yield
 
 
@@ -151,6 +156,10 @@ def get_enricher(request: Request) -> QueryEnricher:
 
 def get_reranker(request: Request) -> Reranker:
     return request.app.state.reranker
+
+
+def get_openai(request: Request) -> openai.OpenAI:
+    return request.app.state.openai
 
 
 # --------------------------------------------------------------------------- #
@@ -245,6 +254,32 @@ async def query(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return await run_in_threadpool(com_classificacao, cards, provimento_store)
+
+
+# --------------------------------------------------------------------------- #
+# POST /resposta                                                               #
+# --------------------------------------------------------------------------- #
+
+class RespostaRequest(BaseModel):
+    estrutura: EstruturaArgumentativa
+    ids: list[uuid.UUID] = Field(max_length=20)  # na ordem dos cards: ids[0] é o #1
+
+
+@app.post("/resposta", response_model=Resposta, dependencies=[Depends(get_current_user)])
+async def resposta(
+    body: RespostaRequest,
+    retriever: DocRetriever = Depends(get_doc_retriever),
+    client: openai.OpenAI = Depends(get_openai),
+) -> Resposta:
+    """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`."""
+    ids = [str(i) for i in body.ids]
+    docs = await run_in_threadpool(retriever.fetch, ids)
+    decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs}
+    try:
+        return await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, client)
+    except openai.OpenAIError as exc:
+        logger.warning("Resposta gerada indisponível: %s", exc)
+        raise HTTPException(status_code=503, detail="A resposta gerada está indisponível agora. Os resultados continuam abaixo.") from exc
 
 
 # --------------------------------------------------------------------------- #

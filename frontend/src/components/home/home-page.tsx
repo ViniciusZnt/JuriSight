@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, FileSearch, Gavel, AlertCircle, X, Loader2 } from "lucide-react";
+import { AlertCircle, X, Loader2 } from "lucide-react";
 import { SearchInput, type SearchInputHandle, type SearchSubmitPayload } from "@/components/home/search-input";
 import { Fa02Alert } from "@/components/home/fa02-alert";
 import { Fa05Processing } from "@/components/home/fa05-processing";
@@ -15,27 +15,23 @@ import { enrich, ApiError } from "@/lib/api";
 // real (que resume o PDF em blocos via LLM antes de extrair a EstruturaArgumentativa).
 const LARGE_FILE_BYTES = 8 * 1024 * 1024;
 
-const features = [
+// Exemplos clicáveis: preenchem o campo de pesquisa (não pesquisam sozinhos).
+const exemplos = [
   {
-    icon: FileSearch,
-    title: "Busca contextual",
-    description: "Pesquisa por semelhança semântica de teses argumentativas, não apenas por palavras-chave.",
-    color: "#1A3A5C",
-    bg: "#EFF4FA",
+    titulo: "Insalubridade por ruído",
+    texto: "Trabalhador exposto a ruído acima do limite da NR-15 sem EPI eficaz tem direito a adicional de insalubridade?",
   },
   {
-    icon: Gavel,
-    title: "Jurisprudência atualizada",
-    description: "Acesso às últimas decisões do TST, TRT e STF com indexação em tempo real.",
-    color: "#1E6B4A",
-    bg: "#EDF7F2",
+    titulo: "Horas extras de motorista",
+    texto: "Motorista de caminhão com jornada controlada por rastreador e tacógrafo tem direito a horas extras?",
   },
   {
-    icon: BookOpen,
-    title: "Análise argumentativa",
-    description: "IA identifica decisões favoráveis e desfavoráveis alinhadas à sua linha de defesa.",
-    color: "#7A4A1A",
-    bg: "#FBF4EC",
+    titulo: "Rescisão indireta",
+    texto: "Atraso reiterado no pagamento de salários e falta de depósito do FGTS justificam a rescisão indireta do contrato?",
+  },
+  {
+    titulo: "Estabilidade da gestante",
+    texto: "Empregada dispensada sem saber que estava grávida tem direito à estabilidade provisória ou à indenização do período?",
   },
 ];
 
@@ -166,8 +162,8 @@ export function HomePage() {
           className="text-center text-[#7A7A8E] dark:text-[#9E9EAC] mt-4 max-w-[480px] leading-relaxed px-2"
           style={{ fontSize: "17.8px", fontWeight: 400 }}
         >
-          Encontre decisões alinhadas à sua tese argumentativa com inteligência semântica.
-          TST, TRT e STF indexados em tempo real.
+          Encontre decisões alinhadas à sua tese argumentativa entre cerca de 69 mil acórdãos
+          de TRTs, com busca por palavras e por significado.
         </p>
 
         <div className="w-full max-w-[720px] mt-8 sm:mt-10">
@@ -223,28 +219,29 @@ export function HomePage() {
 
       {largeFileName && <Fa05Processing fileName={largeFileName} />}
 
-      {/* Features */}
-      <div className="px-4 sm:px-8 pb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-[880px] mx-auto">
-          {features.map((feature) => {
-            const Icon = feature.icon;
-            return (
-              <div
-                key={feature.title}
-                className="bg-white dark:bg-[#17171B] rounded-xl p-5 border border-[#EAEAEF] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_12px_rgba(0,0,0,0.07)] transition-all cursor-default"
+      {/* Exemplos de pesquisa */}
+      <div className="px-4 sm:px-8 pb-8">
+        <div className="max-w-[720px] mx-auto">
+          <p className="text-[#6B6B80] dark:text-[#A6A6B4] mb-2.5 uppercase tracking-[0.06em]" style={{ fontSize: "12.1px", fontWeight: 600 }}>
+            Exemplos de pesquisa
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {exemplos.map((e) => (
+              <button
+                key={e.titulo}
+                onClick={() => searchInputRef.current?.preencher(e.texto)}
+                disabled={loading}
+                className="text-left bg-white dark:bg-[#17171B] rounded-xl px-4 py-3 border border-[#EAEAEF] dark:border-[#26262C] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 hover:shadow-[0_2px_12px_rgba(0,0,0,0.07)] transition-all disabled:opacity-60"
               >
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3" style={{ background: feature.bg }}>
-                  <Icon style={{ color: feature.color, width: "18px", height: "18px" }} strokeWidth={1.8} />
-                </div>
-                <h3 className="text-[#0F1117] dark:text-[#ECECEF] mb-1.5" style={{ fontSize: "15.5px", fontWeight: 600 }}>
-                  {feature.title}
-                </h3>
-                <p className="text-[#8A8A9A] dark:text-[#9494A2] leading-relaxed" style={{ fontSize: "14.4px" }}>
-                  {feature.description}
-                </p>
-              </div>
-            );
-          })}
+                <span className="block text-[#0F1117] dark:text-[#ECECEF] mb-0.5" style={{ fontSize: "14.9px", fontWeight: 600 }}>
+                  {e.titulo}
+                </span>
+                <span className="block text-[#6B6B80] dark:text-[#A6A6B4] leading-snug" style={{ fontSize: "13.8px" }}>
+                  {e.texto}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

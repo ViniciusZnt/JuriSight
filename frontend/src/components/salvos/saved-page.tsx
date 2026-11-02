@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Bookmark, Scale, Calendar, FileText, X } from "lucide-react";
+import { Bookmark, Scale, Calendar, FileText, Search, X } from "lucide-react";
 import { MetaItem } from "@/components/ui/meta-item";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { useSaved } from "@/lib/saved";
@@ -34,6 +34,14 @@ export function SavedPage() {
             Ao abrir um acórdão, use <span className="text-[#1A3A5C] dark:text-[#8AB0DC]">Salvar</span> para guardá-lo aqui e
             consultar depois.
           </p>
+          <button
+            onClick={() => router.push("/")}
+            className="flex items-center gap-1.5 px-3.5 py-2 mt-5 rounded-lg bg-[#1A3A5C] text-white hover:bg-[#1E4570] transition-colors"
+            style={{ fontSize: "13.8px", fontWeight: 600 }}
+          >
+            <Search className="w-3.5 h-3.5" strokeWidth={1.8} />
+            Nova pesquisa
+          </button>
         </div>
       ) : (
         <div className="px-4 sm:px-8 pb-10">

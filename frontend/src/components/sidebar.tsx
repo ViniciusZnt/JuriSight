@@ -14,7 +14,7 @@ import {
   LogOut,
   type LucideIcon,
 } from "lucide-react";
-import { useConversations, groupByRecency } from "@/lib/conversations";
+import { useConversations, groupByRecency, conversationTag, numerarRepetidas } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 import { useAuth } from "@/lib/auth";
 import { useProfile, initialsOf } from "@/lib/profile";
@@ -42,6 +42,7 @@ export function Sidebar() {
     ? conversations.filter((c) => c.title.toLowerCase().includes(filter.trim().toLowerCase()))
     : conversations;
   const groups = groupByRecency(filtered);
+  const repetidas = numerarRepetidas(conversations);
 
   const novaPesquisa = () => {
     setActive(null);
@@ -166,19 +167,28 @@ export function Sidebar() {
                     >
                       <button
                         onClick={() => abrir(c.id)}
-                        className="flex flex-1 items-center gap-2.5 px-2 py-2 text-left min-w-0"
+                        title={c.title}
+                        className="flex flex-1 items-start gap-2.5 px-2 py-2 text-left min-w-0"
                       >
                         <MessageSquare
-                          className={`w-3.5 h-3.5 flex-shrink-0 ${
+                          className={`w-3.5 h-3.5 mt-[3px] flex-shrink-0 ${
                             activeId === c.id ? "text-[#1A3A5C] dark:text-[#8AB0DC]" : "text-[#AEAEBF] dark:text-[#6E6E7C]"
                           }`}
                           strokeWidth={1.8}
                         />
                         <span
-                          className={`flex-1 truncate ${activeId === c.id ? "text-[#1A3A5C] dark:text-[#8AB0DC]" : "text-[#4A4A5A] dark:text-[#C4C4CE]"}`}
+                          className={`flex-1 line-clamp-2 break-words leading-snug ${activeId === c.id ? "text-[#1A3A5C] dark:text-[#8AB0DC]" : "text-[#4A4A5A] dark:text-[#C4C4CE]"}`}
                           style={{ fontSize: "14.4px", fontWeight: activeId === c.id ? 500 : 400 }}
                         >
                           {c.title}
+                        </span>
+                        {repetidas.has(c.id) && (
+                          <span className="flex-shrink-0 -ml-1.5 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px", fontWeight: 600 }}>
+                            ({repetidas.get(c.id)})
+                          </span>
+                        )}
+                        <span className="flex-shrink-0 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.1px" }}>
+                          {conversationTag(c)}
                         </span>
                       </button>
                       <button

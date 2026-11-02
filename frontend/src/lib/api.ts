@@ -74,6 +74,8 @@ export interface ResultCard {
   relator: string;
   data_julgamento: string | null; // ISO yyyy-mm-dd
   ementa: string;
+  /** "RORSum", "ROT"… — ausente em cards antigos (conversas salvas). */
+  sigla_classe?: string;
   provimento: Provimento;
   link_original: string | null;
   score_rrf: number;
@@ -175,6 +177,32 @@ export async function queryJurisprudencia(body: QueryRequestBody): Promise<Resul
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+/** Frase da resposta gerada; `citacoes` são os números dos cards (#1 = ids[0]). Só a "base_legal"
+ *  vem sem citação (não sai das ementas, por isso não tem chip). */
+export interface FraseResposta {
+  tipo: "resposta" | "fundamento" | "base_legal" | "prova" | "divergencia";
+  texto: string;
+  citacoes: number[];
+}
+
+/** Posição da decisão #numero em relação à tese, lida pelo mesmo modelo que escreveu a resposta. */
+export type PosicaoTese = "deferiu" | "negou" | "fato_diferente" | "outro";
+
+export interface RespostaIA {
+  frases: FraseResposta[];
+  posicoes: { numero: number; posicao: PosicaoTese }[];
+}
+
+/** POST /resposta — resposta curta gerada a partir das ementas dos resultados (ids na ordem dos
+ *  cards, até 20). Lista vazia = nada que desse para ancorar; 503 = IA indisponível. */
+export async function gerarResposta(estrutura: EstruturaArgumentativa, ids: string[]): Promise<RespostaIA> {
+  return request<RespostaIA>("/resposta", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ estrutura, ids: ids.slice(0, 20) }),
   });
 }
 

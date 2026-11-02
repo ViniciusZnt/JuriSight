@@ -54,15 +54,33 @@ export function probabilidadesOrdenadas(p: Record<string, number> | undefined): 
     .sort((a, b) => b.prob - a.prob);
 }
 
+/** Abaixo deste corte de confiança em "a quem favorece" o app não afirma lado nenhum: o selo fica
+ *  Neutro e o card, o painel e a decisão dizem "incerto" (o palpite fica só nas probabilidades). */
+export const favoreceIncerto = (c: ClassificacaoProvimento) => (c.confianca_favorece ?? 0) < 0.5;
+
 /** Selo Favorável/Desfavorável. Com classificação do Jev, vem de "a quem favorece" (o app parte
  *  do lado do trabalhador); sem ela, fica a heurística antiga sobre o provimento de 4 classes. */
 export function outcomeDe(d: { provimento: Provimento; classificacao_provimento?: ClassificacaoProvimento | null }): Outcome {
   const c = d.classificacao_provimento;
   if (!c) return provimentoToOutcome(d.provimento);
-  if ((c.confianca_favorece ?? 0) < 0.5) return "neutral";
+  if (favoreceIncerto(c)) return "neutral";
   if (c.favorece === "reclamante") return "favorable";
   if (c.favorece === "reclamada") return "unfavorable";
   return "neutral";
+}
+
+/** Rótulo do selo quando o "Neutro" contradiria a linha "Favorece: Ambos em parte" logo abaixo dele;
+ *  a contagem e o filtro continuam tratando como neutro. */
+export function rotuloSelo(d: Parameters<typeof outcomeDe>[0]): string | undefined {
+  const c = d.classificacao_provimento;
+  return c && !favoreceIncerto(c) && c.favorece === "ambos_em_parte" ? "Em parte" : undefined;
+}
+
+/** Quantos resultados caem em cada selo — os três somam o total, para o resumo fechar a conta. */
+export function contarDesfechos(ds: Parameters<typeof outcomeDe>[0][]): Record<Outcome, number> {
+  const n: Record<Outcome, number> = { favorable: 0, unfavorable: 0, neutral: 0 };
+  for (const d of ds) n[outcomeDe(d)]++;
+  return n;
 }
 
 const RECURSO_DE: Record<Recorrente, string> = {
@@ -74,5 +92,6 @@ const RECURSO_DE: Record<Recorrente, string> = {
 };
 
 export function resumoProvimento(c: ClassificacaoProvimento): string {
-  return `${RECURSO_DE[c.recorrente]} · ${RESULTADO_LABEL[c.resultado]} · Favorece: ${FAVORECE_LABEL[c.favorece]}`;
+  const lado = favoreceIncerto(c) ? "A quem favorece: incerto" : `Favorece: ${FAVORECE_LABEL[c.favorece]}`;
+  return `${RECURSO_DE[c.recorrente]} · ${RESULTADO_LABEL[c.resultado]} · ${lado}`;
 }
