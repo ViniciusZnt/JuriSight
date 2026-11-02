@@ -29,6 +29,8 @@ import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { type Outcome } from "@/lib/outcome";
 import { contarDesfechos, outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
+import { SinteseResultados } from "@/components/resultados/sintese-resultados";
+import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
   matchedEntities,
@@ -132,6 +134,7 @@ export function SearchResultsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [dateFrom, setDateFrom] = useState<string>(""); // yyyy-mm-dd
   const [dateTo, setDateTo] = useState<string>("");
+  const [citacao, setCitacao] = useState<string | null>(null); // chip da "Base citada"
 
   // Acesso direto à URL sem ter passado por Home/Revisão — não há busca em andamento.
   useEffect(() => {
@@ -146,6 +149,21 @@ export function SearchResultsPage() {
   const versoes = conversations.find((c) => c.id === activeId)?.versions ?? [];
 
   const ranks = useMemo(() => relevanceRanks(results), [results]);
+  const sintese = useMemo(() => sintetizar(results), [results]);
+  const porId = useMemo(() => new Map(results.map((d) => [d.id, d])), [results]);
+  const idsCitacao = new Set(sintese?.base.find((b) => b.rotulo === citacao)?.ids ?? []);
+
+  const limparFiltros = () => {
+    setFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    setCitacao(null);
+  };
+  // "Decisões que sustentam": tira os filtros para o card existir na lista e rola até ele.
+  const irPara = (id: string) => {
+    limparFiltros();
+    setTimeout(() => document.getElementById(`decisao-${id}`)?.scrollIntoView({ block: "start" }), 0);
+  };
 
   const formatDateShort = (isoDate: string) =>
     new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -170,7 +188,8 @@ export function SearchResultsPage() {
 
   const filteredResults = sortedResults
     .filter((d) => filter === "all" || outcomeDe(d) === filter)
-    .filter((d) => inPeriod(d.data_julgamento));
+    .filter((d) => inPeriod(d.data_julgamento))
+    .filter((d) => !citacao || idsCitacao.has(d.id));
 
   const toggleSave = (d: (typeof results)[number]) => {
     toggle({
@@ -236,14 +255,14 @@ export function SearchResultsPage() {
         <StepIndicator current={2} />
 
         {/* Summary banner */}
-        <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row flex-wrap sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#EFF4FA] dark:bg-[#1A2A3C] flex-shrink-0">
               <Scale className="w-5 h-5 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
             </div>
             <div>
               <h2 className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
-                {filteredResults.length} decisões encontradas
+                {filteredResults.length} {filteredResults.length === 1 ? "decisão encontrada" : "decisões encontradas"}
               </h2>
               {estrutura?.tese_central && (
                 <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
@@ -272,6 +291,9 @@ export function SearchResultsPage() {
               </span>
             </div>
           </div>
+          {sintese && (
+            <SinteseResultados sintese={sintese} porId={porId} ranks={ranks} citacao={citacao} onCitacao={setCitacao} onIr={irPara} />
+          )}
         </div>
 
         {/* Versões (V1/V2/...) e refinar consulta */}
@@ -467,13 +489,9 @@ export function SearchResultsPage() {
               filtros de provimento e período.
             </p>
             <div className="flex items-center gap-3 mt-5">
-              {(filter !== "all" || dateFrom || dateTo) && (
+              {(filter !== "all" || dateFrom || dateTo || citacao) && (
                 <button
-                  onClick={() => {
-                    setFilter("all");
-                    setDateFrom("");
-                    setDateTo("");
-                  }}
+                  onClick={limparFiltros}
                   className="px-3.5 py-2 rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30 transition-all"
                   style={{ fontSize: "13.8px" }}
                 >
@@ -504,7 +522,8 @@ export function SearchResultsPage() {
                 // para o clique em qualquer ponto abrir a decisão. Controles internos ficam com z-10.
                 <div
                   key={decision.id}
-                  className="relative bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group"
+                  id={`decisao-${decision.id}`}
+                  className="relative scroll-mt-4 target:ring-2 target:ring-[#1A3A5C]/40 dark:target:ring-[#8AB0DC]/50 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group"
                 >
                   {/* Header */}
                   <div className="px-6 pt-5 pb-4 border-b border-[#F0F0F6] dark:border-[#26262C]">
