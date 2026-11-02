@@ -80,9 +80,14 @@ describe("sintetizar", () => {
       doc("b", 0.5, null, "NR 15, Anexo 1."),
       doc("c", 0.2, null, "Sem citação."),
     ])!;
-    expect(s.base).toEqual([
-      { rotulo: "NR-15", ids: ["a", "b"] },
-      { rotulo: "Súmula 289 do TST", ids: ["a"] },
-    ]);
+    // a Súmula 289, citada só por "a", é ruído e não aparece
+    expect(s.base).toEqual([{ rotulo: "NR-15", ids: ["a", "b"] }]);
+  });
+
+  it("com as posições da resposta gerada, os lados são os dela, não os do selo", () => {
+    const ds = [doc("a", 0.9, cls("indefinido")), doc("b", 0.8, cls("reclamante")), doc("c", 0.7, cls("reclamante")), doc("d", 0.6, null)];
+    const s = sintetizar(ds, new Map([["a", "deferiu"], ["b", "fato_diferente"], ["c", "negou"], ["d", "deferiu"]]))!;
+    expect([s.trabalhador, s.empresa, s.outrosFatos, s.porResposta]).toEqual([["a", "d"], ["c"], ["b"], true]);
+    expect(sintetizar(ds)!).toMatchObject({ trabalhador: ["b", "c"], outrosFatos: [], porResposta: false });
   });
 });

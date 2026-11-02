@@ -16,9 +16,12 @@ interface Props {
 /** Resposta-síntese acima da lista: tendência, base citada (chips que filtram a lista) e as
  *  decisões mais relevantes de cada lado, com âncora para o card. */
 export function SinteseResultados({ sintese, porId, ranks, citacao, onCitacao, onIr }: Props) {
+  // Com a resposta gerada pronta, os lados são as posições que ela leu (as mesmas decisões que cita).
+  const r = sintese.porResposta;
   const lados = [
-    { titulo: "A favor do trabalhador", ids: sintese.trabalhador, cor: "text-[#1A5C3A] dark:text-[#6FCB9A]" },
-    { titulo: "A favor da empresa", ids: sintese.empresa, cor: "text-[#7A1A1A] dark:text-[#E08A93]" },
+    { titulo: r ? "Deferiram o pedido" : "A favor do trabalhador", ids: sintese.trabalhador, cor: "text-[#1A5C3A] dark:text-[#6FCB9A]" },
+    { titulo: r ? "Negaram pelo direito" : "A favor da empresa", ids: sintese.empresa, cor: "text-[#7A1A1A] dark:text-[#E08A93]" },
+    { titulo: "Negaram com outros fatos", ids: sintese.outrosFatos, cor: "text-[#6A6A7A] dark:text-[#9494A2]" },
   ].filter((l) => l.ids.length > 0);
 
   return (

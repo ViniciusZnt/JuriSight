@@ -1,4 +1,4 @@
-import type { ResultCard } from "@/lib/api";
+import type { PosicaoTese, ResultCard } from "@/lib/api";
 import { contarDesfechos, outcomeDe } from "@/lib/provimento";
 
 type Item = Parameters<typeof outcomeDe>[0] & Pick<ResultCard, "id" | "ementa" | "score_rrf">;
@@ -37,16 +37,19 @@ export function citacoesDe(texto: string): string[] {
 export interface Sintese {
   abertura: string;
   tendencia: string;
-  /** Normas/precedentes mais citados nas ementas, com os ids das decisões que os citam. */
+  /** Normas/precedentes citados em 2 ou mais ementas, com os ids das decisões que os citam. */
   base: { rotulo: string; ids: string[] }[];
-  /** Até 2 decisões mais relevantes de cada lado. */
+  /** Até 2 decisões mais relevantes de cada lado. Com a posição lida pela resposta gerada, os lados
+   *  são os dela (deferiu / negou / negou com outros fatos), para o painel citar as mesmas decisões. */
   trabalhador: string[];
   empresa: string[];
+  outrosFatos: string[];
+  porResposta: boolean;
 }
 
 /** Resposta-síntese do topo de /resultados: só o que os próprios resultados mostram (mesma regra
  *  e mesmo corte de confiança do selo), sem inventar nada. */
-export function sintetizar(resultados: Item[]): Sintese | null {
+export function sintetizar(resultados: Item[], posicoes?: Map<string, PosicaoTese> | null): Sintese | null {
   const n = resultados.length;
   if (n === 0) return null;
   const { favorable: f, unfavorable: e, neutral: z } = contarDesfechos(resultados);
@@ -64,10 +67,20 @@ export function sintetizar(resultados: Item[]): Sintese | null {
   for (const d of resultados) for (const c of citacoesDe(d.ementa)) porCitacao.set(c, [...(porCitacao.get(c) ?? []), d.id]);
   const base = [...porCitacao]
     .map(([rotulo, ids]) => ({ rotulo, ids }))
+    .filter((b) => b.ids.length > 1) // citado por uma só decisão é ruído (ex.: art. 461 num pedido de equiparação)
     .sort((a, b) => b.ids.length - a.ids.length || a.rotulo.localeCompare(b.rotulo, "pt-BR", { numeric: true }))
     .slice(0, 8);
 
   const porRelevancia = [...resultados].sort((a, b) => b.score_rrf - a.score_rrf);
-  const lado = (o: string) => porRelevancia.filter((d) => outcomeDe(d) === o).slice(0, 2).map((d) => d.id);
-  return { abertura, tendencia, base, trabalhador: lado("favorable"), empresa: lado("unfavorable") };
+  const lado = (o: string, p: PosicaoTese) =>
+    porRelevancia.filter((d) => (posicoes ? posicoes.get(d.id) === p : outcomeDe(d) === o)).slice(0, 2).map((d) => d.id);
+  return {
+    abertura,
+    tendencia,
+    base,
+    trabalhador: lado("favorable", "deferiu"),
+    empresa: lado("unfavorable", "negou"),
+    outrosFatos: posicoes ? lado("", "fato_diferente") : [],
+    porResposta: !!posicoes,
+  };
 }

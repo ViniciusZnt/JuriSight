@@ -162,7 +162,7 @@ export function SearchResultsPage() {
   const ranks = useMemo(() => relevanceRanks(results), [results]);
   const porRank = useMemo(() => [...results].sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!), [results, ranks]);
   const resposta = useRespostaGerada(estrutura, porRank);
-  const sintese = useMemo(() => sintetizar(results), [results]);
+  const sintese = useMemo(() => sintetizar(results, resposta.posicoes), [results, resposta.posicoes]);
   const porId = useMemo(() => new Map(results.map((d) => [d.id, d])), [results]);
   const tribunais = useMemo(() => {
     const n = new Map<string, number>();
