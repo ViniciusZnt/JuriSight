@@ -1,4 +1,4 @@
-import { dispositivoDe, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
+import { dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -109,5 +109,31 @@ describe("dispositivoDe", () => {
     expect(dispositivoDe("ACORDAM em dar provimento. Participaram os desembargadores fulano e beltrano.", 40)).toBe(
       "ACORDAM em dar provimento. […]"
     );
+  });
+});
+
+describe("itensDaFrase", () => {
+  it("separa por ; com maiúscula e sem ponto final", () => {
+    expect(itensDaFrase("CLT art. 189: se insalubre, adicional; Súmula 80 do TST: se o EPI elimina, não.")).toEqual([
+      "CLT art. 189: se insalubre, adicional",
+      "Súmula 80 do TST: se o EPI elimina, não",
+    ]);
+  });
+
+  it("sem o prefixo até os dois-pontos", () => {
+    expect(itensDaFrase("Para o pedido, é preciso provar: a gravidez; a dispensa sem justa causa.", true)).toEqual([
+      "A gravidez",
+      "A dispensa sem justa causa",
+    ]);
+  });
+});
+
+describe("dispositivoETexto", () => {
+  it("separa o dispositivo do que ele diz", () => {
+    expect(dispositivoETexto("CLT art. 10, II, 'b': se a empregada está grávida, é vedada a dispensa")).toEqual([
+      "CLT art. 10, II, 'b'",
+      "Se a empregada está grávida, é vedada a dispensa",
+    ]);
+    expect(dispositivoETexto("NR-15 Anexo 1")).toEqual([null, "NR-15 Anexo 1"]);
   });
 });

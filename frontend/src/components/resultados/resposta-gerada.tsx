@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Copy, Info, ThumbsDown, ThumbsUp } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
 import { gerarResposta, type EstruturaArgumentativa, type FraseResposta, type RespostaIA, type ResultCard } from "@/lib/api";
-import { formatarData, respostaParaCopiar } from "@/lib/decision-view";
+import { dispositivoETexto, formatarData, itensDaFrase, respostaParaCopiar } from "@/lib/decision-view";
 import { copiarTexto } from "@/lib/utils";
 
 const FEEDBACK_KEY = "jurisight:feedback-resposta";
@@ -53,8 +53,58 @@ export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, orde
   return { chave, vazia: ids.length === 0, estado };
 }
 
-// Parágrafos: resposta direta (negrito) | fundamento | base legal | o que provar | divergência.
-const PARAGRAFO: Record<FraseResposta["tipo"], number> = { resposta: 0, fundamento: 1, base_legal: 2, prova: 3, divergencia: 4 };
+const LIMITE_CHIPS = 4;
+const LIMITE_FUNDAMENTOS = 3; // o modelo às vezes escreve um por turma; o resto fica atrás de "Mais N"
+
+/** Chips "#n" que levam ao card; acima de LIMITE_CHIPS, os demais ficam atrás de um "+N". */
+function Chips({ citacoes, porNumero, onIr }: { citacoes: number[]; porNumero: Map<number, ResultCard>; onIr: (id: string) => void }) {
+  const [todos, setTodos] = useState(false);
+  const visiveis = todos ? citacoes : citacoes.slice(0, LIMITE_CHIPS);
+  const resto = citacoes.length - visiveis.length;
+  const chip = "inline-flex items-center align-baseline mr-1 px-1.5 rounded-md border tabular-nums";
+  return (
+    <>
+      {visiveis.map((n) => {
+        const d = porNumero.get(n);
+        return (
+          <a
+            key={n}
+            href={d ? `#decisao-${d.id}` : undefined}
+            onClick={() => d && onIr(d.id)}
+            title={d ? `${d.tribunal} · ${d.turma} · ${d.numero_processo}` : undefined}
+            className={`${chip} bg-[#EEF3FB] dark:bg-[#1A2A3C] border-[#C8D9EF] dark:border-[#2A3A4C] text-[#1A3A5C] dark:text-[#8AB0DC] hover:border-[#1A3A5C]/50 no-underline`}
+            style={{ fontSize: "12.1px", fontWeight: 600, fontStyle: "normal" }}
+          >
+            #{n}
+          </a>
+        );
+      })}
+      {resto > 0 && (
+        <button
+          type="button"
+          onClick={() => setTodos(true)}
+          title={`Mostrar mais ${resto} ${resto === 1 ? "decisão" : "decisões"}`}
+          className={`${chip} bg-transparent border-[#E4E4EC] dark:border-[#33333A] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/50`}
+          style={{ fontSize: "12.1px", fontWeight: 600 }}
+        >
+          +{resto}
+        </button>
+      )}
+    </>
+  );
+}
+
+function Rotulo({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[#6B6B80] dark:text-[#A6A6B4] mb-1" style={{ fontSize: "13px", fontWeight: 600 }}>
+      {children}
+    </p>
+  );
+}
+
+const maiuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+const LISTA = "list-disc pl-5 space-y-1 marker:text-[#A0A0B0] dark:marker:text-[#6A6A78]";
 
 interface Props {
   resposta: ReturnType<typeof useRespostaGerada>;
@@ -68,6 +118,7 @@ interface Props {
  *  uma linha discreta. */
 export function RespostaGerada({ resposta: { chave, vazia, estado }, ordem, onIr }: Props) {
   const [copiada, setCopiada] = useState(false);
+  const [todosFundamentos, setTodosFundamentos] = useState(false);
   const [votos, setVotos] = useState(lerVotos);
   const voto = votos[chave];
 
@@ -95,28 +146,10 @@ export function RespostaGerada({ resposta: { chave, vazia, estado }, ordem, onIr
     }
   };
 
-  const frase = (f: FraseResposta, i: number) => (
-    <span key={i}>
-      {f.texto}{" "}
-      {f.citacoes.map((n) => {
-        const d = porNumero.get(n);
-        return (
-          <a
-            key={n}
-            href={d ? `#decisao-${d.id}` : undefined}
-            onClick={() => d && onIr(d.id)}
-            title={d ? `${d.tribunal} · ${d.turma} · ${d.numero_processo}` : undefined}
-            className="inline-flex items-center align-baseline mr-1 px-1.5 rounded-md bg-[#EEF3FB] dark:bg-[#1A2A3C] border border-[#C8D9EF] dark:border-[#2A3A4C] text-[#1A3A5C] dark:text-[#8AB0DC] hover:border-[#1A3A5C]/50 no-underline tabular-nums"
-            style={{ fontSize: "12.1px", fontWeight: 600, fontStyle: "normal" }}
-          >
-            #{n}
-          </a>
-        );
-      })}{" "}
-    </span>
-  );
+  const chips = (f: FraseResposta) => <Chips citacoes={f.citacoes} porNumero={porNumero} onIr={onIr} />;
   const frases = estado.status === "ok" ? estado.resposta.frases : [];
-  const paragrafos = [0, 1, 2, 3, 4].map((p) => frases.map((f, i) => [f, i] as const).filter(([f]) => PARAGRAFO[f.tipo] === p)).filter((p) => p.length > 0);
+  const de = (tipo: FraseResposta["tipo"]) => frases.filter((f) => f.tipo === tipo);
+  const [fundamentos, baseLegal, prova, divergencia] = [de("fundamento"), de("base_legal"), de("prova"), de("divergencia")];
   const fontes = [...new Set(frases.flatMap((f) => f.citacoes))].sort((a, b) => a - b).filter((n) => porNumero.has(n));
 
   return (
@@ -137,18 +170,84 @@ export function RespostaGerada({ resposta: { chave, vazia, estado }, ordem, onIr
         </div>
       ) : (
         <>
-          <div className="space-y-3 text-[#0F1117] dark:text-[#ECECEF] leading-relaxed" style={{ fontSize: "14.9px" }}>
-            {paragrafos.map((p, k) => (
-              <p key={k} style={p[0][0].tipo === "resposta" ? { fontWeight: 600 } : undefined}>
-                {/* a base legal não sai das ementas (por isso não tem chip): o rótulo diz de onde vem */}
-                {p[0][0].tipo === "base_legal" && (
-                  <span className="text-[#6B6B80] dark:text-[#A6A6B4]" style={{ fontWeight: 600 }}>
-                    Base legal:{" "}
-                  </span>
-                )}
-                {p.map(([f, i]) => frase(f, i))}
+          <div className="space-y-4 text-[#0F1117] dark:text-[#ECECEF] leading-relaxed" style={{ fontSize: "14.9px" }}>
+            {de("resposta").map((f, i) => (
+              <p key={i} style={{ fontWeight: 600 }}>
+                {f.texto} {chips(f)}
               </p>
             ))}
+            {fundamentos.length > 0 && (
+              <div>
+                <Rotulo>Fundamentos</Rotulo>
+                <ul className={LISTA}>
+                  {(todosFundamentos ? fundamentos : fundamentos.slice(0, LIMITE_FUNDAMENTOS)).map((f, i) => (
+                    <li key={i}>
+                      {maiuscula(f.texto)} {chips(f)}
+                    </li>
+                  ))}
+                </ul>
+                {!todosFundamentos && fundamentos.length > LIMITE_FUNDAMENTOS && (
+                  <button
+                    type="button"
+                    onClick={() => setTodosFundamentos(true)}
+                    className="mt-1 ml-5 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline underline-offset-2"
+                    style={{ fontSize: "13px", fontWeight: 600 }}
+                  >
+                    Mais {fundamentos.length - LIMITE_FUNDAMENTOS} fundamentos
+                  </button>
+                )}
+              </div>
+            )}
+            {baseLegal.length > 0 && (
+              <div>
+                <Rotulo>Base legal citada nas decisões</Rotulo>
+                {baseLegal.map((f, i) => {
+                  const itens = itensDaFrase(f.texto);
+                  return (
+                    <ul key={i} className={LISTA}>
+                      {itens.map((item, k) => {
+                        const [dispositivo, texto] = dispositivoETexto(item);
+                        return (
+                          <li key={k}>
+                            {dispositivo && <span style={{ fontWeight: 600 }}>{dispositivo}: </span>}
+                            {texto}
+                            {k === itens.length - 1 && <> {chips(f)}</>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })}
+              </div>
+            )}
+            {prova.map((f, i) => {
+              const itens = itensDaFrase(f.texto, true);
+              return (
+                <div key={i}>
+                  <Rotulo>O que provar</Rotulo>
+                  <ul className={LISTA}>
+                    {itens.map((item, k) => (
+                      <li key={k}>
+                        {item}
+                        {k === itens.length - 1 && <> {chips(f)}</>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+            {divergencia.length > 0 && (
+              <div>
+                <Rotulo>Divergência</Rotulo>
+                <div className="space-y-1.5">
+                  {divergencia.map((f, i) => (
+                    <p key={i}>
+                      {f.texto} {chips(f)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Fontes: as decisões citadas, cada uma leva ao card (como os chips) */}
