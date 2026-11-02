@@ -29,7 +29,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { type Outcome } from "@/lib/outcome";
-import { contarDesfechos, outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
+import { contarDesfechos, outcomeDe, resumoProvimento, rotuloSelo, PROVIMENTO_LABEL } from "@/lib/provimento";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import { SinteseResultados } from "@/components/resultados/sintese-resultados";
 import { RespostaGerada } from "@/components/resultados/resposta-gerada";
@@ -580,7 +580,7 @@ export function SearchResultsPage() {
                         </Link>
                       </h3>
                       <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                        <OutcomeBadge outcome={outcome} size="sm" />
+                        <OutcomeBadge outcome={outcome} label={rotuloSelo(decision)} size="sm" />
                         <div
                           title={`${rank}º mais relevante de ${results.length} nesta busca`}
                           aria-label={`${rank}º mais relevante de ${results.length} nesta busca`}

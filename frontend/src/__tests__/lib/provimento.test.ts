@@ -1,5 +1,5 @@
 import type { ClassificacaoProvimento } from "@/lib/api";
-import { contarDesfechos, nivelConfianca, outcomeDe, probabilidadesOrdenadas, resumoProvimento } from "@/lib/provimento";
+import { contarDesfechos, nivelConfianca, outcomeDe, probabilidadesOrdenadas, resumoProvimento, rotuloSelo } from "@/lib/provimento";
 
 const base: ClassificacaoProvimento = {
   resultado: "nao_provido",
@@ -40,6 +40,16 @@ describe("outcomeDe", () => {
   it("sem classificação cai na heurística antiga", () => {
     expect(outcomeDe({ provimento: "NEGADO" })).toBe("favorable");
     expect(outcomeDe({ provimento: "APROVADO", classificacao_provimento: null })).toBe("unfavorable");
+  });
+});
+
+describe("rotuloSelo", () => {
+  it("'Em parte' só quando a linha do card diz 'Favorece: Ambos em parte' (o selo segue contando como neutro)", () => {
+    const ambos = { ...base, favorece: "ambos_em_parte" as const, confianca_favorece: 0.9 };
+    expect(rotuloSelo({ provimento: "PARCIAL", classificacao_provimento: ambos })).toBe("Em parte");
+    expect(rotuloSelo({ provimento: "PARCIAL", classificacao_provimento: { ...ambos, confianca_favorece: 0.4 } })).toBeUndefined();
+    expect(rotuloSelo({ provimento: "PARCIAL", classificacao_provimento: base })).toBeUndefined();
+    expect(rotuloSelo({ provimento: "PARCIAL" })).toBeUndefined();
   });
 });
 

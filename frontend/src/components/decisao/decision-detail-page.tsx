@@ -32,7 +32,7 @@ import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
-import { PROVIMENTO_LABEL, RESULTADO_LABEL, outcomeDe } from "@/lib/provimento";
+import { PROVIMENTO_LABEL, RESULTADO_LABEL, outcomeDe, rotuloSelo } from "@/lib/provimento";
 import {
   dispositivoDe,
   ementaComCitacao,
@@ -244,7 +244,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
                 </h1>
               </div>
               <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                <OutcomeBadge outcome={outcome} size="md" suffix=" à tese" />
+                <OutcomeBadge outcome={outcome} label={rotuloSelo(doc)} size="md" suffix={rotuloSelo(doc) ? "" : " à tese"} />
                 {relevance !== null && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]">
                     <TrendingUp className="w-3.5 h-3.5 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />

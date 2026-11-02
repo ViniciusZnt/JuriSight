@@ -5,9 +5,11 @@ interface OutcomeBadgeProps {
   /** "md" = badge de destaque no topo da decisão; "sm" = badge compacto nos cards de resultado. */
   size?: "sm" | "md";
   suffix?: string;
+  /** Troca o rótulo padrão (ex.: "Em parte" no lugar de "Neutro"). */
+  label?: string;
 }
 
-export function OutcomeBadge({ outcome, size = "sm", suffix = "" }: OutcomeBadgeProps) {
+export function OutcomeBadge({ outcome, size = "sm", suffix = "", label }: OutcomeBadgeProps) {
   const config = OUTCOME_CONFIG[outcome];
   const Icon = config.icon;
   const padding = size === "md" ? "px-3 py-1.5" : "px-2.5 py-1";
@@ -18,7 +20,7 @@ export function OutcomeBadge({ outcome, size = "sm", suffix = "" }: OutcomeBadge
     <div className={`flex items-center gap-1.5 rounded-full border ${padding} ${config.bg} ${config.border}`}>
       <Icon className={`${iconSize} ${config.text}`} strokeWidth={2} />
       <span className={config.text} style={{ fontSize, fontWeight: 600 }}>
-        {config.label}
+        {label ?? config.label}
         {suffix}
       </span>
     </div>

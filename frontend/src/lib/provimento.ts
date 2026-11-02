@@ -69,6 +69,13 @@ export function outcomeDe(d: { provimento: Provimento; classificacao_provimento?
   return "neutral";
 }
 
+/** Rótulo do selo quando o "Neutro" contradiria a linha "Favorece: Ambos em parte" logo abaixo dele;
+ *  a contagem e o filtro continuam tratando como neutro. */
+export function rotuloSelo(d: Parameters<typeof outcomeDe>[0]): string | undefined {
+  const c = d.classificacao_provimento;
+  return c && !favoreceIncerto(c) && c.favorece === "ambos_em_parte" ? "Em parte" : undefined;
+}
+
 /** Quantos resultados caem em cada selo — os três somam o total, para o resumo fechar a conta. */
 export function contarDesfechos(ds: Parameters<typeof outcomeDe>[0][]): Record<Outcome, number> {
   const n: Record<Outcome, number> = { favorable: 0, unfavorable: 0, neutral: 0 };

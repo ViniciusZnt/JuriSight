@@ -17,6 +17,12 @@ describe("OutcomeBadge", () => {
     expect(screen.getByText("Neutro")).toBeInTheDocument();
   });
 
+  it("aceita outro rótulo no lugar do padrão", () => {
+    render(<OutcomeBadge outcome="neutral" label="Em parte" />);
+    expect(screen.getByText("Em parte")).toBeInTheDocument();
+    expect(screen.queryByText("Neutro")).not.toBeInTheDocument();
+  });
+
   it("adiciona o sufixo opcional ao lado do rótulo", () => {
     render(<OutcomeBadge outcome="favorable" suffix=" à tese" />);
     expect(screen.getByText(/Favorável\s*à tese/)).toBeInTheDocument();
