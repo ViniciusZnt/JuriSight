@@ -41,7 +41,7 @@ class _FakeOpenAI:
     def __init__(self, frases=None, erro: Exception | None = None):
         self.chamadas: list[dict] = []
         self.chat = SimpleNamespace(completions=SimpleNamespace(parse=self._parse))
-        self._parsed = RespostaGerada(frases=frases or [])
+        self._parsed = RespostaGerada(desfechos=[], frases=frases or [])
         self._erro = erro
 
     def _parse(self, **kwargs):
@@ -118,3 +118,10 @@ def test_sem_sessao_401():
     app.dependency_overrides[get_usuario_store] = lambda: None
     assert client.post("/resposta", json=CORPO).status_code == 401
     app.dependency_overrides.clear()
+
+
+def test_ementa_longa_vai_com_comeco_e_fim(usar):
+    from query.search.resposta import _trecho
+    longa = "INÍCIO " + "x" * 5000 + " RECURSO PROVIDO."
+    trecho = _trecho(longa)
+    assert trecho.startswith("INÍCIO") and trecho.endswith("RECURSO PROVIDO.") and len(trecho) < 2100

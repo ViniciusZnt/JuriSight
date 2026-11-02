@@ -9,6 +9,7 @@ ou com número fora das decisões enviadas é descartada aqui, no servidor.
 from __future__ import annotations
 
 import os
+from typing import Literal
 
 from openai import OpenAI
 from pydantic import BaseModel
@@ -18,7 +19,7 @@ from scraper.schema import DocumentoJuridico
 
 MODELO_PADRAO = "gpt-4o-mini"
 TIMEOUT_S = 20
-MAX_EMENTA = 2000  # caracteres por ementa no prompt
+MAX_EMENTA = 2000  # caracteres por ementa no prompt (começo + fim, onde fica o desfecho)
 
 _PROMPT = (
     "Você é um advogado trabalhista brasileiro. Responda à tese do usuário só com base nas "
@@ -27,12 +28,17 @@ _PROMPT = (
     "premissa da tese (ex.: \"Sim, quando a perícia confirma ruído acima do limite do Anexo 1 "
     "da NR-15 e o EPI não neutraliza o agente…\").\n"
     "2. Depois, 2 a 4 frases com o fundamento e o que precisa ser provado.\n"
-    "3. Por fim, 1 frase sobre a divergência explicada pelo MOTIVO (ex.: \"as decisões "
-    "contrárias negaram porque o laudo atestou EPI eficaz\"), nunca por contagem. Se não houver "
-    "divergência nas ementas, diga isso.\n"
-    "Cada frase cita em `citacoes` os números das decisões que a sustentam. Não invente: só "
-    "mencione lei, súmula, OJ ou NR que apareça nas ementas citadas naquela frase. Não escreva "
-    "os números (#3) dentro do texto."
+    "3. Por fim, 1 frase sobre a divergência explicada pelo MOTIVO que as próprias ementas "
+    "contrárias dão (forma: \"As decisões contrárias negaram porque …\"), nunca por contagem. Cite nessa "
+    "frase SÓ decisões que você marcou como \"negou\" em `desfechos`; se nenhuma negou, diga "
+    "isso. Não julgue se as decisões contrárias estão certas.\n"
+    "Antes das frases, preencha `desfechos`: para cada decisão, se ela deferiu ou negou ao "
+    "trabalhador o pedido da tese, lendo o desfecho no fim da ementa (recurso provido ou não, e "
+    "de quem), e o motivo em poucas palavras, tirado da própria ementa. A frase da divergência "
+    "resume os motivos das que negaram.\n"
+    "Cada item de `frases` é UMA única frase e cita em `citacoes` os números (no máximo 4, os "
+    "mais claros) das decisões que a sustentam. Não invente: só mencione lei, súmula, OJ ou NR que apareça nas ementas citadas "
+    "naquela frase. Não escreva números de decisão no texto (nem \"#3\", nem \"casos 5 e 6\")."
 )
 
 
@@ -41,8 +47,21 @@ class Frase(BaseModel):
     citacoes: list[int]
 
 
+class Desfecho(BaseModel):
+    numero: int
+    pedido_da_tese: Literal["deferiu", "negou", "outro"]
+    motivo: str
+
+
 class RespostaGerada(BaseModel):
+    desfechos: list[Desfecho]  # só ajuda o modelo a ler cada decisão antes de escrever; não vai ao cliente
     frases: list[Frase]
+
+
+def _trecho(ementa: str) -> str:
+    """Ementa inteira até MAX_EMENTA; acima disso, começo e fim (o dispositivo costuma vir no fim)."""
+    e = ementa.strip()
+    return e if len(e) <= MAX_EMENTA else f"{e[:1300]} […] {e[-(MAX_EMENTA - 1300):]}"
 
 
 def _cabecalho(n: int, doc: DocumentoJuridico) -> str:
@@ -65,7 +84,7 @@ def gerar_resposta(
     if not decisoes:
         return []
     ementas = "\n\n".join(
-        f"{_cabecalho(n, d)}\n{d.ementa.strip()[:MAX_EMENTA]}" for n, d in sorted(decisoes.items())
+        f"{_cabecalho(n, d)}\n{_trecho(d.ementa)}" for n, d in sorted(decisoes.items())
     )
     tese = estrutura.model_dump_json(exclude_defaults=True)
     resposta = client.chat.completions.parse(
