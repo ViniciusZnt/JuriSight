@@ -63,7 +63,8 @@ from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados
     normalizar_scores as _normalizar_scores,
 )
 from query.search.reranker import Reranker
-from query.search.resposta import Resposta, gerar_resposta
+from query.search.resposta import Resposta, chave_da_resposta, gerar_resposta
+from query.search.resposta_cache import RespostaCache, ensure_schema as ensure_resposta_cache_schema
 from query.api.provimento_routes import get_provimento_store
 from query.api.provimento_routes import router as provimento_router
 from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
@@ -93,6 +94,8 @@ async def lifespan(app: FastAPI):
     app.state.conversa_store = ConversaStore(DATABASE_URL)
     ensure_schema_correcoes(DATABASE_URL)  # depende de auth.usuarios (FK)
     app.state.provimento_store = ProvimentoJevStore(DATABASE_URL)
+    ensure_resposta_cache_schema(DATABASE_URL)
+    app.state.resposta_cache = RespostaCache(DATABASE_URL)
     app.state.openai = openai.OpenAI(max_retries=0)  # timeout curto por chamada (query/search/resposta.py)
     yield
 
@@ -160,6 +163,10 @@ def get_reranker(request: Request) -> Reranker:
 
 def get_openai(request: Request) -> openai.OpenAI:
     return request.app.state.openai
+
+
+def get_resposta_cache(request: Request) -> RespostaCache | None:
+    return getattr(request.app.state, "resposta_cache", None)
 
 
 # --------------------------------------------------------------------------- #
@@ -270,16 +277,33 @@ async def resposta(
     body: RespostaRequest,
     retriever: DocRetriever = Depends(get_doc_retriever),
     client: openai.OpenAI = Depends(get_openai),
+    cache: RespostaCache | None = Depends(get_resposta_cache),
 ) -> Resposta:
-    """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`."""
+    """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`.
+    Resposta já gerada para a mesma tese, lista, modelo e prompt vem do cache, sem chamar a OpenAI;
+    falha no cache não derruba a resposta."""
     ids = [str(i) for i in body.ids]
+    chave = chave_da_resposta(body.estrutura, ids)
+    if cache is not None:
+        try:
+            salva = await run_in_threadpool(cache.ler, chave)
+            if salva is not None:
+                return Resposta.model_validate(salva)
+        except psycopg.Error as exc:
+            logger.warning("Cache da resposta indisponível: %s", exc)
     docs = await run_in_threadpool(retriever.fetch, ids)
     decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs}
     try:
-        return await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, client)
+        gerada = await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, client)
     except openai.OpenAIError as exc:
         logger.warning("Resposta gerada indisponível: %s", exc)
         raise HTTPException(status_code=503, detail="A resposta gerada está indisponível agora. Os resultados continuam abaixo.") from exc
+    if cache is not None and gerada.frases:
+        try:
+            await run_in_threadpool(cache.gravar, chave, gerada.model_dump(mode="json"))
+        except psycopg.Error as exc:
+            logger.warning("Resposta não foi guardada no cache: %s", exc)
+    return gerada
 
 
 # --------------------------------------------------------------------------- #

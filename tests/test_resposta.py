@@ -11,9 +11,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from auth.store import Usuario
-from query.api.app import app, get_current_user, get_doc_retriever, get_openai
+import psycopg
+
+from query.api.app import app, get_current_user, get_doc_retriever, get_openai, get_resposta_cache
 from query.api.auth_routes import get_usuario_store
-from query.search.resposta import Citada, Desfecho, Fundamento, RespostaGerada
+from query.enrichment.schema import EstruturaArgumentativa
+from query.search.resposta import Citada, Desfecho, Fundamento, RespostaGerada, chave_da_resposta
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
 _USUARIO = Usuario(
@@ -196,3 +199,60 @@ def test_ementa_longa_vai_com_comeco_e_fim(usar):
     longa = "INÍCIO " + "x" * 5000 + " RECURSO PROVIDO."
     trecho = _trecho(longa)
     assert trecho.startswith("INÍCIO") and trecho.endswith("RECURSO PROVIDO.") and len(trecho) < 2100
+
+
+class _FakeCache:
+    def __init__(self, salvas: dict | None = None, erro: bool = False):
+        self.salvas = dict(salvas or {})
+        self._erro = erro
+
+    def ler(self, chave):
+        if self._erro:
+            raise psycopg.OperationalError("banco fora")
+        return self.salvas.get(chave)
+
+    def gravar(self, chave, resposta):
+        if self._erro:
+            raise psycopg.OperationalError("banco fora")
+        self.salvas[chave] = resposta
+
+
+_UMA_FRASE = dict(desfechos=[_d(1, "deferiu")], resposta=_c("Sim, quando a perícia confirma.", [1]))
+
+
+def test_resposta_gerada_vai_para_o_cache_e_a_segunda_vez_nao_chama_a_openai(usar):
+    fake = usar(_FakeOpenAI(_gerada(**_UMA_FRASE)))
+    cache = _FakeCache()
+    app.dependency_overrides[get_resposta_cache] = lambda: cache
+    primeira = client.post("/resposta", json=CORPO)
+    segunda = client.post("/resposta", json=CORPO)
+    assert primeira.status_code == segunda.status_code == 200
+    assert primeira.json() == segunda.json()
+    assert len(fake.chamadas) == 1 and len(cache.salvas) == 1
+
+
+def test_resposta_vazia_nao_vai_para_o_cache(usar):
+    usar(_FakeOpenAI(_gerada()))
+    cache = _FakeCache()
+    app.dependency_overrides[get_resposta_cache] = lambda: cache
+    assert client.post("/resposta", json=CORPO).json()["frases"] == []
+    assert cache.salvas == {}
+
+
+def test_cache_fora_do_ar_nao_derruba_a_resposta(usar):
+    fake = usar(_FakeOpenAI(_gerada(**_UMA_FRASE)))
+    app.dependency_overrides[get_resposta_cache] = lambda: _FakeCache(erro=True)
+    resp = client.post("/resposta", json=CORPO)
+    assert resp.status_code == 200 and resp.json()["frases"][0]["citacoes"] == [1]
+    assert len(fake.chamadas) == 1
+
+
+def test_chave_muda_com_a_lista_a_tese_e_o_modelo(monkeypatch):
+    monkeypatch.delenv("OPENAI_GEN_MODEL", raising=False)
+    tese = EstruturaArgumentativa(tese_central="ruído")
+    base = chave_da_resposta(tese, IDS)
+    assert base == chave_da_resposta(EstruturaArgumentativa(tese_central="ruído"), list(IDS))
+    assert base != chave_da_resposta(tese, IDS[::-1])
+    assert base != chave_da_resposta(EstruturaArgumentativa(tese_central="calor"), IDS)
+    monkeypatch.setenv("OPENAI_GEN_MODEL", "outro-modelo")
+    assert base != chave_da_resposta(tese, IDS)

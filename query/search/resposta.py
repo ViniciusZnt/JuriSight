@@ -9,6 +9,8 @@ ementas públicas dos resultados — nunca o PDF nem texto do caso. Frase sem ci
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 from typing import Literal
@@ -35,7 +37,8 @@ _PROMPT = (
     "outro agente); true se são os mesmos fatos.\n"
     "- `resposta`: frase completa que responde direto e condicionada à premissa (\"Sim, quando …\", "
     "\"Não, porque …\", \"Depende de …\").\n"
-    "- `fundamentos`: 1 a 3 frases. Em cada uma: `quem_decidiu` = tribunal e turma de cada decisão "
+    "- `fundamentos`: 1 a 3 frases, uma por entendimento: junte numa frase só todas as turmas que "
+    "entendem a mesma coisa (\"a 3ª Turma do TRT12, a 4ª do TRT9 e a 3ª do TRT4 entendem…\"). Em cada uma: `quem_decidiu` = tribunal e turma de cada decisão "
     "citada, como no cabeçalho (ex.: \"TRT12 1ª Turma\"), e o texto nomeia a turma quando outras "
     "turmas do mesmo tribunal decidiram diferente; `precedente_de_outro_ramo` = o precedente de tribunal superior que essas ementas "
     "invocam quando ele trata de outro ramo do direito ou de outro direito, com o nome e o direito "
@@ -47,13 +50,13 @@ _PROMPT = (
     "nunca diga que esse precedente decidiu o pedido da tese. É proibido "
     "escrever que o STF ou o TST decidiu, estabelece ou entende algo sobre o pedido, salvo se a "
     "decisão citada for desse tribunal.\n"
-    "- `base_legal`: UMA frase só com artigos de lei, NR e anexo, súmulas e OJs do TST que regem "
+    "- `base_legal`: UMA frase só, com os dispositivos separados por \";\", com artigos de lei, NR e anexo, súmulas e OJs do TST que regem "
     "exatamente o pedido da tese (não outros pedidos que as ementas também julgam; nada de STF, "
     "temas ou acórdãos), as que favorecem e as que limitam o "
     "pedido, com o que cada uma diz com exatidão, na forma \"<norma>: se <condição>, <efeito>\", mesmo que "
     "não estejam nas ementas, só as que você conhece com segurança (número e conteúdo certos).\n"
     "- `prova`: UMA frase \"Para o pedido, é preciso provar: …\" com o que as decisões exigiram para "
-    "deferir.\n"
+    "deferir, os itens separados por \";\".\n"
     "- `negaram_por_outros_fatos`: UMA frase só com as que negaram tendo `fatos_da_premissa` false: "
     "\"As que negaram partiram de <o fato delas>, o que não contraria a premissa\", dizendo também se "
     "recusam o precedente ou a analogia que as favoráveis usam; texto vazio se não há. Nunca as chame "
@@ -150,6 +153,19 @@ def _do_tribunal_nomeado(f: Citada | Fundamento, decisoes: dict[int, DocumentoJu
 
 def _posicao(d: Desfecho) -> PosicaoTese:
     return "fato_diferente" if d.pedido_da_tese == "negou" and not d.fatos_da_premissa else d.pedido_da_tese
+
+
+def chave_da_resposta(estrutura: EstruturaArgumentativa, ids: list[str]) -> str:
+    """Chave do cache (query/search/resposta_cache.py): muda com o modelo, a temperatura, o prompt,
+    a tese ou a lista de decisões — qualquer uma dessas muda a resposta."""
+    partes = {
+        "modelo": os.getenv("OPENAI_GEN_MODEL", MODELO_PADRAO),
+        "temperatura": os.getenv("OPENAI_GEN_TEMPERATURE", "0"),
+        "prompt": _PROMPT,
+        "tese": estrutura.model_dump(mode="json", exclude_defaults=True),
+        "ids": ids,
+    }
+    return hashlib.sha256(json.dumps(partes, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def gerar_resposta(
