@@ -72,9 +72,13 @@ describe("respostaParaCopiar", () => {
   it("marca as citações em cada frase e lista só as decisões citadas, em ordem", () => {
     const dec = (p: string) => ({ tribunal: "TRT2", turma: "11ª Turma", numero_processo: p, data_julgamento: "2025-05-12", relator: "" });
     const porNumero = new Map([[1, dec("0001")], [2, dec("0002")], [3, dec("0003")]]);
-    const frases = [{ texto: "Sim, com perícia.", citacoes: [3, 1] }, { texto: "Negaram por EPI eficaz.", citacoes: [3] }];
+    const frases = [
+      { texto: "Sim, com perícia.", citacoes: [3, 1] },
+      { texto: "CLT, art. 189.", citacoes: [] },
+      { texto: "Negaram por EPI eficaz.", citacoes: [3] },
+    ];
     expect(respostaParaCopiar(frases, porNumero)).toBe(
-      "Sim, com perícia. [3, 1] Negaram por EPI eficaz. [3]\n\nDecisões citadas:\n" +
+      "Sim, com perícia. [3, 1] CLT, art. 189. Negaram por EPI eficaz. [3]\n\nDecisões citadas:\n" +
         "[1] TRT2, 11ª Turma, Processo 0001, julgado em 12/05/2025.\n[3] TRT2, 11ª Turma, Processo 0003, julgado em 12/05/2025."
     );
   });

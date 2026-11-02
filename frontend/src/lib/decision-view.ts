@@ -83,7 +83,7 @@ export function respostaParaCopiar(
   porNumero: Map<number, Omit<Citavel, "ementa">>
 ): string {
   const citadas = [...new Set(frases.flatMap((f) => f.citacoes))].sort((a, b) => a - b);
-  const corpo = frases.map((f) => `${f.texto} [${f.citacoes.join(", ")}]`).join(" ");
+  const corpo = frases.map((f) => (f.citacoes.length ? `${f.texto} [${f.citacoes.join(", ")}]` : f.texto)).join(" ");
   const fontes = citadas.filter((n) => porNumero.has(n)).map((n) => `[${n}] ${citacaoDe(porNumero.get(n)!)}.`);
   return `${corpo}\n\nDecisões citadas:\n${fontes.join("\n")}`;
 }

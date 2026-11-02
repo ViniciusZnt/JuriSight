@@ -180,21 +180,30 @@ export async function queryJurisprudencia(body: QueryRequestBody): Promise<Resul
   });
 }
 
-/** Frase da resposta gerada; `citacoes` são os números dos cards (#1 = ids[0]). */
+/** Frase da resposta gerada; `citacoes` são os números dos cards (#1 = ids[0]). Só a "base_legal"
+ *  vem sem citação (não sai das ementas, por isso não tem chip). */
 export interface FraseResposta {
+  tipo: "resposta" | "fundamento" | "base_legal" | "prova" | "divergencia";
   texto: string;
   citacoes: number[];
 }
 
+/** Posição da decisão #numero em relação à tese, lida pelo mesmo modelo que escreveu a resposta. */
+export type PosicaoTese = "deferiu" | "negou" | "fato_diferente" | "outro";
+
+export interface RespostaIA {
+  frases: FraseResposta[];
+  posicoes: { numero: number; posicao: PosicaoTese }[];
+}
+
 /** POST /resposta — resposta curta gerada a partir das ementas dos resultados (ids na ordem dos
  *  cards, até 20). Lista vazia = nada que desse para ancorar; 503 = IA indisponível. */
-export async function gerarResposta(estrutura: EstruturaArgumentativa, ids: string[]): Promise<FraseResposta[]> {
-  const { frases } = await request<{ frases: FraseResposta[] }>("/resposta", {
+export async function gerarResposta(estrutura: EstruturaArgumentativa, ids: string[]): Promise<RespostaIA> {
+  return request<RespostaIA>("/resposta", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ estrutura, ids: ids.slice(0, 20) }),
   });
-  return frases;
 }
 
 /** GET /document/{id} — detalhe completo de um documento (404 se não existir). */

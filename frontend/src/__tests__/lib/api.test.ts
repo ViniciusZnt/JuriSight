@@ -226,11 +226,11 @@ describe("enviarCorrecaoProvimento", () => {
 });
 
 describe("gerarResposta", () => {
-  it("manda a estrutura e no máximo 20 ids e devolve as frases", async () => {
-    const frases = [{ texto: "Sim.", citacoes: [1] }];
-    mockFetchOnce(200, { frases });
+  it("manda a estrutura e no máximo 20 ids e devolve as frases e as posições", async () => {
+    const resposta = { frases: [{ tipo: "resposta", texto: "Sim.", citacoes: [1] }], posicoes: [{ numero: 1, posicao: "deferiu" }] };
+    mockFetchOnce(200, resposta);
     const ids = Array.from({ length: 25 }, (_, i) => `id-${i}`);
-    await expect(gerarResposta(estrutura, ids)).resolves.toEqual(frases);
+    await expect(gerarResposta(estrutura, ids)).resolves.toEqual(resposta);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/resposta$/);
     expect(init.credentials).toBe("include");

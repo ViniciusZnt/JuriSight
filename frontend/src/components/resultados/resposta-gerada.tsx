@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, Info, ThumbsDown, ThumbsUp } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
-import { gerarResposta, type EstruturaArgumentativa, type FraseResposta, type ResultCard } from "@/lib/api";
-import { respostaParaCopiar } from "@/lib/decision-view";
+import { gerarResposta, type EstruturaArgumentativa, type FraseResposta, type PosicaoTese, type RespostaIA, type ResultCard } from "@/lib/api";
+import { formatarData, respostaParaCopiar } from "@/lib/decision-view";
 import { copiarTexto } from "@/lib/utils";
 
 const FEEDBACK_KEY = "jurisight:feedback-resposta";
 // Voltar da decisão para a lista não gera (nem cobra) a resposta de novo.
-const cache = new Map<string, FraseResposta[]>();
+const cache = new Map<string, RespostaIA>();
 
-type Estado = { status: "carregando" } | { status: "erro"; mensagem: string } | { status: "ok"; frases: FraseResposta[] };
+export type EstadoResposta = { status: "carregando" } | { status: "erro"; mensagem: string } | { status: "ok"; resposta: RespostaIA };
 
 function lerVotos(): Record<string, "util" | "nao_util"> {
   try {
@@ -21,30 +21,20 @@ function lerVotos(): Record<string, "util" | "nao_util"> {
   }
 }
 
-interface Props {
-  estrutura: EstruturaArgumentativa;
-  /** Resultados na ordem da numeração dos cards (#1 = ordem[0]). */
-  ordem: ResultCard[];
-  onIr: (id: string) => void;
-}
-
-/** Resposta gerada por IA a partir das ementas listadas (POST /resposta): cada frase com chips "#n"
- *  que levam ao card. Some quando não há frase ancorada; em erro, só uma linha discreta. */
-export function RespostaGerada({ estrutura, ordem, onIr }: Props) {
-  const ids = ordem.slice(0, 20).map((d) => d.id);
+/** Pede a resposta (POST /resposta) para os resultados na ordem dos cards (#1 = ordem[0]) e devolve
+ *  também a posição de cada decisão por id, que o painel "Decisões que sustentam" usa. */
+export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, ordem: ResultCard[]) {
+  const ids = estrutura ? ordem.slice(0, 20).map((d) => d.id) : [];
   const chave = `${ids.join(",")}|${JSON.stringify(estrutura)}`;
-  const [recebida, setRecebida] = useState<{ chave: string; frases?: FraseResposta[]; erro?: string } | null>(null);
-  const [copiada, setCopiada] = useState(false);
-  const [votos, setVotos] = useState(lerVotos);
-  const voto = votos[chave];
+  const [recebida, setRecebida] = useState<{ chave: string; erro?: string } | null>(null);
 
   useEffect(() => {
-    if (cache.has(chave) || ids.length === 0) return;
+    if (cache.has(chave) || ids.length === 0 || !estrutura) return;
     let vivo = true;
     gerarResposta(estrutura, ids)
-      .then((frases) => {
-        cache.set(chave, frases);
-        if (vivo) setRecebida({ chave, frases });
+      .then((r) => {
+        cache.set(chave, r);
+        if (vivo) setRecebida({ chave });
       })
       .catch((e: Error) => vivo && setRecebida({ chave, erro: e.message }));
     return () => {
@@ -55,13 +45,38 @@ export function RespostaGerada({ estrutura, ordem, onIr }: Props) {
   }, [chave]);
 
   const pronta = cache.get(chave);
-  const estado: Estado = pronta
-    ? { status: "ok", frases: pronta }
+  const posicoes = useMemo(
+    () => (pronta ? new Map<string, PosicaoTese>(pronta.posicoes.flatMap((p) => (ids[p.numero - 1] ? [[ids[p.numero - 1], p.posicao]] : []))) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pronta, chave]
+  );
+  const estado: EstadoResposta = pronta
+    ? { status: "ok", resposta: pronta }
     : recebida?.chave === chave && recebida.erro !== undefined
       ? { status: "erro", mensagem: recebida.erro }
       : { status: "carregando" };
+  return { chave, vazia: ids.length === 0, estado, posicoes };
+}
 
-  if (ids.length === 0 || (estado.status === "ok" && estado.frases.length === 0)) return null;
+// Parágrafos: resposta direta (negrito) | fundamento + base legal | o que provar | divergência.
+const PARAGRAFO: Record<FraseResposta["tipo"], number> = { resposta: 0, fundamento: 1, base_legal: 1, prova: 2, divergencia: 3 };
+
+interface Props {
+  resposta: ReturnType<typeof useRespostaGerada>;
+  /** Resultados na ordem da numeração dos cards (#1 = ordem[0]). */
+  ordem: ResultCard[];
+  onIr: (id: string) => void;
+}
+
+/** Resposta gerada por IA a partir das ementas listadas: cada frase com chips "#n" que levam ao
+ *  card, e abaixo as fontes (as decisões citadas). Some quando não há frase ancorada; em erro, só
+ *  uma linha discreta. */
+export function RespostaGerada({ resposta: { chave, vazia, estado }, ordem, onIr }: Props) {
+  const [copiada, setCopiada] = useState(false);
+  const [votos, setVotos] = useState(lerVotos);
+  const voto = votos[chave];
+
+  if (vazia || (estado.status === "ok" && estado.resposta.frases.length === 0)) return null;
 
   if (estado.status === "erro") {
     return (
@@ -105,6 +120,9 @@ export function RespostaGerada({ estrutura, ordem, onIr }: Props) {
       })}{" "}
     </span>
   );
+  const frases = estado.status === "ok" ? estado.resposta.frases : [];
+  const paragrafos = [0, 1, 2, 3].map((p) => frases.map((f, i) => [f, i] as const).filter(([f]) => PARAGRAFO[f.tipo] === p)).filter((p) => p.length > 0);
+  const fontes = [...new Set(frases.flatMap((f) => f.citacoes))].sort((a, b) => a - b).filter((n) => porNumero.has(n));
 
   return (
     <section
@@ -125,10 +143,37 @@ export function RespostaGerada({ estrutura, ordem, onIr }: Props) {
       ) : (
         <>
           <div className="space-y-3 text-[#0F1117] dark:text-[#ECECEF] leading-relaxed" style={{ fontSize: "14.9px" }}>
-            <p style={{ fontWeight: 600 }}>{frase(estado.frases[0], 0)}</p>
-            {/* fundamento; a última frase (a divergência) em parágrafo próprio */}
-            {estado.frases.length > 1 && <p>{estado.frases.slice(1, estado.frases.length > 2 ? -1 : undefined).map((f, i) => frase(f, i + 1))}</p>}
-            {estado.frases.length > 2 && <p>{frase(estado.frases[estado.frases.length - 1], estado.frases.length - 1)}</p>}
+            {paragrafos.map((p, k) => (
+              <p key={k} style={p[0][0].tipo === "resposta" ? { fontWeight: 600 } : undefined}>
+                {p.map(([f, i]) => frase(f, i))}
+              </p>
+            ))}
+          </div>
+
+          {/* Fontes: as decisões citadas, cada uma leva ao card (como os chips) */}
+          <div className="mt-4 pt-3 border-t border-[#F0F0F6] dark:border-[#26262C]">
+            <p className="text-[#6B6B80] dark:text-[#A6A6B4] uppercase tracking-[0.06em] mb-1.5" style={{ fontSize: "11.5px", fontWeight: 600 }}>
+              Fontes
+            </p>
+            <ol className="space-y-1" style={{ fontSize: "12.6px" }}>
+              {fontes.map((n) => {
+                const d = porNumero.get(n)!;
+                return (
+                  <li key={n} className="min-w-0">
+                    <a
+                      href={`#decisao-${d.id}`}
+                      onClick={() => onIr(d.id)}
+                      className="group/fonte flex gap-1.5 text-[#4A4A5A] dark:text-[#C4C4CE] no-underline"
+                    >
+                      <span className="flex-shrink-0 text-[#1A3A5C] dark:text-[#8AB0DC] tabular-nums" style={{ fontWeight: 600 }}>#{n}</span>
+                      <span className="min-w-0 break-words group-hover/fonte:underline underline-offset-2">
+                        {[d.sigla_classe, d.tribunal, d.turma, d.data_julgamento && formatarData(d.data_julgamento), d.numero_processo].filter(Boolean).join(" · ")}
+                      </span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ol>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mt-4">
@@ -139,7 +184,7 @@ export function RespostaGerada({ estrutura, ordem, onIr }: Props) {
               size="sm"
               title="Copiar a resposta com as citações (tribunal, turma, processo, data)"
               onClick={() =>
-                copiarTexto(respostaParaCopiar(estado.frases, porNumero)).then(() => {
+                copiarTexto(respostaParaCopiar(frases, porNumero)).then(() => {
                   setCopiada(true);
                   setTimeout(() => setCopiada(false), 2000);
                 })
