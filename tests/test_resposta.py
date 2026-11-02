@@ -115,7 +115,7 @@ def test_partes_viram_frases_na_ordem_e_ementas_vem_do_banco_numeradas(usar, mon
         ],
     }
     kw = fake.chamadas[0]
-    assert kw["model"] == "gpt-4.1" and kw["temperature"] == 0 and kw["timeout"] == 30
+    assert kw["model"] == "gpt-4o-mini" and kw["temperature"] == 0 and kw["timeout"] == 30
     assert kw["response_format"] is RespostaGerada
     usuario = kw["messages"][1]["content"]
     assert "#1 (RORSum, TRT2, 11ª Turma)\nEMENTA 1" in usuario and "#3 (RORSum" in usuario

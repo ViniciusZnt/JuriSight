@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from query.enrichment.schema import EstruturaArgumentativa
 from scraper.schema import DocumentoJuridico
 
-MODELO_PADRAO = "gpt-4.1"  # na prova da r3, o 4o-mini e o 4.1-mini erraram atribuição e base legal
+MODELO_PADRAO = "gpt-4o-mini"
 TIMEOUT_S = 30
 MAX_EMENTA = 2000  # caracteres por ementa no prompt (começo + fim, onde fica o desfecho)
 
