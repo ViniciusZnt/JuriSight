@@ -74,6 +74,8 @@ export interface ResultCard {
   relator: string;
   data_julgamento: string | null; // ISO yyyy-mm-dd
   ementa: string;
+  /** "RORSum", "ROT"… — ausente em cards antigos (conversas salvas). */
+  sigla_classe?: string;
   provimento: Provimento;
   link_original: string | null;
   score_rrf: number;
@@ -176,6 +178,23 @@ export async function queryJurisprudencia(body: QueryRequestBody): Promise<Resul
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+/** Frase da resposta gerada; `citacoes` são os números dos cards (#1 = ids[0]). */
+export interface FraseResposta {
+  texto: string;
+  citacoes: number[];
+}
+
+/** POST /resposta — resposta curta gerada a partir das ementas dos resultados (ids na ordem dos
+ *  cards, até 20). Lista vazia = nada que desse para ancorar; 503 = IA indisponível. */
+export async function gerarResposta(estrutura: EstruturaArgumentativa, ids: string[]): Promise<FraseResposta[]> {
+  const { frases } = await request<{ frases: FraseResposta[] }>("/resposta", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ estrutura, ids: ids.slice(0, 20) }),
+  });
+  return frases;
 }
 
 /** GET /document/{id} — detalhe completo de um documento (404 se não existir). */

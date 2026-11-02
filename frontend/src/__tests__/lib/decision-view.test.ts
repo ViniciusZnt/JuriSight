@@ -1,4 +1,4 @@
-import { dispositivoDe, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, titleFromEmenta } from "@/lib/decision-view";
+import { dispositivoDe, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -55,6 +55,18 @@ describe("ementaComCitacao", () => {
     expect(
       ementaComCitacao({ ementa: " Texto. ", tribunal: "TRT2", turma: "11ª Turma", numero_processo: "0001", data_julgamento: "2025-12-17", relator: "Fulana" })
     ).toBe("Texto.\n\n(TRT2, 11ª Turma, Processo 0001, julgado em 17/12/2025, Rel. Fulana.)");
+  });
+});
+
+describe("respostaParaCopiar", () => {
+  it("marca as citações em cada frase e lista só as decisões citadas, em ordem", () => {
+    const dec = (p: string) => ({ tribunal: "TRT2", turma: "11ª Turma", numero_processo: p, data_julgamento: "2025-05-12", relator: "" });
+    const porNumero = new Map([[1, dec("0001")], [2, dec("0002")], [3, dec("0003")]]);
+    const frases = [{ texto: "Sim, com perícia.", citacoes: [3, 1] }, { texto: "Negaram por EPI eficaz.", citacoes: [3] }];
+    expect(respostaParaCopiar(frases, porNumero)).toBe(
+      "Sim, com perícia. [3, 1] Negaram por EPI eficaz. [3]\n\nDecisões citadas:\n" +
+        "[1] TRT2, 11ª Turma, Processo 0001, julgado em 12/05/2025.\n[3] TRT2, 11ª Turma, Processo 0003, julgado em 12/05/2025."
+    );
   });
 });
 

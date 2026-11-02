@@ -22,9 +22,9 @@ export function SinteseResultados({ sintese, porId, ranks, citacao, onCitacao, o
   ].filter((l) => l.ids.length > 0);
 
   return (
-    <section aria-label="Resposta" className="w-full mt-1 pt-4 border-t border-[#F0F0F6] dark:border-[#26262C] space-y-4">
+    <section aria-label="Panorama das decisões" className="w-full mt-1 pt-4 border-t border-[#F0F0F6] dark:border-[#26262C] space-y-4">
       <div>
-        <p className={ROTULO} style={{ fontSize: "11.5px", fontWeight: 600 }}>Resposta</p>
+        <p className={ROTULO} style={{ fontSize: "11.5px", fontWeight: 600 }}>Panorama das decisões</p>
         <p className="text-[#0F1117] dark:text-[#ECECEF] leading-relaxed" style={{ fontSize: "14.9px" }}>
           <strong style={{ fontWeight: 600 }}>{sintese.abertura}</strong> {sintese.tendencia}
         </p>

@@ -51,9 +51,9 @@ export function formatarData(iso: string | null, mes: "2-digit" | "short" | "lon
 
 type Citavel = Pick<ResultCard, "ementa" | "tribunal" | "turma" | "numero_processo" | "data_julgamento" | "relator">;
 
-/** Ementa + linha de citação (tribunal, turma, processo, data, relator), para colar numa peça. */
-export function ementaComCitacao(d: Citavel): string {
-  const citacao = [
+/** "TRT2, 11ª Turma, Processo 0001, julgado em 17/12/2025, Rel. Fulana". */
+export function citacaoDe(d: Omit<Citavel, "ementa">): string {
+  return [
     `${d.tribunal}, ${d.turma}`,
     `Processo ${d.numero_processo}`,
     d.data_julgamento && `julgado em ${formatarData(d.data_julgamento)}`,
@@ -61,7 +61,23 @@ export function ementaComCitacao(d: Citavel): string {
   ]
     .filter(Boolean)
     .join(", ");
-  return `${d.ementa.trim()}\n\n(${citacao}.)`;
+}
+
+/** Ementa + linha de citação (tribunal, turma, processo, data, relator), para colar numa peça. */
+export function ementaComCitacao(d: Citavel): string {
+  return `${d.ementa.trim()}\n\n(${citacaoDe(d)}.)`;
+}
+
+/** Resposta gerada em texto para colar numa peça: cada frase com "[1, 3]" e, no fim, a citação
+ *  completa de cada decisão citada. `porNumero`: número do card -> decisão. */
+export function respostaParaCopiar(
+  frases: { texto: string; citacoes: number[] }[],
+  porNumero: Map<number, Omit<Citavel, "ementa">>
+): string {
+  const citadas = [...new Set(frases.flatMap((f) => f.citacoes))].sort((a, b) => a - b);
+  const corpo = frases.map((f) => `${f.texto} [${f.citacoes.join(", ")}]`).join(" ");
+  const fontes = citadas.filter((n) => porNumero.has(n)).map((n) => `[${n}] ${citacaoDe(porNumero.get(n)!)}.`);
+  return `${corpo}\n\nDecisões citadas:\n${fontes.join("\n")}`;
 }
 
 export function truncate(text: string, max: number): string {

@@ -32,6 +32,7 @@ import { type Outcome } from "@/lib/outcome";
 import { contarDesfechos, outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import { SinteseResultados } from "@/components/resultados/sintese-resultados";
+import { RespostaGerada } from "@/components/resultados/resposta-gerada";
 import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
@@ -158,6 +159,7 @@ export function SearchResultsPage() {
   const versoes = conversations.find((c) => c.id === activeId)?.versions ?? [];
 
   const ranks = useMemo(() => relevanceRanks(results), [results]);
+  const porRank = useMemo(() => [...results].sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!), [results, ranks]);
   const sintese = useMemo(() => sintetizar(results), [results]);
   const porId = useMemo(() => new Map(results.map((d) => [d.id, d])), [results]);
   const tribunais = useMemo(() => {
@@ -274,6 +276,8 @@ export function SearchResultsPage() {
       {/* Body */}
       <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-4 pb-10">
         <StepIndicator current={2} />
+
+        {estrutura && <RespostaGerada estrutura={estrutura} ordem={porRank} onIr={irPara} />}
 
         {/* Summary banner */}
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row flex-wrap sm:items-center justify-between gap-3">
