@@ -63,7 +63,7 @@ from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados
     normalizar_scores as _normalizar_scores,
 )
 from query.search.reranker import Reranker
-from query.search.resposta import Frase, gerar_resposta
+from query.search.resposta import Resposta, gerar_resposta
 from query.api.provimento_routes import get_provimento_store
 from query.api.provimento_routes import router as provimento_router
 from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
@@ -265,26 +265,21 @@ class RespostaRequest(BaseModel):
     ids: list[uuid.UUID] = Field(max_length=20)  # na ordem dos cards: ids[0] é o #1
 
 
-class RespostaResponse(BaseModel):
-    frases: list[Frase]
-
-
-@app.post("/resposta", response_model=RespostaResponse, dependencies=[Depends(get_current_user)])
+@app.post("/resposta", response_model=Resposta, dependencies=[Depends(get_current_user)])
 async def resposta(
     body: RespostaRequest,
     retriever: DocRetriever = Depends(get_doc_retriever),
     client: openai.OpenAI = Depends(get_openai),
-) -> RespostaResponse:
+) -> Resposta:
     """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`."""
     ids = [str(i) for i in body.ids]
     docs = await run_in_threadpool(retriever.fetch, ids)
     decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs}
     try:
-        frases = await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, client)
+        return await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, client)
     except openai.OpenAIError as exc:
         logger.warning("Resposta gerada indisponível: %s", exc)
         raise HTTPException(status_code=503, detail="A resposta gerada está indisponível agora. Os resultados continuam abaixo.") from exc
-    return RespostaResponse(frases=frases)
 
 
 # --------------------------------------------------------------------------- #
