@@ -12,6 +12,7 @@ import {
 import {
   PERGUNTAS,
   PROVIMENTO_LABEL,
+  favoreceIncerto,
   nivelConfianca,
   probabilidadesOrdenadas,
   resumoProvimento,
@@ -128,7 +129,7 @@ export function ProvimentoPanel({ documentoId, provimento, classificacao, compac
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "14.4px", fontWeight: 600 }}>
-                    {labels[escolha]}
+                    {chave === "favorece" && favoreceIncerto(classificacao) ? "Incerto" : labels[escolha]}
                   </span>
                   {probs.length > 1 && (
                     <button

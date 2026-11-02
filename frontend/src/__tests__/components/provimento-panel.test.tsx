@@ -34,6 +34,20 @@ describe("ProvimentoPanel", () => {
     expect(screen.getByText("Trabalhador")).toBeInTheDocument();
   });
 
+  it("confiança baixa em a quem favorece: mostra Incerto, e o palpite só nas probabilidades", async () => {
+    const c = {
+      ...classificacao,
+      favorece: "reclamada" as const,
+      confianca_favorece: 0.23,
+      probabilidades: { favorece: { reclamada: 0.23, reclamante: 0.2, indefinido: 0.57 } },
+    };
+    renderPanel(c);
+    expect(screen.getByText("Incerto")).toBeInTheDocument();
+    expect(screen.queryByText("Empresa")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /ver probabilidades: a quem favorece/i }));
+    expect(screen.getByText("Empresa")).toBeInTheDocument();
+  });
+
   it("abre as probabilidades", async () => {
     renderPanel();
     await userEvent.click(screen.getAllByRole("button", { name: /ver probabilidades/i })[0]);

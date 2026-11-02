@@ -47,6 +47,12 @@ describe("resumoProvimento", () => {
   it("monta recorrente, resultado e a quem favorece", () => {
     expect(resumoProvimento(base)).toBe("Recurso da reclamada (empresa) · Não provido · Favorece: Trabalhador");
   });
+
+  it("com confiança baixa em a quem favorece, não afirma lado (o selo fica Neutro)", () => {
+    const c = { ...base, favorece: "reclamada" as const, confianca_favorece: 0.23 };
+    expect(resumoProvimento(c)).toBe("Recurso da reclamada (empresa) · Não provido · A quem favorece: incerto");
+    expect(outcomeDe({ provimento: "NEGADO", classificacao_provimento: c })).toBe("neutral");
+  });
 });
 
 describe("contarDesfechos", () => {
