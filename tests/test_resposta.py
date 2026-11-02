@@ -13,7 +13,8 @@ from fastapi.testclient import TestClient
 from auth.store import Usuario
 import psycopg
 
-from query.api.app import app, get_current_user, get_doc_retriever, get_openai, get_resposta_cache
+from query.api.app import app, get_current_user, get_doc_retriever, get_openai, get_resposta_cache, get_uso_diario
+from query.api.uso_diario import LimiteDiarioExcedido
 from query.api.auth_routes import get_usuario_store
 from query.enrichment.schema import EstruturaArgumentativa
 from query.search.resposta import Citada, Desfecho, Fundamento, RespostaGerada, chave_da_resposta
@@ -261,3 +262,31 @@ def test_chave_muda_com_a_lista_a_tese_e_o_modelo(monkeypatch):
 def test_base_legal_sem_citacao_some(usar):
     usar(_FakeOpenAI(_gerada(**_UMA_FRASE, base_legal=_c("CLT art. 12: inventado.", []))))
     assert [f["tipo"] for f in client.post("/resposta", json=CORPO).json()["frases"]] == ["resposta"]
+
+
+class _FakeUso:
+    def __init__(self, limite: int):
+        self.limite, self.usos = limite, 0
+
+    def consumir(self, usuario_id, acao):
+        if self.usos >= self.limite:
+            raise LimiteDiarioExcedido("Você atingiu o limite de 1 consultas por dia.")
+        self.usos += 1
+
+
+def test_limite_diario_vira_429_e_nao_chama_a_openai(usar):
+    fake = usar(_FakeOpenAI(_gerada(**_UMA_FRASE)))
+    app.dependency_overrides[get_uso_diario] = lambda: _FakeUso(limite=0)
+    resp = client.post("/resposta", json=CORPO)
+    assert resp.status_code == 429 and "limite" in resp.json()["detail"]
+    assert fake.chamadas == []
+
+
+def test_resposta_do_cache_nao_conta_no_limite(usar):
+    usar(_FakeOpenAI(_gerada(**_UMA_FRASE)))
+    uso, cache = _FakeUso(limite=1), _FakeCache()
+    app.dependency_overrides[get_uso_diario] = lambda: uso
+    app.dependency_overrides[get_resposta_cache] = lambda: cache
+    assert client.post("/resposta", json=CORPO).status_code == 200
+    assert client.post("/resposta", json=CORPO).status_code == 200  # 2ª vem do cache: não gasta o limite
+    assert uso.usos == 1
