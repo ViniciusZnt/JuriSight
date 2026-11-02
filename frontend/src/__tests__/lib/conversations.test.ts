@@ -1,4 +1,4 @@
-import { conversationTag, groupByRecency, type Conversation, type ConversationVersion } from "@/lib/conversations";
+import { conversationTag, groupByRecency, numerarRepetidas, type Conversation, type ConversationVersion } from "@/lib/conversations";
 
 // Meio-dia de N dias atrás, evitando flakiness perto da virada da meia-noite.
 function daysAgo(n: number): number {
@@ -73,5 +73,16 @@ describe("conversationTag", () => {
   it("acrescenta a última versão quando a consulta foi refinada", () => {
     const c = { ...conv("1", new Date(2026, 10, 1, 9, 5).getTime()), versions: [v, v] };
     expect(conversationTag(c, agora)).toBe("09:05 · V2");
+  });
+});
+
+describe("numerarRepetidas", () => {
+  it("numera a partir da 2ª consulta de mesmo título, na ordem em que foram feitas", () => {
+    const a = { ...conv("a", 1000), title: "Ruído" };
+    const b = { ...conv("b", 1000), title: "Outra" };
+    const c = { ...conv("c", 1500), title: "ruído " };
+    const d = { ...conv("d", 2000), title: "Ruído" };
+    const n = numerarRepetidas([d, c, b, a]);
+    expect([n.get("a"), n.get("b"), n.get("c"), n.get("d")]).toEqual([undefined, undefined, 2, 3]);
   });
 });

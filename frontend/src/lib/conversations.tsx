@@ -184,3 +184,17 @@ export function conversationTag(c: Conversation, now = Date.now()): string {
       : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   return c.versions.length > 1 ? `${quando} · V${c.versions.length}` : quando;
 }
+
+/** Numera as consultas de mesmo título na ordem em que foram feitas ("(2)", "(3)"…; a primeira
+ *  fica sem número), para diferenciá-las sem depender de hover nem do minuto. */
+export function numerarRepetidas(convs: Conversation[]): Map<string, number> {
+  const vistos = new Map<string, number>();
+  const out = new Map<string, number>();
+  for (const c of [...convs].sort((a, b) => a.createdAt - b.createdAt)) {
+    const chave = c.title.trim().toLowerCase();
+    const n = (vistos.get(chave) ?? 0) + 1;
+    vistos.set(chave, n);
+    if (n > 1) out.set(c.id, n);
+  }
+  return out;
+}

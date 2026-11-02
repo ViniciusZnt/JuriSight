@@ -14,7 +14,7 @@ import {
   LogOut,
   type LucideIcon,
 } from "lucide-react";
-import { useConversations, groupByRecency, conversationTag } from "@/lib/conversations";
+import { useConversations, groupByRecency, conversationTag, numerarRepetidas } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 import { useAuth } from "@/lib/auth";
 import { useProfile, initialsOf } from "@/lib/profile";
@@ -42,6 +42,7 @@ export function Sidebar() {
     ? conversations.filter((c) => c.title.toLowerCase().includes(filter.trim().toLowerCase()))
     : conversations;
   const groups = groupByRecency(filtered);
+  const repetidas = numerarRepetidas(conversations);
 
   const novaPesquisa = () => {
     setActive(null);
@@ -181,6 +182,11 @@ export function Sidebar() {
                         >
                           {c.title}
                         </span>
+                        {repetidas.has(c.id) && (
+                          <span className="flex-shrink-0 -ml-1.5 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px", fontWeight: 600 }}>
+                            ({repetidas.get(c.id)})
+                          </span>
+                        )}
                         <span className="flex-shrink-0 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.1px" }}>
                           {conversationTag(c)}
                         </span>
