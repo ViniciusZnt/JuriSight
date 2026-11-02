@@ -60,8 +60,10 @@ describe("ementaComCitacao", () => {
 
 describe("tituloDoCard", () => {
   it("põe classe e identificação antes da verbetação; sem classe (cards antigos), só tribunal e turma", () => {
-    const d = { ementa: "ADICIONAL DE INSALUBRIDADE. RUÍDO. Texto da ementa.", tribunal: "TRT2", turma: "11ª Turma" };
-    expect(tituloDoCard({ ...d, sigla_classe: "RORSum" })).toBe("RORSum · TRT2 · 11ª Turma — ADICIONAL DE INSALUBRIDADE. RUÍDO.");
+    const d = { ementa: "ADICIONAL DE INSALUBRIDADE. RUÍDO. Texto da ementa.", tribunal: "TRT2", turma: "11ª Turma", data_julgamento: null };
+    expect(tituloDoCard({ ...d, sigla_classe: "RORSum", data_julgamento: "2025-05-12" })).toBe(
+      "RORSum · TRT2 · 11ª Turma · 12/05/2025 — ADICIONAL DE INSALUBRIDADE. RUÍDO."
+    );
     expect(tituloDoCard(d)).toBe("TRT2 · 11ª Turma — ADICIONAL DE INSALUBRIDADE. RUÍDO.");
   });
 });

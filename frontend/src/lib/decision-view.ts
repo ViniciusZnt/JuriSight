@@ -68,10 +68,11 @@ export function ementaComCitacao(d: Citavel): string {
   return `${d.ementa.trim()}\n\n(${citacaoDe(d)}.)`;
 }
 
-/** Título do card: classe e identificação antes da verbetação, para cards de mesmo tema não ficarem
- *  iguais ("RORSum · TRT2 · 11ª Turma — ADICIONAL DE INSALUBRIDADE. RUÍDO."). */
-export function tituloDoCard(d: Pick<ResultCard, "ementa" | "tribunal" | "turma" | "sigla_classe">): string {
-  const id = [d.sigla_classe, d.tribunal, d.turma].filter(Boolean).join(" · ");
+/** Título do card: classe, identificação e data antes da verbetação, para cards de mesmo tema (e até
+ *  de ementa igual, da mesma turma) não ficarem iguais ("RORSum · TRT2 · 11ª Turma · 12/05/2025 — ADICIONAL…"). */
+export function tituloDoCard(d: Pick<ResultCard, "ementa" | "tribunal" | "turma" | "sigla_classe" | "data_julgamento">): string {
+  const data = d.data_julgamento && formatarData(d.data_julgamento);
+  const id = [d.sigla_classe, d.tribunal, d.turma, data].filter(Boolean).join(" · ");
   return id ? `${id} — ${titleFromEmenta(d.ementa)}` : titleFromEmenta(d.ementa);
 }
 
