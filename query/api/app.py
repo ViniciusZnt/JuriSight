@@ -41,7 +41,7 @@ from qdrant_client import QdrantClient
 from starlette.concurrency import run_in_threadpool
 
 from auth.db import ensure_schema
-from auth.store import UsuarioStore
+from auth.store import Usuario, UsuarioStore
 from conversations.db import ensure_schema as ensure_conversas_schema
 from conversations.store import ConversaStore
 from indexing.lexical.bm25_builder import BM25Builder
@@ -66,6 +66,7 @@ from query.search.reranker import Reranker
 from query.search.resposta import Resposta, chave_da_resposta, gerar_resposta
 from query.search.resposta_cache import RespostaCache, ensure_schema as ensure_resposta_cache_schema
 from query.api.provimento_routes import get_provimento_store
+from query.api.uso_diario import LimiteDiarioExcedido, UsoDiario, ensure_schema as ensure_uso_diario_schema
 from query.api.provimento_routes import router as provimento_router
 from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
 from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema_correcoes
@@ -94,6 +95,8 @@ async def lifespan(app: FastAPI):
     app.state.conversa_store = ConversaStore(DATABASE_URL)
     ensure_schema_correcoes(DATABASE_URL)  # depende de auth.usuarios (FK)
     app.state.provimento_store = ProvimentoJevStore(DATABASE_URL)
+    ensure_uso_diario_schema(DATABASE_URL)  # depende de auth.usuarios (FK)
+    app.state.uso_diario = UsoDiario(DATABASE_URL)
     ensure_resposta_cache_schema(DATABASE_URL)
     app.state.resposta_cache = RespostaCache(DATABASE_URL)
     app.state.openai = openai.OpenAI(max_retries=0)  # timeout curto por chamada (query/search/resposta.py)
@@ -169,6 +172,27 @@ def get_resposta_cache(request: Request) -> RespostaCache | None:
     return getattr(request.app.state, "resposta_cache", None)
 
 
+def get_uso_diario(request: Request) -> UsoDiario | None:
+    return getattr(request.app.state, "uso_diario", None)
+
+
+async def consumir_limite(uso: UsoDiario | None, usuario: Usuario, acao: str) -> None:
+    """429 quando a conta ou o sistema passou do limite do dia (query/api/uso_diario.py)."""
+    if uso is None:
+        return
+    try:
+        await run_in_threadpool(uso.consumir, usuario.id, acao)
+    except LimiteDiarioExcedido as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+def limite_diario(acao: str):
+    """Dependency: conta um uso de `acao` para o usuário logado antes de a rota rodar."""
+    async def _dep(usuario: Usuario = Depends(get_current_user), uso: UsoDiario | None = Depends(get_uso_diario)) -> None:
+        await consumir_limite(uso, usuario, acao)
+    return _dep
+
+
 # --------------------------------------------------------------------------- #
 # GET /health                                                                  #
 # --------------------------------------------------------------------------- #
@@ -189,7 +213,7 @@ class EnrichResponse(BaseModel):
     aviso: str | None = None
 
 
-@app.post("/enrich", response_model=EnrichResponse, dependencies=[Depends(get_current_user)])
+@app.post("/enrich", response_model=EnrichResponse, dependencies=[Depends(limite_diario("enrich"))])
 async def enrich(
     pdf: UploadFile | None = File(None),
     intencao: str | None = Form(None),
@@ -239,7 +263,7 @@ class QueryRequest(BaseModel):
     data_fim: date | None = None
 
 
-@app.post("/query", response_model=list[ResultCard], dependencies=[Depends(get_current_user)])
+@app.post("/query", response_model=list[ResultCard], dependencies=[Depends(limite_diario("query"))])
 async def query(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
@@ -272,16 +296,18 @@ class RespostaRequest(BaseModel):
     ids: list[uuid.UUID] = Field(max_length=20)  # na ordem dos cards: ids[0] é o #1
 
 
-@app.post("/resposta", response_model=Resposta, dependencies=[Depends(get_current_user)])
+@app.post("/resposta", response_model=Resposta)
 async def resposta(
     body: RespostaRequest,
+    usuario: Usuario = Depends(get_current_user),
+    uso: UsoDiario | None = Depends(get_uso_diario),
     retriever: DocRetriever = Depends(get_doc_retriever),
     client: openai.OpenAI = Depends(get_openai),
     cache: RespostaCache | None = Depends(get_resposta_cache),
 ) -> Resposta:
     """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`.
     Resposta já gerada para a mesma tese, lista, modelo e prompt vem do cache, sem chamar a OpenAI;
-    falha no cache não derruba a resposta."""
+    falha no cache não derruba a resposta. Só a geração conta no limite diário."""
     ids = [str(i) for i in body.ids]
     chave = chave_da_resposta(body.estrutura, ids)
     if cache is not None:
@@ -291,6 +317,7 @@ async def resposta(
                 return Resposta.model_validate(salva)
         except psycopg.Error as exc:
             logger.warning("Cache da resposta indisponível: %s", exc)
+    await consumir_limite(uso, usuario, "resposta")  # só conta quando vai gerar (cache não gasta)
     docs = await run_in_threadpool(retriever.fetch, ids)
     decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs}
     try:

@@ -22,8 +22,9 @@ from fastapi.testclient import TestClient
 
 import query.api.app as api_app
 from auth.store import Usuario
-from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid, get_reranker
+from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid, get_reranker, get_uso_diario
 from query.api.auth_routes import get_usuario_store
+from query.api.uso_diario import LimiteDiarioExcedido
 from query.enrichment.pdf_extractor import PDFSemTextoError
 from query.enrichment.query_enrichment import _montar_conteudo
 from query.enrichment.schema import EstruturaArgumentativa
@@ -194,6 +195,29 @@ def test_enrich_sem_pdf_com_intencao_fa01(client):
     assert body["pdf_extraido"] is None
     assert body["aviso"] is None
     assert fake_enricher.calls == [(None, "adicional de insalubridade")]
+
+
+class _UsoEsgotado:
+    def __init__(self):
+        self.acoes = []
+
+    def consumir(self, usuario_id, acao):
+        self.acoes.append(acao)
+        raise LimiteDiarioExcedido("Você atingiu o limite de 30 consultas por dia. Ele renova à meia-noite.")
+
+
+@pytest.mark.parametrize("rota,kwargs", [
+    ("/enrich", {"data": {"intencao": "adicional de insalubridade"}}),
+    ("/query", {"json": {"estrutura": {"tese_central": "ruído"}}}),
+])
+def test_limite_diario_esgotado_vira_429_antes_de_gastar(client, rota, kwargs):
+    fake_enricher, uso = _FakeEnricher(), _UsoEsgotado()
+    app.dependency_overrides[get_enricher] = lambda: fake_enricher
+    app.dependency_overrides[get_uso_diario] = lambda: uso
+    resp = client.post(rota, **kwargs)
+    assert resp.status_code == 429
+    assert resp.json()["detail"].startswith("Você atingiu o limite de 30 consultas por dia")
+    assert uso.acoes == [rota.strip("/")] and fake_enricher.calls == []
 
 
 def test_enrich_pdf_extraido_com_sucesso(client, monkeypatch):
