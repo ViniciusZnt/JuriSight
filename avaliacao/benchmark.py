@@ -1,6 +1,6 @@
-"""Benchmark multissistema (S0-S6): roda os sistemas e gera o relatório estatístico.
+"""Benchmark multissistema (S0-S7): roda os sistemas e gera o relatório estatístico.
 
-    python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos]
+    python -m avaliacao.benchmark rodar [--sistemas S0,...,S7] [--split dev|teste|todos]
     python -m avaliacao.benchmark relatorio RUNS.json
 
 `rodar` grava `data/eval/runs/<AAAA-MM-DD_HHMMSS>_runs.json` (top-20 e latência de
@@ -28,6 +28,7 @@ from avaliacao.metricas import (
     LIMIAR_RELEVANTE,
     ac2_gwet,
     alfa_krippendorff_ordinal,
+    fortalece_at_k,
     judged_at_k,
     kappa_ponderado_quadratico,
     map_at_k,
@@ -40,9 +41,9 @@ from avaliacao.metricas import (
 from avaliacao.sistemas import SISTEMAS, candidatos_hibrido, construir_rerankers, rodar_sistema, top_bm25, top_denso
 from avaliacao.store import Tese
 
-METRICAS = ("ndcg_10", "mrr_10", "p_5", "p_10", "recall_10", "map_10", "recall_20", "judged_10")
+METRICAS = ("ndcg_10", "mrr_10", "p_5", "p_10", "recall_10", "map_10", "recall_20", "judged_10", "fortalece_10")
 # (tratamento, controle): diferença = tratamento - controle em nDCG@10.
-CONTRASTES = (("S3", "S2"), ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S0", "S2"), ("S1", "S2"))
+CONTRASTES = (("S3", "S2"), ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S0", "S2"), ("S1", "S2"), ("S7", "S3"))
 N_BOOTSTRAP = 10_000
 SEED_BOOTSTRAP = 42
 WILCOXON_ZERO_METHOD = "pratt"
@@ -74,7 +75,8 @@ def _nomes_dos_modelos(sistemas: list[str]) -> dict[str, str]:
     from query.search.reranker import MODEL_NAME
     from query.search.reranker_onnx import BGE, GTE
 
-    todos = {"S3": MODEL_NAME, "S4": GTE[0], "S5": BGE[0], "S6": "unicamp-dl/monoptt5-base"}
+    todos = {"S3": MODEL_NAME, "S4": GTE[0], "S5": BGE[0], "S6": "unicamp-dl/monoptt5-base",
+             "S7": f"{MODEL_NAME} (início + tese de julgamento)"}
     return {s: todos[s] for s in sistemas if s in todos}
 
 
@@ -117,7 +119,7 @@ def rodar(
 ) -> dict:
     """Roda cada sistema em todas as teses, um sistema por vez, medindo a latência.
 
-    Input:  teses; deps (hybrid, retriever); sistemas ("S0".."S6");
+    Input:  teses; deps (hybrid, retriever); sistemas ("S0".."S7");
             rerankers — dict pronto (testes) ou None: então o reranker de cada
             sistema é construído antes e liberado depois (`del` + gc), porque
             os modelos não cabem juntos na RAM; saida — diretório do JSON
@@ -125,7 +127,7 @@ def rodar(
     Returns: {"data", "commit", "sistemas", "modelos", "teses": [{tese_id, origem,
              tema, split, candidatos, top10_bm25, top10_denso,
              "sistemas": {S: {"ids": top-20, "latencia_s": float,
-             "fora_dos_candidatos": ids de S2-S6 fora dos 30 de referência}}}],
+             "fora_dos_candidatos": ids de S2-S7 fora dos 30 de referência}}}],
              "teses_com_erro": [{tese_id, sistema, erro}], "arquivo"}.
     O `embed_text` do embedder é memorizado durante a execução (restaurado no fim):
     a latência exclui o embedding repetido. Falha numa tese/sistema é avisada em
@@ -188,7 +190,7 @@ def rodar(
                     registrar_erro(tese, sistema, e)
                     continue
                 if sistema not in ("S0", "S1"):
-                    # S2-S6 reordenam os 30 candidatos de referência: ids fora deles
+                    # S2-S7 reordenam os 30 candidatos de referência: ids fora deles
                     # denunciam que o sistema viu um conjunto diferente.
                     ref = set(linha["candidatos"])
                     entrada["fora_dos_candidatos"] = [i for i in ids if i not in ref]
@@ -345,7 +347,7 @@ def concordancia(julgamentos: list) -> dict:
 # --- avaliar ----------------------------------------------------------------
 
 
-def _metricas_da_tese(ids: list[str], ganhos: dict[str, int]) -> dict[str, float | None]:
+def _metricas_da_tese(ids: list[str], ganhos: dict[str, int], stances: dict[str, str]) -> dict[str, float | None]:
     return {
         "ndcg_10": ndcg_at_k(ids, ganhos, 10),
         "mrr_10": mrr_at_k(ids, ganhos, 10),
@@ -355,6 +357,7 @@ def _metricas_da_tese(ids: list[str], ganhos: dict[str, int]) -> dict[str, float
         "map_10": map_at_k(ids, ganhos, 10),
         "recall_20": recall_at_k(ids, ganhos, 20),
         "judged_10": judged_at_k(ids, ganhos, 10) if ganhos else None,
+        "fortalece_10": fortalece_at_k(ids, ganhos, stances, 10),
     }
 
 
@@ -387,12 +390,12 @@ def avaliar_runs(
     sistemas = [s for s in SISTEMAS if s in runs["sistemas"]]
     por_tese, tetos, perdidos = [], [], []
     for linha in runs["teses"]:
-        ganhos, _ = rotulos(uuid.UUID(linha["tese_id"]))
+        ganhos, stances = rotulos(uuid.UUID(linha["tese_id"]))
         por_tese.append({
             "tese_id": linha["tese_id"], "origem": linha["origem"], "tema": linha["tema"],
             "split": linha["split"], "n_rotulados": len(ganhos),
             "sistemas": {
-                s: {**_metricas_da_tese(linha["sistemas"][s]["ids"], ganhos),
+                s: {**_metricas_da_tese(linha["sistemas"][s]["ids"], ganhos, stances),
                     "latencia_s": linha["sistemas"][s]["latencia_s"]}
                 for s in sistemas if s in linha["sistemas"]
             },
@@ -454,11 +457,11 @@ def _f(v: float | None, casas: int = 3) -> str:
 
 
 def _imprimir_tabela(por_sistema: dict) -> None:
-    cab = ("sist", "nDCG@10", "MRR@10", "P@5", "P@10", "Rec@10", "MAP@10", "Judg@10", "lat med s", "lat p95 s")
+    cab = ("sist", "nDCG@10", "MRR@10", "P@5", "P@10", "Rec@10", "MAP@10", "Judg@10", "Fort@10", "lat med s", "lat p95 s")
     print("".join(f"{c:>11}" for c in cab))
     for s, g in por_sistema.items():
         m = g["medias"]
-        cel = [m[k] for k in ("ndcg_10", "mrr_10", "p_5", "p_10", "recall_10", "map_10", "judged_10")]
+        cel = [m[k] for k in ("ndcg_10", "mrr_10", "p_5", "p_10", "recall_10", "map_10", "judged_10", "fortalece_10")]
         print(f"{s:>11}" + "".join(f"{_f(v):>11}" for v in cel)
               + f"{_f(g['latencia_mediana_s'], 2):>11}{_f(g['latencia_p95_s'], 2):>11}")
         exc = {k: v for k, v in g["excluidas"].items() if v}

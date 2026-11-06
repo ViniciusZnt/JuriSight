@@ -8,6 +8,12 @@ A tese do lote fica no nome definido `tese_id` do .xlsx (constante de texto,
 sem célula nem aba extra); o `par_id` de cada linha fica na coluna A, oculta.
 A proteção da planilha não tem senha: só evita edição acidental fora das
 células amarelas.
+
+`importar` também lê a planilha com várias teses num arquivo (aba Julgamento, como
+`docs/avaliacao/2-julgamento-relevancia-e-stance.xlsx`): uma tese e um acórdão por
+linha, com o `par_id` na coluna A e o nome de quem respondeu na coluna I, que vira o
+avaliador da linha. Ela serve para calibrar a rubrica e medir a concordância; comparar
+sistemas exige o pool de cada tese, os lotes de `exportar`.
 """
 from __future__ import annotations
 
@@ -38,6 +44,9 @@ LINHA_INICIAL = LINHA_CABECALHO + 1
 CHARS_DISPOSITIVO = 1500
 CHARS_FUNDAMENTACAO = 3000
 
+ABA_MULTITESE = "Julgamento"
+MULTITESE_LINHA_INICIAL, MULTITESE_COL_NOTA, MULTITESE_COL_STANCE, MULTITESE_COL_NOME = 2, 6, 7, 9
+
 AMARELO = PatternFill("solid", fgColor="FFF2CC")
 CINZA = PatternFill("solid", fgColor="F2F2F2")
 ESCURO = PatternFill("solid", fgColor="3B3B3B")
@@ -47,7 +56,7 @@ _RUBRICA = (
     ("0", "Outro problema jurídico."),
     ("1", "Mesmo ramo ou tema, mas outro pedido ou outro fato central."),
     ("2", "Mesmo pedido, mas o fato decisivo é diferente ou o acórdão cobre só uma parte."),
-    ("3", "Mesmo problema e mesmo fato decisivo: você citaria este acórdão na peça."),
+    ("3", "Mesmo problema e mesmo fato decisivo."),
 )
 _INSTRUCOES = (
     ("Julgamento de acórdãos — benchmark JuriSight", "titulo"),
@@ -265,6 +274,70 @@ def _ler(caminho):
     return email, tese_id, validas, puladas
 
 
+def _ler_multitese(ws, nome_arquivo: str) -> tuple[list[tuple[uuid.UUID, str, int, str]], list[tuple[int, str]]]:
+    """(validas (par_id, nome normalizado, nota, stance), puladas) da aba Julgamento."""
+    validas, puladas, vistos, com_nota = [], [], set(), 0
+    for row in ws.iter_rows(min_row=MULTITESE_LINHA_INICIAL):
+        linha = row[0].row
+        bruto_par, bruto_nota, bruto_stance, bruto_nome = (
+            row[c - 1].value for c in (COL_PAR, MULTITESE_COL_NOTA, MULTITESE_COL_STANCE, MULTITESE_COL_NOME))
+        if _vazio(bruto_nota):
+            if not _vazio(bruto_par):
+                puladas.append((linha, "sem nota"))
+            continue
+        com_nota += 1
+        try:
+            par_id = uuid.UUID(str(bruto_par).strip())
+        except ValueError:
+            puladas.append((linha, "código do par ausente ou alterado"))
+            continue
+        nome = " ".join(str(bruto_nome or "").lower().split())
+        if not nome:
+            puladas.append((linha, "sem nome"))
+            continue
+        nota = _nota(bruto_nota)
+        if nota is None:
+            puladas.append((linha, "nota fora de 0 a 3"))
+            continue
+        stance = "" if _vazio(bruto_stance) else str(bruto_stance).strip().lower()
+        if nota >= 2 and stance not in STANCES:
+            puladas.append((linha, "stance vazio com nota 2 ou 3" if not stance else "stance inválido"))
+            continue
+        if (par_id, nome) in vistos:
+            puladas.append((linha, "par repetido"))
+            continue
+        vistos.add((par_id, nome))
+        validas.append((par_id, nome, nota, stance if nota >= 2 else "neutro"))
+    if not com_nota:
+        raise ValueError(f"{nome_arquivo}: nenhuma nota preenchida.")
+    return validas, puladas
+
+
+def _importar_multitese(store, ws, caminho, rodada: int) -> tuple[int, dict[str, int]]:
+    from avaliacao.store import Julgamento
+
+    nome_arq = Path(caminho).name
+    if rodada == 2:
+        raise ValueError(f"{nome_arq}: a adjudicação usa os lotes de `exportar`, não a planilha com várias teses.")
+    validas, puladas = _ler_multitese(ws, nome_arq)
+    _avisar(caminho, puladas)
+    nomes = sorted({nome for _, nome, _, _ in validas})
+    if len(nomes) > 1:
+        print(f"{nome_arq}: mais de um nome no arquivo ({', '.join(nomes)}); cada grafia conta como "
+              "um avaliador diferente", file=sys.stderr)
+    pares = {p.id for t in store.listar_teses() for p in store.pares_da_tese(t.id)}
+    motivos = Counter(m for _, m in puladas)
+    gravadas = 0
+    for par_id, nome, nota, stance in validas:
+        if par_id not in pares:
+            motivos["par fora da tese"] += 1
+            print(f"{nome_arq}: par {par_id} não existe no banco; ignorado", file=sys.stderr)
+            continue
+        store.gravar_julgamento(Julgamento(par_id, f"humano:{nome}", rodada, nota, stance))
+        gravadas += 1
+    return gravadas, dict(motivos)
+
+
 def _avisar(caminho, puladas) -> None:
     for linha, motivo in puladas:
         if motivo != "sem nota":
@@ -286,6 +359,10 @@ def importar_arquivo(store, caminho, rodada: int = 1, adjudicador: str | None = 
     `rodada=2` é a adjudicação: o e-mail do arquivo tem de ser o `adjudicador`
     (AVALIACAO_ADJUDICADOR), senão ValueError e nada é gravado."""
     from avaliacao.store import Julgamento
+
+    wb = load_workbook(caminho, data_only=True)
+    if ABA_MULTITESE in wb.sheetnames:
+        return _importar_multitese(store, wb[ABA_MULTITESE], caminho, rodada)
 
     email, tese_id, validas, puladas = _ler(caminho)
     if rodada == 2 and email != (adjudicador or "").strip().lower():

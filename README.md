@@ -370,9 +370,9 @@ interromper e retomar de onde parou):
 
 A etapa de teses chama a OpenAI: mostra a estimativa e **pede confirmação**; `--sim` pula.
 
-### 2 — Etapa 2: benchmark de rerankers (S0–S6)
+### 2 — Etapa 2: benchmark de rerankers (S0–S7)
 
-A etapa 2 compara sete sistemas de busca sobre o mesmo conjunto de teses, com
+A etapa 2 compara oito sistemas de busca sobre o mesmo conjunto de teses, com
 rótulos de duas pessoas. A ordem:
 
 1. **Teses dos advogados.** Com `docs/avaliacao/1-producao-de-teses.xlsx`
@@ -392,15 +392,20 @@ rótulos de duas pessoas. A ordem:
    (`AVALIACAO_ADJUDICADOR`) num lote exportado de novo; ele devolve o arquivo e você
    importa com `... importar --adjudicacao ARQUIVO`, que grava **rodada 2**. Se o
    e-mail do arquivo não for o do adjudicador, o comando falha sem gravar nada.
-5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos] [--saida DIR]`
+5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,...,S7] [--split dev|teste|todos] [--saida DIR]`
    grava `data/eval/runs/<data>_runs.json`.
 6. **Relatório:** `uv run python -m avaliacao.benchmark relatorio data/eval/runs/<data>_runs.json`
    grava `<mesmo prefixo>_relatorio.json`.
 
 **Escala (0–3):** 0 outro problema jurídico; 1 mesmo ramo/tema, mas outro pedido ou
 fato central; 2 mesmo pedido, com fato decisivo diferente ou só em parte; 3 mesmo
-problema e mesmo fato decisivo ("eu citaria na peça"). O **stance** (fortalece,
-enfraquece, neutro) só vale para nota 2 ou 3; com 0 ou 1 grava-se `neutro`.
+problema e mesmo fato decisivo. O **stance** (fortalece, enfraquece, neutro) só vale
+para nota 2 ou 3; com 0 ou 1 grava-se `neutro`.
+
+**Planilha com várias teses.** `docs/avaliacao/2-julgamento-relevancia-e-stance.xlsx`
+traz 30 teses com um acórdão cada e também volta por `planilha_julgamento importar`.
+Com um acórdão por tese, ela calibra a rubrica e mede a concordância; comparar
+sistemas exige o pool de cada tese, nos lotes de `exportar`.
 
 **Rótulo final** de um par com vários humanos: se o adjudicador
 (`AVALIACAO_ADJUDICADOR`) julgou na **rodada 2** (`--adjudicacao`), vale o dele. A
@@ -414,12 +419,16 @@ A concordância (kappa, alfa, AC2) usa só a rodada 1, com todos os avaliadores.
 
 **Sistemas.** Todos devolvem o top-20. S0 e S1 consultam sempre a mesma profundidade
 (100 chunks por canal), então o top-10 usado no pool é prefixo do top-20 deles. S3 a S6 reordenam os mesmos 30 candidatos do
-S2, com a mesma entrada (tese contra a ementa cortada em 1.200 caracteres). A latência
+S2, com a mesma entrada (tese contra a ementa cortada em 1.200 caracteres). O S7 é o S3
+com outra entrada: nas ementas longas cuja "Tese de julgamento" ficaria fora do corte,
+lê o início da ementa mais essa tese, nos mesmos 1.200 caracteres. Ele só muda a
+ordem, então não pede notas novas, e a produção segue com o corte simples até a medição
+do contraste S7×S3. A latência
 é a mediana/p95, em segundos, de um smoke em 5 teses; inclui a busca inteira, medida
 nesta máquina, sem GPU. **Na execução do benchmark o embedding da OpenAI é calculado
-uma vez por texto e reaproveitado** (a API não é determinística e os sistemas S2 a S6
+uma vez por texto e reaproveitado** (a API não é determinística e os sistemas S2 a S7
 têm de reordenar os mesmos 30 candidatos), então a latência medida **exclui** o
-embedding repetido e é menor que a da tabela. Cada tese/sistema S2 a S6 grava
+embedding repetido e é menor que a da tabela. Cada tese/sistema S2 a S7 grava
 `fora_dos_candidatos` (ids do top-20 fora dos 30 de referência; deve vir vazio) e
 falhas isoladas ficam em `teses_com_erro` sem abortar a run.
 
@@ -432,6 +441,7 @@ falhas isoladas ficam em `teses_com_erro` sem abortar a run.
 | S4 | S2 + `gte-multilingual-reranker-base` | 6,85 / 10,13 |
 | S5 | S2 + `bge-reranker-v2-m3` | 5,66 / 6,71 |
 | S6 | S2 + `unicamp-dl/monoptt5-base` | 8,83 / 15,48 |
+| S7 | S3 lendo o início da ementa + a tese de julgamento | ainda não medida |
 
 O S6 precisa do PyTorch (CPU), no grupo opcional `benchmark`:
 
@@ -444,7 +454,9 @@ Sem o grupo, `rodar` com S6 falha logo no início (antes de carregar o índice).
 
 **Métricas.** A principal é o **nDCG@10** (ganho 2^nota − 1). As demais: MRR@10, P@5,
 P@10, Recall@10, Recall@20 e MAP@10 (relevante = nota >= 2) e **Judged@10** (fração do
-top-10 que tem rótulo; não julgado vale 0). Tese sem nenhum relevante fica fora das
+top-10 que tem rótulo; não julgado vale 0). **Fortalece@10** é a fração do top-10 com
+nota >= 2 e stance `fortalece`; é descritiva, porque um acórdão contrário e relevante
+também é útil, e não entra nos contrastes. Tese sem nenhum relevante fica fora das
 médias das métricas que dependem disso (a contagem de excluídas vai no relatório). O
 **teto** é o nDCG@10 da melhor ordem possível dos 30 candidatos: quanto um reranker
 poderia ganhar no máximo. Os **perdidos** são os relevantes que o BM25 ou o denso
@@ -458,7 +470,7 @@ compará-los. O relatório mostra as médias no total e por origem (advogado, si
 real) e o adjudicador em uso.
 
 **Estatística.** Diferenças pareadas por tese, nos contrastes S3×S2, S4×S3, S5×S3,
-S6×S3, S0×S2 e S1×S2: teste t pareado com correção de **Holm**, Wilcoxon (`pratt`)
+S6×S3, S0×S2, S1×S2 e S7×S3: teste t pareado com correção de **Holm**, Wilcoxon (`pratt`)
 com **Benjamini-Hochberg** como checagem, e IC95% por bootstrap (10.000
 reamostragens, seed fixa). A correção depende de quantos contrastes entram
 (`m_holm` no JSON), então **só cite p ajustado de uma run com todos os sistemas**.

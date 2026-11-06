@@ -185,7 +185,7 @@ def test_familia_com_contraste_degenerado_mantem_m():
     # m = 2 contrastes rodados: Holm do significativo = min(1, 2 * p)
     assert contrastes[0]["p_t_holm"] == pytest.approx(min(1.0, 2 * contrastes[0]["p_t"]))
     assert {(o["tratamento"], o["controle"]) for o in omitidos} == {
-        ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S1", "S2")}
+        ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S1", "S2"), ("S7", "S3")}
 
 
 def test_relatorio_grava_m_e_metodo_wilcoxon():
@@ -195,7 +195,7 @@ def test_relatorio_grava_m_e_metodo_wilcoxon():
     est = rel["estatistica"]
     assert est["m_holm"] == 1 and est["m_bh"] == 1
     assert est["wilcoxon_zero_method"] == "pratt"
-    assert len(est["contrastes_omitidos"]) == 5
+    assert len(est["contrastes_omitidos"]) == 6
 
 
 def test_commit_git_marca_dirty(monkeypatch):

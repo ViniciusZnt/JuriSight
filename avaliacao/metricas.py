@@ -106,6 +106,21 @@ def judged_at_k(ranking: list[str], ganhos: dict[str, int], k: int = 10) -> floa
     return sum(1 for doc in topo if doc in ganhos) / len(topo)
 
 
+def fortalece_at_k(
+    ranking: list[str], ganhos: dict[str, int], stances: dict[str, str], k: int = 10
+) -> float | None:
+    """Fortalece@k: relevantes do top-k que apoiam a tese, divididos por k.
+
+    Como o P@k, mas contando só stance "fortalece". Descreve o top-k para quem
+    defende a tese; um acórdão contrário e relevante também é útil, então esta
+    métrica não substitui o nDCG. Retorna None quando não há relevante julgado.
+    """
+    relevantes = _relevantes(ganhos)
+    if not relevantes:
+        return None
+    return sum(1 for doc in ranking[:k] if doc in relevantes and stances.get(doc) == "fortalece") / k
+
+
 def ndcg_teto(candidatos: list[str], ganhos: dict[str, int], k: int = 10) -> float | None:
     """Teto de nDCG@k: a melhor ordem possível só entre os `candidatos`.
 

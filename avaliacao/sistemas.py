@@ -1,7 +1,8 @@
-"""Sistemas S0-S6 do benchmark de rerankers.
+"""Sistemas S0-S7 do benchmark de rerankers.
 
 S0 BM25 sozinho; S1 denso sozinho; S2 híbrido RRF sem reranker; S3-S6 = S2 +
-um reranker. Cada sistema devolve o top-20 de ids de documento.
+um reranker; S7 = S3 lendo o início da ementa mais a tese de julgamento. Cada
+sistema devolve o top-20 de ids de documento.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from query.search.hybrid_search import (
 )
 from query.search.pipeline import N_CANDIDATOS_PARA_RERANK, N_RESULTS_FINAL, buscar
 
-SISTEMAS: tuple[str, ...] = ("S0", "S1", "S2", "S3", "S4", "S5", "S6")
+SISTEMAS: tuple[str, ...] = ("S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7")
 
 # Profundidade da consulta de cada canal, igual para qualquer k: assim o top-10 de
 # referência do pool é prefixo do top-20 de S0/S1 (com k variável, o corte mudava).
@@ -59,7 +60,7 @@ def candidatos_hibrido(
 def rodar_sistema(
     sistema: str, estrutura: EstruturaArgumentativa, deps, rerankers: dict[str, object]
 ) -> list[str]:
-    """Top-20 de ids do sistema. `rerankers` mapeia "S3".."S6" ao reranker."""
+    """Top-20 de ids do sistema. `rerankers` mapeia "S3".."S7" ao reranker."""
     if sistema not in SISTEMAS:
         raise KeyError(f"Sistema desconhecido: {sistema!r} (esperado um de {SISTEMAS})")
     if sistema == "S0":
@@ -86,14 +87,16 @@ def construir_rerankers(nomes: list[str]) -> dict[str, object]:
 
     S6 (monoPTT5) exige o grupo opcional `benchmark` (torch + transformers).
     """
-    from query.search.reranker import Reranker
+    from query.search import reranker as mod_reranker
     from query.search.reranker_onnx import BGE, GTE, CrossEncoderOnnx
+    from query.search.trecho_ementa import RerankerComTese
 
     fabricas = {
-        "S3": Reranker,
+        "S3": lambda: mod_reranker.Reranker(),
         "S4": lambda: CrossEncoderOnnx(*GTE),
         "S5": lambda: CrossEncoderOnnx(*BGE),
         "S6": _monoptt5,
+        "S7": lambda: RerankerComTese(mod_reranker.Reranker(), limite=mod_reranker._MAX_PASSAGE_CHARS),
     }
     desconhecidos = [n for n in nomes if n not in fabricas]
     if desconhecidos:
