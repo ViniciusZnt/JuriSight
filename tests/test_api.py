@@ -267,6 +267,28 @@ def test_enrich_fa02_sem_intencao_422(client, monkeypatch):
     assert resp.status_code == 422
 
 
+def test_enrich_pdf_acima_do_limite_413_sem_chamar_o_llm(client, monkeypatch):
+    fake_enricher = _FakeEnricher()
+    app.dependency_overrides[get_enricher] = lambda: fake_enricher
+    monkeypatch.setattr(api_app, "MAX_PDF_MB", 1)
+
+    resp = client.post("/enrich", files={"pdf": ("caso.pdf", b"x" * (1024 * 1024 + 1), "application/pdf")})
+
+    assert resp.status_code == 413
+    assert "limite de 1 MB" in resp.json()["detail"]
+    assert fake_enricher.calls == []
+
+
+def test_enrich_pdf_no_limite_exato_passa_do_corte(client, monkeypatch):
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher()
+    monkeypatch.setattr(api_app, "MAX_PDF_MB", 1)
+
+    # exatamente no limite não é recusado por tamanho (cai no 400 de PDF inválido, como antes)
+    resp = client.post("/enrich", files={"pdf": ("caso.pdf", b"x" * (1024 * 1024), "application/pdf")})
+
+    assert resp.status_code == 400
+
+
 def test_enrich_pdf_corrompido_400(client):
     app.dependency_overrides[get_enricher] = lambda: _FakeEnricher()
 

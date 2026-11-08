@@ -274,3 +274,20 @@ def test_me_usuario_nao_existe_mais_401(client: TestClient):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+@pytest.mark.parametrize("valor,esperado", [
+    (None, True), ("", True), ("true", True), ("TRUE", True), ("1", True),
+    ("false", False), (" False ", False),
+])
+def test_cookie_secure_ligado_por_padrao_so_false_desliga(valor, esperado):
+    """Issue #17: esquecer COOKIE_SECURE no deploy não pode deixar o cookie sem Secure."""
+    assert auth_routes._cookie_secure(valor) is esperado
+
+
+def test_com_secure_ligado_o_cookie_sai_com_a_flag(client: TestClient, monkeypatch):
+    monkeypatch.setattr(auth_routes, "COOKIE_SECURE", True)
+    client.post("/auth/registro", json={"email": "secure@exemplo.com", "password": "senha-forte-123", "nome": "S"})
+    resp = client.post("/auth/login", json={"email": "secure@exemplo.com", "password": "senha-forte-123"})
+    assert resp.status_code == 200
+    assert "secure" in resp.headers["set-cookie"].lower()

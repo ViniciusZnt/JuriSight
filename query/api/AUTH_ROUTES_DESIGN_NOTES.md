@@ -55,19 +55,19 @@ aplicação.
 
 ### `Secure`
 
-Controlado por env var `COOKIE_SECURE` (default `"false"`), lida em
+Controlado por env var `COOKIE_SECURE` (default `"true"`), lida em
 `query/api/auth_routes.py`:
 
 ```python
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").strip().lower() == "true"
+COOKIE_SECURE = _cookie_secure(os.getenv("COOKIE_SECURE"))  # só "false" desliga
 ```
 
-Dev roda em HTTP puro (frontend `localhost:3000`, backend `localhost:8000`)
-— `Secure=True` faria o navegador *nunca* enviar o cookie de volta em HTTP,
-quebrando login em dev silenciosamente (sem erro visível, só uma sessão que
-nunca "gruda"). Por isso o default é `false`. Em um deploy real atrás de
-HTTPS, setar `COOKIE_SECURE=true` no ambiente ativa a flag — sem isso, um
-JWT em trânsito por uma rede não seria protegido contra downgrade para HTTP.
+Ligado por padrão (issue #17): esquecer a variável no deploy não pode deixar o
+JWT sem proteção contra downgrade para HTTP, do mesmo jeito que faltar
+`JWT_SECRET_KEY` impede a API de subir. Só o dev local, que roda em HTTP puro
+(frontend `localhost:3000`, backend `localhost:8000`), desliga explicitamente
+com `COOKIE_SECURE=false` (está no `.env.example`); os testes fazem o mesmo em
+`tests/conftest.py`, porque o cliente de teste também fala HTTP.
 
 ### `SameSite`
 
@@ -194,8 +194,8 @@ Também é o momento de (fora desta peça, de propósito):
 - rodar `auth.db.ensure_schema()` na subida (ou via migração separada);
 - adicionar `"auth*"` a `tool.setuptools.packages.find.include` em
   `pyproject.toml` (já apontado como pendente em `auth/DESIGN_NOTES.md`);
-- definir `JWT_SECRET_KEY` e, se for deploy com HTTPS, `COOKIE_SECURE=true`
-  no ambiente.
+- definir `JWT_SECRET_KEY` no ambiente (`COOKIE_SECURE` já vem ligado; só o
+  dev local em HTTP desliga).
 
 ## Fora de escopo, propositalmente
 
