@@ -14,6 +14,8 @@ import { enrich, ApiError } from "@/lib/api";
 // petição longa com muitas páginas — mostra o modal de processamento enquanto aguarda o /enrich
 // real (que resume o PDF em blocos via LLM antes de extrair a EstruturaArgumentativa).
 const LARGE_FILE_BYTES = 8 * 1024 * 1024;
+// Mesmo limite da API (MAX_PDF_MB): avisa antes de mandar o arquivo, sem gastar o upload.
+const MAX_PDF_MB = 20;
 
 // Exemplos clicáveis: preenchem o campo de pesquisa (não pesquisam sozinhos).
 const exemplos = [
@@ -78,6 +80,10 @@ export function HomePage() {
   const handleSubmit = async ({ query, hasFile, file, fileName, fileBytes }: SearchSubmitPayload) => {
     setError(null);
     setFa02(null);
+    if (hasFile && (fileBytes ?? 0) > MAX_PDF_MB * 1024 * 1024) {
+      setError(`O PDF passa do limite de ${MAX_PDF_MB} MB. Envie um arquivo menor ou descreva o caso no campo de texto.`);
+      return;
+    }
     setLoading(true);
     const isLarge = hasFile && (fileBytes ?? 0) > LARGE_FILE_BYTES;
     if (isLarge) setLargeFileName(fileName);

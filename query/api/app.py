@@ -213,6 +213,11 @@ class EnrichResponse(BaseModel):
     aviso: str | None = None
 
 
+# Teto do PDF da busca: o arquivo é lido inteiro na memória. O Caddy corta um pouco acima disso
+# (deploy/Caddyfile), antes de o corpo chegar aqui.
+MAX_PDF_MB = int(os.getenv("MAX_PDF_MB", "20"))
+
+
 @app.post("/enrich", response_model=EnrichResponse, dependencies=[Depends(limite_diario("enrich"))])
 async def enrich(
     pdf: UploadFile | None = File(None),
@@ -224,7 +229,12 @@ async def enrich(
     aviso: str | None = None
 
     if pdf is not None and pdf.filename:
-        pdf_bytes = await pdf.read()
+        pdf_bytes = await pdf.read(MAX_PDF_MB * 1024 * 1024 + 1)  # nunca mais que o limite na memória
+        if len(pdf_bytes) > MAX_PDF_MB * 1024 * 1024:
+            raise HTTPException(
+                status_code=413,
+                detail=f"O PDF passa do limite de {MAX_PDF_MB} MB. Envie um arquivo menor ou descreva o caso no campo de texto.",
+            )
         try:
             texto_pdf = await run_in_threadpool(pdf_extractor.extract_text, pdf_bytes)
             texto_pdf = await run_in_threadpool(
