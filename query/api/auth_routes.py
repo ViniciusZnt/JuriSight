@@ -53,14 +53,17 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # nenhum outro cookie que um domínio futuro compartilhado venha a usar.
 ACCESS_TOKEN_COOKIE_NAME = "jurisight_access_token"
 
-# Secure=True exige HTTPS para o navegador enviar o cookie de volta — correto
-# e obrigatório em produção, mas o dev local (frontend :3000, backend :8000)
-# roda em HTTP puro, então Secure=True quebraria login em dev (o cookie
-# simplesmente nunca voltaria). Por isso isto é uma env var com default
-# seguro-para-produção-mas-também-funciona-em-dev: default "false" (dev),
-# e quem fizer o deploy real deve setar COOKIE_SECURE=true (ver
-# AUTH_ROUTES_DESIGN_NOTES.md).
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").strip().lower() == "true"
+# Secure=True exige HTTPS para o navegador enviar o cookie de volta — obrigatório
+# em produção. Por isso é o padrão: esquecer a variável no deploy não pode deixar
+# o cookie de sessão sem a flag (issue #17), assim como faltar JWT_SECRET_KEY não
+# deixa a API subir. Só o ambiente local em HTTP puro desliga, explicitamente, com
+# COOKIE_SECURE=false (.env.example). Ver AUTH_ROUTES_DESIGN_NOTES.md.
+def _cookie_secure(valor: str | None) -> bool:
+    """Só `false` (sem diferenciar maiúsculas) desliga; ausente ou qualquer outro valor liga."""
+    return (valor or "true").strip().lower() != "false"
+
+
+COOKIE_SECURE = _cookie_secure(os.getenv("COOKIE_SECURE"))
 
 # Minutos que o cookie deve viver — igual à expiração do próprio JWT
 # (`DEFAULT_EXPIRES_DELTA`, hoje 30 min). Deriva do MESMO valor que
@@ -182,7 +185,7 @@ def _set_access_cookie(response: Response, token: str) -> None:
         # normalmente em toda chamada fetch/XHR com `credentials: "include"`.
         # "Lax" (em vez de "None") ainda barra o cookie em navegações
         # cross-site de terceiros (CSRF), sem exigir Secure — importante
-        # porque em dev COOKIE_SECURE é false. Ver AUTH_ROUTES_DESIGN_NOTES.md.
+        # porque no dev local COOKIE_SECURE=false. Ver AUTH_ROUTES_DESIGN_NOTES.md.
         samesite="lax",
     )
 
