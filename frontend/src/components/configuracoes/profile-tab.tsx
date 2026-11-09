@@ -46,16 +46,18 @@ function Field({
   );
 }
 
-/** Aba Perfil — nome e e-mail da conta (só leitura) e telefone, OAB e papel, guardados no
- *  navegador por usuário via useProfile (o backend ainda não tem esses campos). */
+/** Aba Perfil — nome e e-mail da conta (só leitura) e telefone, OAB e papel, gravados na conta
+ *  via useProfile (PATCH /auth/me/perfil). */
 export function ProfileTab() {
   const { profile, hydrated, update } = useProfile();
   const extras = { phone: profile.phone, oab: profile.oab, role: profile.role };
   const [draft, setDraft] = useState(extras);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
-  // O provider hidrata a partir do localStorage num efeito (depois do primeiro render), então o
-  // valor inicial acima pode ter capturado o padrão antes do perfil real chegar — sincroniza aqui.
+  // O usuário da sessão chega depois do primeiro render, então o valor inicial acima pode ter
+  // capturado o padrão antes do perfil real chegar — sincroniza aqui.
   useEffect(() => {
     if (hydrated) setDraft(extras);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,12 +68,20 @@ export function ProfileTab() {
   const set = <K extends keyof typeof draft>(key: K) => (v: (typeof draft)[K]) =>
     setDraft((prev) => ({ ...prev, [key]: v }));
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dirty) return;
-    update(draft);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (!dirty || saving) return;
+    setSaving(true);
+    setErro(null);
+    try {
+      await update(draft);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível salvar o perfil. Tente de novo.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -120,6 +130,11 @@ export function ProfileTab() {
         </label>
 
         <div className="flex items-center justify-end gap-3 mt-5 pt-4 border-t border-[#F0F0F6] dark:border-[#26262C]">
+          {erro && (
+            <span role="alert" className="text-[#A1362F] dark:text-[#F0938B]" style={{ fontSize: "13.2px" }}>
+              {erro}
+            </span>
+          )}
           {saved && (
             <span className="flex items-center gap-1.5 text-[#1E6B4A] dark:text-[#6FCB9A]" style={{ fontSize: "13.2px" }}>
               <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
@@ -128,7 +143,7 @@ export function ProfileTab() {
           )}
           <button
             type="submit"
-            disabled={!dirty}
+            disabled={!dirty || saving}
             className={`px-4 py-2 rounded-xl transition-all ${
               dirty
                 ? "bg-[#1A3A5C] hover:bg-[#1E4570] text-white shadow-[0_2px_10px_rgba(26,58,92,0.24)] active:scale-[0.98]"
@@ -136,7 +151,7 @@ export function ProfileTab() {
             }`}
             style={{ fontSize: "14.4px", fontWeight: 600 }}
           >
-            Salvar alterações
+            {saving ? "Salvando…" : "Salvar alterações"}
           </button>
         </div>
       </form>

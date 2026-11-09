@@ -1,31 +1,44 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Lock, ArrowRight, CheckCircle2 } from "lucide-react";
+import { redefinirSenha } from "@/lib/api";
 
-/** Redefinir senha — fora do escopo do RFC. Mockado: em produção o link do e-mail traria um
- *  token na URL que seria validado aqui; sem backend, o formulário só valida os campos. */
+/** Mesmo mínimo do cadastro (RegistroRequest no backend). */
+const SENHA_MINIMA = 8;
+
+/** Redefinir senha — o link do e-mail traz `?token=`, validado pelo backend (POST
+ *  /auth/redefinir-senha): uso único e 30 minutos de validade (issue #14). */
 export function ResetPasswordPage() {
   const router = useRouter();
+  const token = useSearchParams().get("token") ?? "";
+  const [error, setError] = useState<string | null>(
+    token ? null : "Este endereço não tem o link de redefinição. Abra o link que chegou por e-mail ou peça um novo."
+  );
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
-  const passwordTooShort = password.length > 0 && password.length < 6;
+  const passwordTooShort = password.length > 0 && password.length < SENHA_MINIMA;
   const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword;
-  const canSubmit = password.length >= 6 && confirmPassword === password && !loading;
+  const canSubmit = !!token && password.length >= SENHA_MINIMA && confirmPassword === password && !loading;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError(null);
+    try {
+      await redefinirSenha(token, password);
       setDone(true);
-    }, 500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível redefinir a senha. Tente de novo.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -83,7 +96,7 @@ export function ResetPasswordPage() {
                     autoFocus
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder={`Mínimo ${SENHA_MINIMA} caracteres`}
                     className={`w-full pl-9 pr-9 py-2.5 rounded-xl border bg-[#FAFAFA] dark:bg-[#1C1C21] text-[#0F1117] dark:text-[#ECECEF] placeholder:text-[#AEAEBF] dark:placeholder:text-[#6E6E7C] outline-none focus:ring-2 transition-all ${
                       passwordTooShort
                         ? "border-[#C44040] dark:border-[#D96B6B] focus:border-[#C44040] dark:focus:border-[#D96B6B] focus:ring-[#C44040]/10 dark:focus:ring-[#D96B6B]/10"
@@ -104,7 +117,7 @@ export function ResetPasswordPage() {
                 </div>
                 {passwordTooShort && (
                   <p className="mt-1.5 text-[#C44040] dark:text-[#D96B6B]" style={{ fontSize: "12.1px" }}>
-                    A senha precisa ter pelo menos 6 caracteres.
+                    A senha precisa ter pelo menos {SENHA_MINIMA} caracteres.
                   </p>
                 )}
               </div>
@@ -135,6 +148,15 @@ export function ResetPasswordPage() {
                   </p>
                 )}
               </div>
+
+              {error && (
+                <p role="alert" className="mt-3 text-[#A1362F] dark:text-[#F0938B]" style={{ fontSize: "13.2px" }}>
+                  {error}{" "}
+                  <a href="/esqueci-senha" className="underline underline-offset-2">
+                    Pedir um novo link
+                  </a>
+                </p>
+              )}
 
               <button
                 type="submit"
