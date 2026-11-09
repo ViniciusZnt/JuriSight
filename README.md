@@ -11,7 +11,7 @@
 ## O que é
 
 JuriSight recebe o documento de um caso trabalhista e a intenção
-argumentativa do advogado, e retorna acórdãos do TST ordenados por
+argumentativa do advogado, e retorna acórdãos dos TRTs ordenados por
 relevância e alinhados à tese.
 
 **Problema resolvido:** Advogados trabalhistas gastam ~5h semanais
@@ -35,6 +35,15 @@ Portal TST (Falcão)
     → [Cross-Encoder Rerank]    ← reordena por relevância real (FlashRank, ONNX)
     → [Next.js]
 ```
+
+**Ordem dos resultados:** a ordem final é a do reranker (cross-encoder), ou seja,
+por relevância para a tese. A tela de resultados também ordena por data, no próprio
+navegador. **Não há ordenação por hierarquia das fontes** (súmula antes de acórdão):
+o acervo tem só acórdãos (69.349, todos com `hierarquia_categoria = 4`), então essa
+ordenação não teria o que separar. O `categorical_sort.py` e o parâmetro `ordenar_por`
+foram removidos por isso no commit
+[`d2a6abe`](https://github.com/ViniciusZnt/JuriSight/commit/d2a6abe42fb54e134754d7aad6c1b2312c55ad38).
+Se súmulas e OJs entrarem no acervo, a hierarquia volta a fazer sentido.
 
 Custo: o LLM e o enriquecimento de query rodam **100% locais** (Ollama). Só os
 **embeddings** usam a OpenAI (`text-embedding-3-small`) — **~US$ 8 uma única vez**
@@ -308,8 +317,7 @@ pnpm cypress:run       # headless
 pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e derruba o server no final
 ```
 
-> Ainda não há testes de backend/integração — o pipeline de IA e a API ainda não existem
-> (ver [Pipeline](#pipeline)). O frontend inteiro roda sobre dados mockados até lá.
+Os testes de backend estão na seção seguinte; os dois rodam no CI (ver [CI](#ci)).
 
 ---
 
@@ -333,6 +341,23 @@ uv run pytest
 > Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
 > clientes externos são substituídos por fakes injetados. Um smoke test manual de
 > ponta a ponta (com a infra de verdade no ar) é o passo 8 do Quick Start.
+
+---
+
+## CI
+
+O GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda em todo
+pull request e em todo push na `main`:
+
+| Job | O que faz |
+|-----|-----------|
+| `backend` | Instala com `uv sync --frozen` e roda `uv run pytest`, sem `tests/test_api_stress.py`, que faz requisições ao portal da Justiça do Trabalho |
+| `frontend` | `pnpm install --frozen-lockfile`, `pnpm test` (Jest) e `pnpm build` |
+| `deploy` | Só em push na `main`, com os dois jobs verdes: atualiza a VPS por SSH (ver `docs/deploy/2026-11-01-deploy-vps.md`) |
+
+Nenhum teste precisa de chave: OpenAI, Ollama, Qdrant e Postgres entram como fakes, e os
+testes que usam o banco de verdade são pulados sem `DATABASE_URL`. O workflow não tem chave
+de API; só o deploy usa os secrets `VPS_HOST`, `VPS_USER` e `VPS_SSH_KEY`.
 
 ---
 
