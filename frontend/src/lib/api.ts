@@ -234,6 +234,9 @@ export interface UsuarioPublico {
   nome: string | null;
   is_active: boolean;
   criado_em: string;
+  telefone?: string | null;
+  oab?: string | null;
+  papel?: string | null;
 }
 
 /** POST /auth/registro — cria a conta. Não loga sozinho (não seta cookie); chame
@@ -265,6 +268,34 @@ export async function logoutUsuario(): Promise<void> {
  *  se não houver sessão válida — use isso para checar se o usuário está logado. */
 export async function getUsuarioAtual(): Promise<UsuarioPublico> {
   return request<UsuarioPublico>("/auth/me");
+}
+
+/** POST /auth/esqueci-senha — manda o link por e-mail. A resposta é a mesma exista ou não a
+ *  conta; 503 quando o envio de e-mail não está configurado no servidor. */
+export async function pedirRedefinicaoSenha(email: string): Promise<void> {
+  await request<{ detail: string }>("/auth/esqueci-senha", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** POST /auth/redefinir-senha — troca a senha com o token do link (uso único, 30 minutos). */
+export async function redefinirSenha(token: string, password: string): Promise<void> {
+  await request<void>("/auth/redefinir-senha", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+}
+
+/** PATCH /auth/me/perfil — telefone, OAB e papel ficam na conta (issue #15). */
+export async function atualizarPerfil(dados: { telefone: string; oab: string; papel: string }): Promise<UsuarioPublico> {
+  return request<UsuarioPublico>("/auth/me/perfil", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados),
+  });
 }
 
 // --------------------------------------------------------------------------- //

@@ -45,6 +45,28 @@ CREATE TABLE IF NOT EXISTS auth.usuarios (
 );
 """
 
+# Dados de perfil que antes ficavam só no navegador (issue #15). ADD COLUMN IF NOT EXISTS
+# mantém o ensure_schema idempotente sobre tabelas já criadas sem essas colunas.
+_ADD_PERFIL = """
+ALTER TABLE auth.usuarios
+    ADD COLUMN IF NOT EXISTS telefone TEXT,
+    ADD COLUMN IF NOT EXISTS oab      TEXT,
+    ADD COLUMN IF NOT EXISTS papel    TEXT;
+"""
+
+# Links de redefinição de senha (issue #14). Só o hash do token fica no banco: quem ler a
+# tabela não consegue usar um link. Uso único, com validade curta.
+_CREATE_REDEFINICOES = """
+CREATE TABLE IF NOT EXISTS auth.redefinicoes_senha (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id  UUID        NOT NULL REFERENCES auth.usuarios(id) ON DELETE CASCADE,
+    token_hash  TEXT        NOT NULL UNIQUE,
+    criado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expira_em   TIMESTAMPTZ NOT NULL,
+    usado_em    TIMESTAMPTZ
+);
+"""
+
 # Garante unicidade de e-mail ignorando maiúsculas/minúsculas e é o índice que
 # a query de login (`WHERE lower(email) = lower(%s)`) deve usar.
 _CREATE_EMAIL_INDEX = """
@@ -69,6 +91,8 @@ def ensure_schema(database_url: str | None = None) -> None:
             cur.execute(_CREATE_SCHEMA)
             cur.execute(_CREATE_TABLE)
             cur.execute(_CREATE_EMAIL_INDEX)
+            cur.execute(_ADD_PERFIL)
+            cur.execute(_CREATE_REDEFINICOES)
         conn.commit()
         logger.info("PostgreSQL conectado — schema auth e tabela auth.usuarios prontos.")
     finally:

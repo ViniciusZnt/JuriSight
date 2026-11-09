@@ -3,25 +3,33 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, ArrowRight, ArrowLeft, MailCheck } from "lucide-react";
+import { pedirRedefinicaoSenha } from "@/lib/api";
 
-/** Esqueci minha senha — fora do escopo do RFC. Mockado: não envia e-mail de verdade, só simula
- *  o passo intermediário antes de "/redefinir-senha". Não revela se o e-mail existe na base. */
+/** Esqueci minha senha — o backend manda um link de uso único por e-mail (POST
+ *  /auth/esqueci-senha). Não revela se o e-mail existe na base. Se o servidor não tiver envio
+ *  de e-mail configurado, mostra o aviso dele em vez de fingir que enviou (issue #14). */
 export function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const canSubmit = email.trim().length > 0 && !loading;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError(null);
+    try {
+      await pedirRedefinicaoSenha(email.trim());
       setSent(true);
-    }, 500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível pedir o link agora. Tente de novo.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -54,16 +62,9 @@ export function ForgotPasswordPage() {
               </p>
               <p className="text-[#6B6B80] dark:text-[#9494A2] leading-relaxed" style={{ fontSize: "13.8px" }}>
                 Se <strong className="text-[#4A4A5A] dark:text-[#C4C4CE]">{email}</strong> estiver cadastrado, você vai
-                receber um link para redefinir sua senha em instantes.
+                receber um link para redefinir sua senha em instantes. Ele vale por 30 minutos; confira
+                também a caixa de spam.
               </p>
-              <button
-                type="button"
-                onClick={() => router.push("/redefinir-senha")}
-                className="mt-5 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
-                style={{ fontSize: "13.2px" }}
-              >
-                Já tenho um link — redefinir agora
-              </button>
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
@@ -85,6 +86,12 @@ export function ForgotPasswordPage() {
                   />
                 </div>
               </div>
+
+              {error && (
+                <p role="alert" className="mt-3 text-[#A1362F] dark:text-[#F0938B]" style={{ fontSize: "13.2px" }}>
+                  {error}
+                </p>
+              )}
 
               <button
                 type="submit"

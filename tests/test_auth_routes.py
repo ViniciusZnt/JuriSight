@@ -18,6 +18,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import dataclasses
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -70,6 +72,19 @@ class _FakeUsuarioStore:
             is_active=usuario.is_active,
             criado_em=usuario.criado_em,
         )
+
+    def update_perfil(self, usuario_id, *, telefone, oab, papel) -> Usuario:
+        usuario = dataclasses.replace(self._por_id[str(usuario_id)], telefone=telefone, oab=oab, papel=papel)
+        self._por_id[str(usuario_id)] = usuario
+        return usuario
+
+    def criar_redefinicao(self, usuario_id, token_hash, expira_em) -> bool:
+        self.redefinicoes = getattr(self, "redefinicoes", {})
+        self.redefinicoes[token_hash] = usuario_id
+        return True
+
+    def consumir_redefinicao(self, token_hash):
+        return getattr(self, "redefinicoes", {}).pop(token_hash, None)
 
     # Helper só de teste (não existe em UsuarioStore real).
     def inserir_direto(self, usuario: Usuario) -> None:
@@ -291,3 +306,96 @@ def test_com_secure_ligado_o_cookie_sai_com_a_flag(client: TestClient, monkeypat
     resp = client.post("/auth/login", json={"email": "secure@exemplo.com", "password": "senha-forte-123"})
     assert resp.status_code == 200
     assert "secure" in resp.headers["set-cookie"].lower()
+
+
+# --------------------------------------------------------------------------- #
+# PATCH /auth/me/perfil (issue #15)                                            #
+# --------------------------------------------------------------------------- #
+
+def _logar(client: TestClient, email: str = "perfil@exemplo.com") -> None:
+    client.post("/auth/registro", json={"email": email, "password": "senha-forte-123", "nome": "P"})
+    assert client.post("/auth/login", json={"email": email, "password": "senha-forte-123"}).status_code == 200
+
+
+def test_perfil_fica_na_conta_e_volta_no_me(client: TestClient):
+    _logar(client)
+    resp = client.patch("/auth/me/perfil", json={"telefone": " (48) 99999-0000 ", "oab": "123456/SC", "papel": "Assistente Jurídica"})
+    assert resp.status_code == 200
+    assert (resp.json()["telefone"], resp.json()["oab"], resp.json()["papel"]) == ("(48) 99999-0000", "123456/SC", "Assistente Jurídica")
+    me = client.get("/auth/me").json()
+    assert (me["telefone"], me["oab"], me["papel"]) == ("(48) 99999-0000", "123456/SC", "Assistente Jurídica")
+
+
+def test_perfil_texto_vazio_apaga_o_campo(client: TestClient):
+    _logar(client)
+    client.patch("/auth/me/perfil", json={"telefone": "123", "oab": "1/SC", "papel": "Advogado"})
+    resp = client.patch("/auth/me/perfil", json={"telefone": "  ", "oab": "", "papel": None})
+    assert (resp.json()["telefone"], resp.json()["oab"], resp.json()["papel"]) == (None, None, None)
+
+
+def test_perfil_papel_fora_da_lista_422(client: TestClient):
+    _logar(client)
+    assert client.patch("/auth/me/perfil", json={"papel": "Juiz"}).status_code == 422
+
+
+def test_perfil_sem_sessao_401(client: TestClient):
+    assert client.patch("/auth/me/perfil", json={"telefone": "1"}).status_code == 401
+
+
+# --------------------------------------------------------------------------- #
+# Esqueci minha senha (issue #14)                                              #
+# --------------------------------------------------------------------------- #
+
+class _FakeCorreio:
+    def __init__(self, configurado: bool = True):
+        self._configurado = configurado
+        self.enviados: list[tuple[str, str, str]] = []
+
+    def configurado(self) -> bool:
+        return self._configurado
+
+    def enviar(self, para, assunto, texto):
+        self.enviados.append((para, assunto, texto))
+
+
+def _correio(client: TestClient, configurado: bool = True) -> _FakeCorreio:
+    correio = _FakeCorreio(configurado)
+    client.app.dependency_overrides[auth_routes.get_correio] = lambda: correio
+    return correio
+
+
+def test_esqueci_senha_sem_smtp_diz_que_esta_indisponivel_em_vez_de_fingir(client: TestClient):
+    _correio(client, configurado=False)
+    resp = client.post("/auth/esqueci-senha", json={"email": "ana@example.com"})
+    assert resp.status_code == 503
+    assert "ainda não está disponível" in resp.json()["detail"]
+
+
+def test_esqueci_senha_mesma_resposta_com_ou_sem_conta(client: TestClient):
+    correio = _correio(client)
+    client.post("/auth/registro", json={"email": "existe@exemplo.com", "password": "senha-forte-123"})
+    com = client.post("/auth/esqueci-senha", json={"email": "existe@exemplo.com"})
+    sem = client.post("/auth/esqueci-senha", json={"email": "nao-existe@exemplo.com"})
+    assert com.status_code == sem.status_code == 202
+    assert com.json() == sem.json()
+    assert [p for p, _, _ in correio.enviados] == ["existe@exemplo.com"]
+
+
+def test_link_do_email_redefine_a_senha_uma_vez(client: TestClient, monkeypatch):
+    monkeypatch.setenv("APP_URL", "https://jurisight.exemplo")
+    correio = _correio(client)
+    client.post("/auth/registro", json={"email": "bia@exemplo.com", "password": "senha-antiga-1"})
+    client.post("/auth/esqueci-senha", json={"email": "bia@exemplo.com"})
+    texto = correio.enviados[0][2]
+    assert "https://jurisight.exemplo/redefinir-senha?token=" in texto
+    token = texto.split("token=")[1].split()[0]
+
+    assert client.post("/auth/redefinir-senha", json={"token": token, "password": "senha-nova-123"}).status_code == 204
+    assert client.post("/auth/login", json={"email": "bia@exemplo.com", "password": "senha-nova-123"}).status_code == 200
+    assert client.post("/auth/login", json={"email": "bia@exemplo.com", "password": "senha-antiga-1"}).status_code == 401
+    de_novo = client.post("/auth/redefinir-senha", json={"token": token, "password": "outra-senha-123"})
+    assert de_novo.status_code == 400 and "inválido, expirou ou já foi usado" in de_novo.json()["detail"]
+
+
+def test_redefinir_com_senha_curta_422(client: TestClient):
+    assert client.post("/auth/redefinir-senha", json={"token": "x", "password": "1234567"}).status_code == 422

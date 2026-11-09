@@ -40,6 +40,8 @@ interface AuthCtx {
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Troca o usuário da sessão pela versão que o backend devolveu (ex.: perfil salvo). */
+  atualizarUsuario: (usuario: UsuarioPublico) => void;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -76,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ isAuthenticated: usuario !== null, usuario, hydrated, login, logout }}>
+    <Ctx.Provider value={{ isAuthenticated: usuario !== null, usuario, hydrated, login, logout, atualizarUsuario: setUsuario }}>
       {children}
     </Ctx.Provider>
   );

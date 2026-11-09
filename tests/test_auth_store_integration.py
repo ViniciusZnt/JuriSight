@@ -173,3 +173,56 @@ def test_cadastros_concorrentes_mesmo_email_so_um_sucede(store: UsuarioStore):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+
+# --- redefinição de senha (issue #14) e perfil (issue #15) ---
+
+def _conta(store: UsuarioStore):
+    return store.create(email=f"redef-{uuid.uuid4().hex}@teste-integracao.invalid", hashed_password="h", nome=None)
+
+
+def _apagar(usuario_id) -> None:
+    with psycopg.connect(DATABASE_URL) as conn:
+        conn.execute("DELETE FROM auth.usuarios WHERE id = %s", (usuario_id,))
+
+
+def test_link_de_redefinicao_e_de_uso_unico_e_invalida_os_outros(store: UsuarioStore):
+    from datetime import datetime, timedelta, timezone
+
+    u = _conta(store)
+    try:
+        daqui_a_pouco = datetime.now(timezone.utc) + timedelta(minutes=30)
+        assert store.criar_redefinicao(u.id, "hash-1", daqui_a_pouco) is True
+        assert store.criar_redefinicao(u.id, "hash-2", daqui_a_pouco) is False  # menos de 1 minuto depois
+        with psycopg.connect(DATABASE_URL) as conn:  # um segundo link mais antigo, ainda aberto
+            conn.execute("INSERT INTO auth.redefinicoes_senha (usuario_id, token_hash, criado_em, expira_em) "
+                         "VALUES (%s, 'hash-0', NOW() - INTERVAL '5 minutes', %s)", (u.id, daqui_a_pouco))
+        assert store.consumir_redefinicao("hash-1") == u.id
+        assert store.consumir_redefinicao("hash-1") is None  # uso único
+        assert store.consumir_redefinicao("hash-0") is None  # os outros abertos foram invalidados
+        assert store.consumir_redefinicao("nao-existe") is None
+    finally:
+        _apagar(u.id)
+
+
+def test_link_expirado_nao_vale(store: UsuarioStore):
+    from datetime import datetime, timedelta, timezone
+
+    u = _conta(store)
+    try:
+        assert store.criar_redefinicao(u.id, "hash-velho", datetime.now(timezone.utc) - timedelta(seconds=1))
+        assert store.consumir_redefinicao("hash-velho") is None
+    finally:
+        _apagar(u.id)
+
+
+def test_perfil_gravado_volta_na_leitura(store: UsuarioStore):
+    u = _conta(store)
+    try:
+        assert (u.telefone, u.oab, u.papel) == (None, None, None)
+        store.update_perfil(u.id, telefone="(48) 1", oab="1/SC", papel="Advogado")
+        lido = store.get_by_id(str(u.id))
+        assert (lido.telefone, lido.oab, lido.papel) == ("(48) 1", "1/SC", "Advogado")
+    finally:
+        _apagar(u.id)

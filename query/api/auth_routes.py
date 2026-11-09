@@ -30,18 +30,25 @@ Max-Age) e a escolha JSON-vs-form-data do login estão documentados em
 """
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
-from datetime import datetime
+import secrets
+import smtplib
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 
+from auth import envio_email
 from auth.password import DUMMY_HASH, hash_password, verify_password
 from auth.store import EmailJaCadastradoError, Usuario, UsuarioStore
 from auth.tokens import DEFAULT_EXPIRES_DELTA, create_access_token, decode_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 # Proteção contra CSRF: cookie SameSite=Lax (ver _set_access_cookie) + a
 # allowlist explícita de CORS_ORIGINS em query/api/app.py (nunca "*" com
@@ -142,6 +149,9 @@ class UsuarioPublico(BaseModel):
     nome: str | None
     is_active: bool
     criado_em: datetime
+    telefone: str | None = None
+    oab: str | None = None
+    papel: str | None = None
 
     @classmethod
     def de_usuario(cls, usuario: Usuario) -> "UsuarioPublico":
@@ -151,7 +161,23 @@ class UsuarioPublico(BaseModel):
             nome=usuario.nome,
             is_active=usuario.is_active,
             criado_em=usuario.criado_em,
+            telefone=usuario.telefone,
+            oab=usuario.oab,
+            papel=usuario.papel,
         )
+
+
+class PerfilRequest(BaseModel):
+    """Dados de perfil da aba Perfil (issue #15). Texto vazio vira None."""
+
+    telefone: str | None = Field(default=None, max_length=30)
+    oab: str | None = Field(default=None, max_length=30)
+    papel: Literal["Advogado", "Assistente Jurídica"] | None = None
+
+    @field_validator("telefone", "oab")
+    @classmethod
+    def _limpa(cls, v: str | None) -> str | None:
+        return (v or "").strip() or None
 
 
 # --------------------------------------------------------------------------- #
@@ -316,3 +342,105 @@ def get_current_user_publico(usuario: Usuario = Depends(get_current_user)) -> Us
 @router.get("/me", response_model=UsuarioPublico)
 def me(usuario_publico: UsuarioPublico = Depends(get_current_user_publico)) -> UsuarioPublico:
     return usuario_publico
+
+
+@router.patch("/me/perfil", response_model=UsuarioPublico)
+def atualizar_perfil(
+    body: PerfilRequest,
+    usuario: Usuario = Depends(get_current_user),
+    store: UsuarioStore = Depends(get_usuario_store),
+) -> UsuarioPublico:
+    """Telefone, OAB e papel ficam na conta, e não no navegador: aparecem em qualquer
+    navegador ou computador em que a pessoa entrar (issue #15)."""
+    atualizado = store.update_perfil(usuario.id, telefone=body.telefone, oab=body.oab, papel=body.papel)
+    return UsuarioPublico.de_usuario(atualizado)
+
+
+
+# --------------------------------------------------------------------------- #
+# Esqueci minha senha (issue #14)                                              #
+# --------------------------------------------------------------------------- #
+
+VALIDADE_REDEFINICAO = timedelta(minutes=30)
+_MSG_LINK_ENVIADO = (
+    "Se houver uma conta com esse e-mail, enviamos um link para redefinir a senha. "
+    "Ele vale por 30 minutos."
+)
+
+
+class EsqueciSenhaRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _limpa_email(cls, v: str) -> str:
+        return v.strip()
+
+
+class RedefinirSenhaRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=8, max_length=128)  # mesma regra do cadastro
+
+
+def get_correio():
+    """Quem envia o e-mail (auth/envio_email.py); em teste, um falso via dependency_overrides."""
+    return envio_email
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _url_do_app() -> str:
+    """Endereço do front para o link: APP_URL ou, sem ela, a primeira origem do CORS."""
+    url = os.getenv("APP_URL") or (os.getenv("CORS_ORIGINS") or "http://localhost:3000").split(",")[0]
+    return url.strip().rstrip("/")
+
+
+def _enviar_link(correio, para: str, link: str) -> None:
+    texto = (
+        "Recebemos um pedido para redefinir a senha da sua conta no JuriSight.\n\n"
+        f"Para criar uma senha nova, abra este link (vale por 30 minutos e só pode ser usado uma vez):\n{link}\n\n"
+        "Se não foi você, ignore este e-mail: sua senha continua a mesma."
+    )
+    try:
+        correio.enviar(para, "Redefinição de senha — JuriSight", texto)
+    except (smtplib.SMTPException, OSError) as exc:
+        logger.warning("E-mail de redefinição de senha não foi enviado: %s", exc)
+
+
+@router.post("/esqueci-senha", status_code=status.HTTP_202_ACCEPTED)
+def esqueci_senha(
+    body: EsqueciSenhaRequest,
+    tarefas: BackgroundTasks,
+    store: UsuarioStore = Depends(get_usuario_store),
+    correio=Depends(get_correio),
+) -> dict:
+    """A resposta é a mesma exista ou não a conta, e o e-mail sai depois da resposta: nem a
+    mensagem nem o tempo de resposta revelam quais e-mails estão cadastrados."""
+    if not correio.configurado():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="A recuperação de senha por e-mail ainda não está disponível. Fale com o administrador do JuriSight.",
+        )
+    usuario = store.get_by_email(body.email)
+    if usuario is not None and usuario.is_active:
+        token = secrets.token_urlsafe(32)
+        expira_em = datetime.now(timezone.utc) + VALIDADE_REDEFINICAO
+        if store.criar_redefinicao(usuario.id, _hash_token(token), expira_em):
+            tarefas.add_task(_enviar_link, correio, usuario.email, f"{_url_do_app()}/redefinir-senha?token={token}")
+    return {"detail": _MSG_LINK_ENVIADO}
+
+
+@router.post("/redefinir-senha", status_code=status.HTTP_204_NO_CONTENT)
+def redefinir_senha(
+    body: RedefinirSenhaRequest,
+    store: UsuarioStore = Depends(get_usuario_store),
+) -> None:
+    usuario_id = store.consumir_redefinicao(_hash_token(body.token))
+    if usuario_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este link é inválido, expirou ou já foi usado. Peça um novo em \"Esqueci minha senha\".",
+        )
+    store.update_hashed_password(usuario_id, hash_password(body.password))

@@ -33,6 +33,10 @@ class Usuario:
     nome: str | None
     is_active: bool
     criado_em: datetime
+    # Perfil (issue #15): opcionais, preenchidos na aba Perfil das configurações.
+    telefone: str | None = None
+    oab: str | None = None
+    papel: str | None = None
 
 
 class EmailJaCadastradoError(Exception):
@@ -45,7 +49,7 @@ class EmailJaCadastradoError(Exception):
     """
 
 
-_SELECT_COLUNAS = "id, email, hashed_password, nome, is_active, criado_em"
+_SELECT_COLUNAS = "id, email, hashed_password, nome, is_active, criado_em, telefone, oab, papel"
 
 _SELECT_BY_EMAIL = f"""
 SELECT {_SELECT_COLUNAS} FROM auth.usuarios WHERE lower(email) = lower(%s)
@@ -61,6 +65,31 @@ VALUES (%s, %s, %s)
 RETURNING {_SELECT_COLUNAS}
 """
 
+_UPDATE_PERFIL = f"""
+UPDATE auth.usuarios SET telefone = %s, oab = %s, papel = %s, atualizado_em = NOW() WHERE id = %s
+RETURNING {_SELECT_COLUNAS}
+"""
+
+# No máximo um link por minuto por conta: evita que alguém lote a caixa de outra pessoa.
+_INSERT_REDEFINICAO = """
+INSERT INTO auth.redefinicoes_senha (usuario_id, token_hash, expira_em)
+SELECT %s, %s, %s
+WHERE NOT EXISTS (
+    SELECT 1 FROM auth.redefinicoes_senha
+    WHERE usuario_id = %s AND criado_em > NOW() - INTERVAL '1 minute'
+)
+"""
+
+_CONSUMIR_REDEFINICAO = """
+UPDATE auth.redefinicoes_senha SET usado_em = NOW()
+WHERE token_hash = %s AND usado_em IS NULL AND expira_em > NOW()
+RETURNING usuario_id
+"""
+
+_INVALIDAR_REDEFINICOES = """
+UPDATE auth.redefinicoes_senha SET usado_em = NOW() WHERE usuario_id = %s AND usado_em IS NULL
+"""
+
 _UPDATE_HASHED_PASSWORD = """
 UPDATE auth.usuarios SET hashed_password = %s, atualizado_em = NOW() WHERE id = %s
 """
@@ -74,6 +103,9 @@ def _row_para_usuario(row) -> Usuario:
         nome=row[3],
         is_active=row[4],
         criado_em=row[5],
+        telefone=row[6],
+        oab=row[7],
+        papel=row[8],
     )
 
 
@@ -132,6 +164,47 @@ class UsuarioStore:
         finally:
             conn.close()
         return _row_para_usuario(row) if row else None
+
+    def update_perfil(
+        self, usuario_id: uuid.UUID, *, telefone: str | None, oab: str | None, papel: str | None
+    ) -> Usuario:
+        """Grava telefone, OAB e papel; devolve o usuário atualizado."""
+        conn = psycopg.connect(self.database_url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(_UPDATE_PERFIL, (telefone, oab, papel, usuario_id))
+                row = cur.fetchone()
+            conn.commit()
+        finally:
+            conn.close()
+        return _row_para_usuario(row)
+
+    def criar_redefinicao(self, usuario_id: uuid.UUID, token_hash: str, expira_em: datetime) -> bool:
+        """Registra um link de redefinição. False se a conta já pediu um no último minuto."""
+        conn = psycopg.connect(self.database_url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(_INSERT_REDEFINICAO, (usuario_id, token_hash, expira_em, usuario_id))
+                criado = cur.rowcount == 1
+            conn.commit()
+        finally:
+            conn.close()
+        return criado
+
+    def consumir_redefinicao(self, token_hash: str) -> uuid.UUID | None:
+        """Usa o link (se existe, não expirou e não foi usado) e invalida os outros links abertos
+        da mesma conta. Devolve o id da conta, ou None."""
+        conn = psycopg.connect(self.database_url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(_CONSUMIR_REDEFINICAO, (token_hash,))
+                row = cur.fetchone()
+                if row is not None:
+                    cur.execute(_INVALIDAR_REDEFINICOES, (row[0],))
+            conn.commit()
+        finally:
+            conn.close()
+        return row[0] if row else None
 
     def update_hashed_password(self, usuario_id: uuid.UUID, novo_hash: str) -> None:
         """Persiste um hash re-calculado (rehash-on-verify, ver
