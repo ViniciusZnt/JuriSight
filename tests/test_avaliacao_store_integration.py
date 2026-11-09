@@ -123,36 +123,19 @@ def test_adicionar_pares_une_corredores(store, teses_criadas):
     assert len(store.pares_da_tese(tese.id)) == 2  # sem duplicar o par
 
 
-def test_rotulo_humano_prevalece(store, teses_criadas):
+def test_rotulos_finais_so_humanos(store, teses_criadas):
     tese = _tese(store, teses_criadas)
     d1, d2, d3 = _doc(), _doc(), _doc()
     pares = {p.documento_id: p for p in store.adicionar_pares(tese.id, {d1: ["bm25"], d2: ["bm25"], d3: ["bm25"]})}
 
     for d, rel, st in [(d1, 1, "neutro"), (d2, 2, "fortalece"), (d3, 3, "enfraquece")]:
         store.gravar_julgamento(Julgamento(pares[d].id, "jev:m", 1, rel, st))
-    # rodada 2 do Jev não conta como rótulo final
-    store.gravar_julgamento(Julgamento(pares[d1].id, "jev:m", 2, 0, "neutro"))
-    # humano só no d1
+    # humano só no d1; julgamentos antigos do Jev não contam
     store.gravar_julgamento(Julgamento(pares[d1].id, "humano:a@x.invalid", 1, 3, "fortalece"))
 
     rel, stance = store.rotulos_finais(tese.id)
-    assert rel == {d1: 3, d2: 2, d3: 3}
-    assert stance == {d1: "fortalece", d2: "fortalece", d3: "enfraquece"}
-
-
-def test_pares_sem_julgamento_ignora_rodada_feita(store, teses_criadas):
-    tese = _tese(store, teses_criadas)
-    d1, d2 = _doc(), _doc()
-    pares = {p.documento_id: p for p in store.adicionar_pares(tese.id, {d1: ["bm25"], d2: ["bm25"]})}
-    juiz = f"jev:teste-{uuid.uuid4().hex[:6]}"
-
-    ids = lambda rodada: {p.id for p in store.pares_sem_julgamento(juiz, rodada)}  # noqa: E731
-    assert ids(1) >= {pares[d1].id, pares[d2].id}
-
-    store.gravar_julgamento(Julgamento(pares[d1].id, juiz, 1, 2, "neutro"))
-    assert pares[d1].id not in ids(1)
-    assert pares[d2].id in ids(1)
-    assert pares[d1].id in ids(2)  # outra rodada continua pendente
+    assert rel == {d1: 3}
+    assert stance == {d1: "fortalece"}
 
 
 def test_fila_segue_ordem_e_progresso(store, teses_criadas):

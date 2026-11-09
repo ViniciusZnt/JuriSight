@@ -14,10 +14,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from auth.store import Usuario
-from avaliacao.juiz import TAMANHO_FUNDAMENTACAO
 from avaliacao.store import Julgamento, Par, Tese
 from query.api.app import app, get_current_user
-from query.api.avaliacao_routes import get_avaliacao_doc_retriever, get_avaliacao_store
+from query.api.avaliacao_routes import (
+    TAMANHO_FUNDAMENTACAO,
+    get_avaliacao_doc_retriever,
+    get_avaliacao_store,
+)
 from query.enrichment.schema import EstruturaArgumentativa
 from scraper.schema import DocumentoJuridico, TipoDocumento
 
@@ -101,7 +104,7 @@ def client(store, retriever):
 # GET /avaliacao/fila                                                          #
 # --------------------------------------------------------------------------- #
 
-def test_fila_retorna_par_sem_nota_do_jev(client, store):
+def test_fila_retorna_par_sem_dados_de_outros_julgamentos(client, store):
     resp = client.get("/avaliacao/fila")
     assert resp.status_code == 200
     body = resp.json()
@@ -118,7 +121,7 @@ def test_fila_retorna_par_sem_nota_do_jev(client, store):
     assert store.juizes_consultados == [_JUIZ]
 
 
-def test_fila_trunca_fundamentacao_no_mesmo_trecho_do_jev(client, retriever):
+def test_fila_trunca_fundamentacao(client, retriever):
     retriever.docs["doc-1"] = _documento("x" * (TAMANHO_FUNDAMENTACAO + 500))
     doc = client.get("/avaliacao/fila").json()["par"]["documento"]
     assert len(doc["fundamentacao_inicio"]) == TAMANHO_FUNDAMENTACAO

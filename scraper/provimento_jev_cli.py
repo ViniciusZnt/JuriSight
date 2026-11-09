@@ -23,7 +23,6 @@ from pathlib import Path
 
 from typesafe_sdk import TypeSafeError
 
-from avaliacao.passo_zero import confirmar
 from scraper.provimento_jev import (
     MODELO_PADRAO,
     TOKENS_POR_ACORDAO,
@@ -42,6 +41,14 @@ COLUNAS_DIVERGENCIAS = [
 ]
 VALORES_QUEM_ACERTOU = ("jev", "regex", "ambos", "nenhum")
 logger = logging.getLogger(__name__)
+
+
+def confirmar(pergunta: str) -> bool:
+    """Pergunta s/N; sem terminal interativo (EOF) conta como não."""
+    try:
+        return input(pergunta).strip().lower() == "s"
+    except EOFError:
+        return False
 
 
 def classificar_pendentes(

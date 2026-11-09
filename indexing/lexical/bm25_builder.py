@@ -63,6 +63,10 @@ def _tokenize(text: str) -> list[str]:
     → ["clt", "art", "193"]; "NR-15 e a norma" → ["nr", "15", "norma"]. Precisa
     ser idêntica dos dois lados (índice e busca), senão o recall cai.
 
+    Sem stemming nem lematização, de propósito: o BM25 serve para termos exatos e
+    o canal denso cobre as variações de forma (decisão "BM25 sem tratamento de
+    NLP" em docs/superpowers/specs/2026-10-21-inventario-e-plano-design.md).
+
     Input:  text — texto a tokenizar.
     Returns: lista de tokens normalizados, sem stopwords.
     """

@@ -1,16 +1,15 @@
 """
-Construção do conjunto-ouro do harness, em quatro etapas idempotentes (cada uma
+Construção do conjunto-ouro do harness, em três etapas idempotentes (cada uma
 pula o que já existe, então pode ser interrompida e retomada):
 
-  1. teses:    completa até --teses (reais das conversas + sintéticas filtradas)
-  2. pool:     une o top-k de bm25, vetorial e pipeline para cada tese
-  3. julgamento: o Jev julga os pares ainda sem julgamento, nas rodadas 1..N
-  4. amostra:  escolhe os pares que a especialista vai rotular
+  1. teses: completa até --teses (reais das conversas + sintéticas)
+  2. pool:  une o top-k de bm25, vetorial e pipeline para cada tese
+  3. fila:  coloca os pares do pool na fila de rotulação humana
 
-    python -m avaliacao.construir [--teses 100] [--rodadas 2] [--sim]
+    python -m avaliacao.construir [--teses 100] [--sim]
 
-As etapas 1 e 3 fazem chamadas pagas (OpenAI e Jev): mostram a estimativa e pedem
-confirmação, a menos que --sim. Recusar uma etapa só pula essa etapa.
+A etapa 1 faz chamadas pagas à OpenAI (tese sintética e tema): mostra a
+estimativa e pede confirmação, a menos que --sim. Recusar só pula a etapa.
 """
 from __future__ import annotations
 
@@ -18,20 +17,25 @@ import argparse
 import json
 import os
 import sys
-from typing import Callable
 
-from avaliacao.amostra import ItemAmostra, escolher_amostra
-from avaliacao.geracao import candidatos_sinteticos
-from avaliacao.passo_zero import TOKENS_POR_JULGAMENTO, confirmar, uuids_origem
+from avaliacao.geracao import candidatos_sinteticos, uuids_origem
 from avaliacao.pooling import CORREDORES
-from avaliacao.store import Julgamento, Par, Tese
+from avaliacao.store import Par
 
 TOKENS_POR_TESE_OPENAI = 1500
-LOTE_FETCH = 500
+TOKENS_POR_TEMA_OPENAI = 600
 
 
 def _aviso(msg: str) -> None:
     print(msg, file=sys.stderr)
+
+
+def confirmar(pergunta: str) -> bool:
+    """Pergunta s/N; sem terminal interativo (EOF) conta como não."""
+    try:
+        return input(pergunta).strip().lower() == "s"
+    except EOFError:
+        return False
 
 
 # --- funções puras ----------------------------------------------------------
@@ -54,87 +58,15 @@ def reais_novas(reais: list[dict], existentes: list[dict], limite: int) -> list[
 def precisa_de_pool(pares: list[Par]) -> bool:
     """True se a tese ainda não tem nenhum par vindo de um corredor do pooling.
 
-    Teses do passo 0 têm pares, mas só com o corredor "passo_zero": também
-    precisam do pool. `adicionar_pares` une os corredores, então remontar é seguro."""
+    Teses antigas do passo 0 têm pares, mas só com o corredor "passo_zero":
+    também precisam do pool. `adicionar_pares` une os corredores, então remontar é seguro."""
     return not any(c in CORREDORES for p in pares for c in p.corredores)
-
-
-def itens_da_amostra(
-    teses: list[Tese], pares: list[Par], julgamentos: list[Julgamento], juiz: str
-) -> list[ItemAmostra]:
-    """Um item por par que tem julgamento do `juiz` na rodada 1.
-
-    confianca = min(confianca_rel, confianca_stance); None conta como 0.0, o que
-    leva o par para a metade "incerta"."""
-    teses_por_id = {t.id: t for t in teses}
-    pares_por_id = {p.id: p for p in pares}
-    itens: list[ItemAmostra] = []
-    for j in julgamentos:
-        if j.juiz != juiz or j.rodada != 1 or j.par_id not in pares_por_id:
-            continue
-        tese = teses_por_id[pares_por_id[j.par_id].tese_id]
-        confianca = min(j.confianca_rel or 0.0, j.confianca_stance or 0.0)
-        itens.append(ItemAmostra(j.par_id, tese.tema, tese.origem, j.relevancia, j.stance, confianca))
-    return itens
-
-
-# --- carregamento de documentos ---------------------------------------------
-
-
-class CarregadorDocs:
-    """`carregar_doc(documento_id)` com cache; `pre_carregar` busca em lote."""
-
-    def __init__(self, retriever):
-        self._retriever = retriever
-        self._cache: dict = {}
-
-    def pre_carregar(self, ids) -> None:
-        faltam = sorted({i for i in ids if i not in self._cache})
-        for i in range(0, len(faltam), LOTE_FETCH):
-            self._cache.update(self._retriever.fetch(faltam[i : i + LOTE_FETCH]))
-
-    def __call__(self, documento_id: str):
-        if documento_id not in self._cache:
-            self.pre_carregar([documento_id])
-        return self._cache[documento_id]  # KeyError se o documento não existe mais
 
 
 # --- etapas -----------------------------------------------------------------
 
 
-def etapa_julgamento(store, juiz, carregar_doc: Callable, rodadas: int) -> int:
-    """Julga os pares sem julgamento de `juiz`, rodada a rodada, gravando a cada sucesso.
-
-    Devolve quantos itens falharam (0 = tudo certo); as demais rodadas seguem
-    mesmo com falhas, e um novo `etapa_julgamento` tenta só o que faltou."""
-    from avaliacao.juiz import julgar_lote
-
-    estruturas = {t.id: t.estrutura for t in store.listar_teses()}
-    falhas = 0
-    for rodada in range(1, rodadas + 1):
-        pares = store.pares_sem_julgamento(juiz.nome, rodada)
-        if not pares:
-            print(f"Rodada {rodada}: nada a julgar.")
-            continue
-        pre_carregar = getattr(carregar_doc, "pre_carregar", None)
-        if pre_carregar:
-            pre_carregar([p.documento_id for p in pares])
-        itens, sem_doc = [], 0
-        for p in pares:
-            try:
-                itens.append((p.id, estruturas[p.tese_id], carregar_doc(p.documento_id)))
-            except KeyError:
-                _aviso(f"Par {p.id}: documento {p.documento_id} não encontrado; pulado")
-                sem_doc += 1
-        ok = julgar_lote(juiz, itens, rodada, store.gravar_julgamento)
-        print(f"Jev rodada {rodada}: {ok}/{len(pares)} julgamentos")
-        if ok < len(itens):
-            _aviso(f"Atenção: {len(itens) - ok} julgamento(s) da rodada {rodada} falharam; rode de novo para retomar.")
-        falhas += (len(itens) - ok) + sem_doc
-    return falhas
-
-
-def etapa_teses(store, deps, juiz, cliente, alvo: int, seed: int, sim: bool) -> int:
+def etapa_teses(store, deps, cliente, alvo: int, seed: int, sim: bool) -> int:
     """Completa as teses até `alvo` (todas as já gravadas contam). Devolve 1 se faltou tese."""
     from avaliacao.geracao import sortear_split, teses_reais
     from avaliacao.temas import TEMAS, atribuir_tema
@@ -149,13 +81,11 @@ def etapa_teses(store, deps, juiz, cliente, alvo: int, seed: int, sim: bool) -> 
         teses_reais(deps.database_url), [t.estrutura for t in existentes if t.origem == "real"], faltam
     )
     faltam_sinteticas = faltam - len(novas)
-    jev_chamadas = len(novas) + 2 * faltam_sinteticas  # tema das reais + (filtro + tema) das sintéticas
+    tokens = faltam_sinteticas * TOKENS_POR_TESE_OPENAI + faltam * TOKENS_POR_TEMA_OPENAI
     print(
         f"Teses: {len(existentes)} gravadas, alvo {alvo}. A criar: {len(novas)} reais + "
         f"{faltam_sinteticas} sintéticas.\n"
-        f"Estimativa (mínima; tese rejeitada pelo filtro gasta chamadas a mais): "
-        f"Jev {jev_chamadas} chamadas x ~{TOKENS_POR_JULGAMENTO} = ~{jev_chamadas * TOKENS_POR_JULGAMENTO} tokens; "
-        f"OpenAI {faltam_sinteticas} teses x ~{TOKENS_POR_TESE_OPENAI} = ~{faltam_sinteticas * TOKENS_POR_TESE_OPENAI} tokens"
+        f"Estimativa OpenAI: {faltam_sinteticas} teses + {faltam} temas = ~{tokens} tokens"
     )
     if not sim and not confirmar("Continuar com as teses? [s/N] "):
         print("Etapa de teses pulada.")
@@ -173,7 +103,7 @@ def etapa_teses(store, deps, juiz, cliente, alvo: int, seed: int, sim: bool) -> 
         print(f"Tese real criada (tema: {tema})")
 
     if faltam_sinteticas > 0:
-        _completar_sinteticas(store, deps, juiz, cliente, alvo, seed, splits)
+        _completar_sinteticas(store, deps, cliente, alvo, seed, splits)
 
     total = len(store.listar_teses())
     if total < alvo:
@@ -182,14 +112,14 @@ def etapa_teses(store, deps, juiz, cliente, alvo: int, seed: int, sim: bool) -> 
     return 0
 
 
-def _completar_sinteticas(store, deps, juiz, cliente, alvo, seed, splits) -> None:
-    from avaliacao.geracao import gerar_tese, passa_filtro, sortear_acordaos
+def _completar_sinteticas(store, deps, cliente, alvo, seed, splits) -> None:
+    from avaliacao.geracao import gerar_tese, sortear_acordaos
     from avaliacao.temas import atribuir_tema
 
     teses = store.listar_teses()
     faltam = alvo - len(teses)
     usados = {t.documento_origem_id for t in teses if t.documento_origem_id}
-    # Sorteia a mais: o filtro rejeita algumas. Aumentar n estende cada metade,
+    # Sorteia a mais: alguma geração pode falhar. Aumentar n estende cada metade,
     # então os primeiros candidatos são sempre os mesmos entre execuções.
     acordaos = sortear_acordaos(deps.database_url, len(usados) + 2 * faltam, seed)
     uuids = uuids_origem(deps.database_url, acordaos)
@@ -198,10 +128,7 @@ def _completar_sinteticas(store, deps, juiz, cliente, alvo, seed, splits) -> Non
         if faltam <= 0:
             break
         try:
-            dados = gerar_tese(acordao, lado).model_dump()
-            if not passa_filtro(juiz, dados, acordao):
-                print(f"Tese de {acordao.id_documento} reprovada no filtro; descartada")
-                continue
+            dados = gerar_tese(acordao, lado, client=cliente).model_dump()
             tema = atribuir_tema(dados, client=cliente)
         except Exception as e:  # noqa: BLE001
             _aviso(f"Acórdão {acordao.id_documento} descartado: {e}")
@@ -238,25 +165,17 @@ def etapa_pool(store, deps) -> int:
     return falhas
 
 
-def etapa_amostra(store, juiz, seed: int) -> None:
-    if store.amostra():
-        print("Amostra: já definida; nada a fazer.")
-        return
-    if store.pares_sem_julgamento(juiz.nome, 1):
-        _aviso("Amostra adiada: ainda há pares sem julgamento na rodada 1. Rode de novo quando terminar.")
-        return
-    teses = store.listar_teses()
-    pares = [p for t in teses for p in store.pares_da_tese(t.id)]
-    itens = itens_da_amostra(teses, pares, store.julgamentos("jev:"), juiz.nome)
-    if not itens:
-        _aviso("Amostra: nenhum par julgado pelo Jev na rodada 1.")
-        return
-    ids = {i.par_id for i in itens}
-    obrigatorios = {j.par_id for j in store.julgamentos("humano:")} & ids
-    amostra = escolher_amostra(itens, seed=seed, obrigatorios=obrigatorios)
-    store.definir_amostra(amostra)
-    n_sorteada = sum(1 for m in amostra.values() if m == "sorteada")
-    print(f"Amostra definida: {n_sorteada} sorteada + {len(amostra) - n_sorteada} incerta")
+def etapa_fila(store) -> None:
+    """Põe na fila de rotulação (tabela `amostra`) os pares do pool que ainda não estão nela."""
+    na_fila = store.amostra()
+    novos = {
+        p.id: "sorteada"
+        for t in store.listar_teses()
+        for p in store.pares_da_tese(t.id)
+        if p.id not in na_fila
+    }
+    store.definir_amostra(novos)
+    print(f"Fila de rotulação: {len(na_fila) + len(novos)} pares ({len(novos)} novos)")
 
 
 # --- CLI --------------------------------------------------------------------
@@ -266,36 +185,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m avaliacao.construir", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--teses", type=int, default=100, help="total de teses (inclui as já gravadas)")
-    parser.add_argument("--rodadas", type=int, default=2, help="rodadas de julgamento do Jev")
-    parser.add_argument("--sim", action="store_true", help="pula as confirmações de custo")
+    parser.add_argument("--sim", action="store_true", help="pula a confirmação de custo")
     args = parser.parse_args(argv)
 
-    from typesafe_sdk import TypeSafeClient
+    from openai import OpenAI
 
     from avaliacao.contexto import carregar_dependencias
-    from avaliacao.juiz import JuizJev, perguntas_sha
 
     seed = int(os.getenv("AVALIACAO_SEED", "42"))
     deps = carregar_dependencias()
-    cliente = TypeSafeClient()
-    juiz = JuizJev(client=cliente)
+    cliente = OpenAI()
     store = deps.store
-    print(f"perguntas_sha={perguntas_sha()} jev={juiz.model} seed={seed}")
+    print(f"seed={seed}")
 
-    falhas = etapa_teses(store, deps, juiz, cliente, args.teses, seed, args.sim)
+    falhas = etapa_teses(store, deps, cliente, args.teses, seed, args.sim)
     falhas += etapa_pool(store, deps)
-
-    pendentes = sum(len(store.pares_sem_julgamento(juiz.nome, r)) for r in range(1, args.rodadas + 1))
-    print(
-        f"Julgamento: {pendentes} chamadas ao Jev x ~{TOKENS_POR_JULGAMENTO} = "
-        f"~{pendentes * TOKENS_POR_JULGAMENTO} tokens"
-    )
-    if pendentes and not args.sim and not confirmar("Continuar com o julgamento? [s/N] "):
-        print("Etapa de julgamento pulada.")
-    elif pendentes:
-        falhas += etapa_julgamento(store, juiz, CarregadorDocs(deps.retriever), args.rodadas)
-
-    etapa_amostra(store, juiz, seed)
+    etapa_fila(store)
     return 1 if falhas else 0
 
 

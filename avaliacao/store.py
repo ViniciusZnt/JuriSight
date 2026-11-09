@@ -2,7 +2,8 @@
 Acesso ao schema `avaliacao` (conjunto-ouro do harness de avaliação).
 
 Mesma convenção de conversations/store.py: psycopg puro, uma conexão por
-chamada. Juízes são strings: `humano:<email>` ou `jev:<modelo>`.
+chamada. Juízes são strings `humano:<email>`; linhas antigas `jev:<modelo>` (do
+juiz LLM que saiu do harness) ficam no banco, mas não contam como rótulo.
 """
 from __future__ import annotations
 
@@ -126,17 +127,6 @@ class AvaliacaoStore:
             ).fetchall()
         return [_par(r) for r in rows]
 
-    def pares_sem_julgamento(self, juiz: str, rodada: int) -> list[Par]:
-        with self._conn() as conn:
-            rows = conn.execute(
-                f"SELECT {_PAR_COLS} FROM avaliacao.pares p WHERE NOT EXISTS ("
-                "  SELECT 1 FROM avaliacao.julgamentos j "
-                "  WHERE j.par_id = p.id AND j.juiz = %s AND j.rodada = %s"
-                ") ORDER BY p.tese_id, p.documento_id",
-                (juiz, rodada),
-            ).fetchall()
-        return [_par(r) for r in rows]
-
     # --- julgamentos ---
 
     def gravar_julgamento(self, j: Julgamento) -> None:
@@ -171,16 +161,14 @@ class AvaliacaoStore:
         return [_julgamento(r) for r in rows]
 
     def rotulos_finais(self, tese_id: uuid.UUID) -> tuple[dict[str, int], dict[str, str]]:
-        """documento_id -> relevância e -> stance. Humano prevalece (o mais
-        recente, se houver vários); senão Jev rodada 1. Pares sem nenhum dos
-        dois ficam de fora."""
+        """documento_id -> relevância e -> stance, do julgamento humano mais
+        recente de cada par. Pares sem julgamento humano ficam de fora."""
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT DISTINCT ON (p.id) p.documento_id, j.relevancia, j.stance "
                 "FROM avaliacao.pares p JOIN avaliacao.julgamentos j ON j.par_id = p.id "
-                "WHERE p.tese_id = %s AND (starts_with(j.juiz, 'humano:') "
-                "  OR (starts_with(j.juiz, 'jev:') AND j.rodada = 1)) "
-                "ORDER BY p.id, starts_with(j.juiz, 'humano:') DESC, j.criado_em DESC",
+                "WHERE p.tese_id = %s AND starts_with(j.juiz, 'humano:') "
+                "ORDER BY p.id, j.criado_em DESC",
                 (tese_id,),
             ).fetchall()
         return {d: int(r) for d, r, _ in rows}, {d: s for d, _, s in rows}

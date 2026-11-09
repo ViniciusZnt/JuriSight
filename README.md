@@ -11,9 +11,8 @@
 ## O que é
 
 JuriSight recebe o documento de um caso trabalhista e a intenção
-argumentativa do advogado, e retorna jurisprudências do TST —
-acórdãos, súmulas, OJs e precedentes normativos — ordenados pela
-hierarquia das fontes jurídicas e alinhados à tese.
+argumentativa do advogado, e retorna acórdãos do TST ordenados por
+relevância e alinhados à tese.
 
 **Problema resolvido:** Advogados trabalhistas gastam ~5h semanais
 pesquisando jurisprudência em ferramentas que retornam resultados sem
@@ -34,7 +33,6 @@ Portal TST (Falcão)
     → [BM25 Index]              ← busca lexical (bm25s, mmap)
     → [FastAPI + RRF]           ← fusão dos rankings (pool de 30 candidatos)
     → [Cross-Encoder Rerank]    ← reordena por relevância real (FlashRank, ONNX)
-    → [Sort Categórico]         ← hierarquia jurídica
     → [Next.js]
 ```
 
@@ -50,7 +48,7 @@ para indexar todo o corpus; por consulta, o custo é desprezível.
 jurisight/
 ├── auth/                    ← autenticação real (hash de senha, JWT, acesso a auth.usuarios)
 ├── conversations/           ← histórico de busca persistido (public.conversas, ver §Conformidade)
-├── avaliacao/               ← harness de avaliação da busca (conjunto-ouro, juiz Jev, métricas; ver §Avaliação da busca)
+├── avaliacao/               ← harness de avaliação da busca (conjunto-ouro, pooling, métricas; ver §Avaliação da busca)
 │
 ├── scraper/
 │   ├── run.py              ← ponto de entrada da coleta
@@ -74,7 +72,7 @@ jurisight/
 │
 ├── query/
 │   ├── enrichment/          ← PDF Extractor, Query Enrichment (LLM), Query Builder
-│   ├── search/              ← Hybrid Search (RRF), Doc Retriever, Categorical Sort, Result Formatter
+│   ├── search/              ← Hybrid Search (RRF), Doc Retriever, Reranker, Result Formatter
 │   └── api/                 ← FastAPI: /enrich, /query, /document/{id}, /health, /auth/*, /conversas
 │
 ├── frontend/                ← interface Next.js (App Router)
@@ -325,10 +323,10 @@ uv run pytest
 |--------|-------------|
 | `scraper`/`processing`/`indexing` | Parsing HTML, chunking SAC, embeddings (OpenAI mockado), BM25 |
 | `query/enrichment` | PDF Extractor (pdfplumber mockado), Query Enrichment (Ollama mockado, RN05), Query Builder |
-| `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), Categorical Sort, Result Formatter |
+| `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), pipeline, Result Formatter |
 | `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
 | `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
-| `avaliacao` / `/avaliacao/*` | Métricas (nDCG, Recall, kappa), juiz Jev com cliente fake, pooling, amostra estratificada, `construir`/`eval`/passo 0, rotas de rotulação via `TestClient`; o store contra Postgres real só roda com `DATABASE_URL` |
+| `avaliacao` / `/avaliacao/*` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`/`eval`, rotas de rotulação via `TestClient`; o store contra Postgres real só roda com `DATABASE_URL` |
 | `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `comparar`/`conferir`/`aplicar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
 
 > Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
@@ -341,79 +339,44 @@ uv run pytest
 
 Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem
 uma régua: um **conjunto-ouro** de pares (tese × acórdão) com **relevância 0–3** e
-**stance** (fortalece / enfraquece / neutro). A especialista (Alexia) rotula uma
-amostra pequena; o **Jev** (TypeSafe System One) rotula o resto, depois de
-calibrado contra ela. O comando `eval` roda a busca para cada tese e reporta
-**nDCG@10**, **Recall@20**, a fração de "fortalece" entre os relevantes do top-10 e
-a fração de resultados **não julgados** no top-10. Esta etapa só mede, não muda a
-busca. Racional e decisões: [`docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md`](docs/superpowers/specs/2026-10-17-harness-avaliacao-design.md).
+**stance** (fortalece / enfraquece / neutro), julgados por pessoas. O comando `eval`
+roda a busca para cada tese e reporta **nDCG@10**, **Recall@20**, a fração de
+"fortalece" entre os relevantes do top-10 e a fração de resultados **não julgados**
+no top-10. Esta etapa só mede, não muda a busca.
 
-Variáveis novas no `.env` (ver `.env.example`):
+Variáveis no `.env` (ver `.env.example`):
 
 | Variável            | Padrão          | Descrição |
 |---------------------|-----------------|-----------|
-| `TYPESAFE_API_KEY`  | —               | Chave da TypeSafe (juiz Jev) — **obrigatória** |
-| `TYPESAFE_MODEL`    | `jev-1.13.0`    | Versão do Jev. Fixada de propósito: o alias `jev-latest` muda sozinho e invalidaria a comparação entre execuções. Trocar o modelo exige **julgar tudo de novo**: `rotulos_finais` aceita o Jev rodada 1 de qualquer modelo, então rótulos de modelos diferentes se misturariam |
-| `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas |
+| `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas e atribui o tema de cada tese |
 | `AVALIACAO_EMAILS`  | —               | E-mails (separados por vírgula) que podem usar a tela de rotulação |
-| `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (amostra e split dev/teste) |
+| `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (acórdãos de origem e split dev/teste) |
 
 Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start, passos 5 e 7).
 
-### 1 — Passo 0: o Jev funciona em português?
-
-Antes de construir o conjunto inteiro, testa-se o Jev numa amostra mínima
-(5 teses × 4 acórdãos, julgados duas vezes):
+### 1 — `construir`: o conjunto-ouro
 
 ```bash
-uv run python -m avaliacao.passo_zero preparar            # gera data/eval/passo_zero.csv
-# a Alexia preenche as colunas relevancia_alexia (0-3) e stance_alexia no CSV
-uv run python -m avaliacao.passo_zero comparar            # grava os rótulos e mostra os kappas
+uv run python -m avaliacao.construir [--teses 100] [--sim]
 ```
 
-Flags: `preparar [--teses 5] [--por-tese 4] [--csv ...] [--sim]` e
-`comparar [--csv ...] [--rotulador email]`.
-
-- O CSV não traz a nota do Jev, para não enviesar a Alexia. As colunas são
-  `par_id,tese,ementa,fundamentacao_inicio,link,relevancia_alexia,stance_alexia`: a
-  `tese` traz pedido, tese central e normas (`Pedido: … | Tese: … | Normas: a; b`) e
-  `fundamentacao_inicio` traz os mesmos 3.000 caracteres de fundamentação que o Jev
-  recebe, para a Alexia julgar a mesma evidência.
-- O `preparar` pula acórdãos que já originaram alguma tese no banco e sorteia a mais
-  para ainda gerar `--teses` teses novas.
-- O `preparar` **recusa sobrescrever** um CSV que já tenha rótulos preenchidos.
-- `--rotulador` usa por padrão o **primeiro e-mail de `AVALIACAO_EMAILS`**. Esse deve
-  ser o mesmo e-mail da conta usada na tela `/avaliacao`: o juiz humano é gravado
-  como `humano:<email>` (sem espaços nas pontas e em minúsculas; o `comparar` normaliza
-  o e-mail assim), e e-mails diferentes viram rotuladores diferentes.
-- Decisão a partir do relatório: seguir, usar o Jev só para relevância, ou trocar o juiz.
-
-### 2 — `construir`: o conjunto-ouro
-
-```bash
-uv run python -m avaliacao.construir [--teses 100] [--rodadas 2] [--sim]
-```
-
-Quatro etapas **idempotentes** (cada uma pula o que já existe, então dá para
+Três etapas **idempotentes** (cada uma pula o que já existe, então dá para
 interromper e retomar de onde parou):
 
-1. **teses** — completa até `--teses` (reais das conversas + sintéticas filtradas;
-   conversas de contas `@example.com`, usadas nos testes E2E, ficam de fora);
+1. **teses** — completa até `--teses` (reais das conversas + sintéticas; conversas de
+   contas `@example.com`, usadas nos testes E2E, ficam de fora). A OpenAI escreve as
+   sintéticas e atribui o tema de cada tese, que decide o split dev/teste;
 2. **pool** — une o top-20 de BM25, vetorial e pipeline completo para cada tese;
-3. **julgamento** — o Jev julga os pares ainda sem julgamento, nas rodadas `1..--rodadas`;
-4. **amostra** — escolhe os pares que a Alexia vai rotular (75 sorteados + 75 de menor confiança).
+3. **fila** — coloca os pares do pool na fila da tela de rotulação.
 
-As etapas pagas (teses sintéticas na OpenAI e julgamento no Jev) mostram a
-estimativa e **pedem confirmação**; `--sim` pula. Ordem de grandeza: ~1.300 tokens
-do Jev por chamada e ~40 pares por tese x rodadas (100 teses x 40 pares x 2
-rodadas = ~8.000 chamadas, ~10 milhões de tokens). A amostra só é montada quando
-**todos os pares têm a rodada 1 julgada**; se alguma chamada falhou, rode de novo.
+A etapa de teses chama a OpenAI: mostra a estimativa e **pede confirmação**; `--sim` pula.
 
-### 3 — Tela `/avaliacao`: a Alexia rotula
+### 2 — Tela `/avaliacao`: rotulação
 
 Abra `http://localhost:3000/avaliacao` (não há link na sidebar; o acesso é pela URL
 direta). Exige login **e** e-mail em `AVALIACAO_EMAILS`. A tela mostra a tese no
-topo e um acórdão por vez, **sem a nota do Jev**, com progresso.
+topo e um acórdão por vez, com progresso. Cada avaliador é gravado como
+`humano:<email>`.
 
 | Tecla | Ação |
 |-------|------|
@@ -424,23 +387,20 @@ Escolha a relevância e o stance; quando os dois estão escolhidos, o rótulo é
 próximo acórdão aparece, então dá para parar e voltar depois. Se o envio falhar, a
 seleção fica na tela e dá para tentar de novo.
 
-### 4 — `eval`: medir a busca
+### 3 — `eval`: medir a busca
 
 ```bash
 uv run python -m avaliacao.eval --split dev [--saida data/eval/runs/]
 uv run python -m avaliacao.eval --split teste     # só para a medição final
 ```
 
-Não chama a API do Jev, mas roda a busca real para cada tese: precisa de Qdrant, do
-índice BM25 e do embedding da OpenAI (além do Postgres). Se a busca de uma tese falhar,
-ela é avisada em stderr, fica fora das médias (conta como excluída) e seu id vai para
-`teses_com_erro` no JSON. Grava um JSON em `data/eval/runs/` com as
-métricas, o **commit** git, o **modelo do Jev**, o `perguntas_sha` (hash das
-perguntas feitas ao Jev) e a **calibração**: kappa de relevância (ponderado) e de
-stance contra a Alexia — **aprovado** se os dois forem **>= 0,6** — e o limite de
-confiança a partir do qual o Jev acerta >= 80%. Use `dev` para iterar; o split
-`teste` deve ser usado **só na medição final**, senão deixa de ser uma medida
-independente.
+Roda a busca real para cada tese: precisa de Qdrant, do índice BM25 e do embedding da
+OpenAI (além do Postgres). O rótulo de cada par é o julgamento humano mais recente;
+par sem julgamento humano conta como não julgado. Se a busca de uma tese falhar, ela
+é avisada em stderr, fica fora das médias (conta como excluída) e seu id vai para
+`teses_com_erro` no JSON. Grava um JSON em `data/eval/runs/` com as métricas e o
+**commit** git. Use `dev` para iterar; o split `teste` deve ser usado **só na medição
+final**, senão deixa de ser uma medida independente.
 
 ---
 
@@ -454,7 +414,7 @@ com probabilidades na tabela `provimento_jev` e, depois de uma conferência manu
 passar a usar o resultado do Jev em `documentos.provimento`. A regex continua gravada
 ao lado (`provimento_regex`). Racional e decisões: [`docs/superpowers/specs/2026-10-20-provimento-jev-design.md`](docs/superpowers/specs/2026-10-20-provimento-jev-design.md).
 
-Usa `TYPESAFE_API_KEY` e `TYPESAFE_MODEL` (padrão `jev-1.13.0`), como a avaliação, e
+Usa `TYPESAFE_API_KEY` e `TYPESAFE_MODEL` (padrão `jev-1.13.0`, nunca `jev-latest`) e
 precisa do Postgres no ar. Os comandos, na ordem de uso:
 
 ```bash
@@ -490,18 +450,6 @@ uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--con
   `quem_acertou` preenchido (ou que não tenha a coluna), para não apagar a conferência manual.
 - **Modelo fixo:** `TYPESAFE_MODEL` terminado em `-latest` é recusado; use uma versão
   fixa (ex.: `jev-1.13.0`).
-
----
-
-## Hierarquia Categórica dos Documentos
-
-| Categoria | Tipo                        | Descrição                                          |
-|-----------|-----------------------------|----------------------------------------------------|
-| 1         | Súmula                      | Entendimento consolidado — máximo peso argumentativo |
-| 2         | Orientação Jurisprudencial (OJ) | Interpretação técnica oficial                  |
-| 3         | Precedente Normativo        | Regra aplicável por categoria profissional         |
-| 4         | Acórdão                     | Decisão colegiada                                  |
-| 5         | Decisão Monocrática         | Tendência recente de um ministro                   |
 
 ---
 

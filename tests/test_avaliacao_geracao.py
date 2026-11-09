@@ -1,4 +1,4 @@
-"""Testes de geração de teses, filtro, teses reais e split (sem rede, sem OpenAI real)."""
+"""Testes de geração de teses, tema, teses reais e split (sem rede, sem OpenAI real)."""
 import json
 import os
 import uuid
@@ -10,12 +10,10 @@ import pytest
 from avaliacao.geracao import (
     deduplicar_estruturas,
     gerar_tese,
-    passa_filtro,
     sortear_split,
     sortear_acordaos,
     teses_reais,
 )
-from avaliacao.store import Julgamento
 from query.enrichment.schema import EstruturaArgumentativa
 from scraper.schema import DocumentoJuridico, TipoDocumento
 
@@ -86,29 +84,23 @@ def test_gerar_tese_recusa_do_modelo():
         gerar_tese(_doc(), "favoravel", client=fake)
 
 
-class _FakeJuiz:
-    nome = "fake"
+def test_atribuir_tema_devolve_tema_da_lista(monkeypatch):
+    from avaliacao.temas import TEMAS, _Tema, atribuir_tema
 
-    def __init__(self, probs):
-        self.probs = probs
-        self.chamadas = []
-
-    def julgar(self, tese, documento, rodada, par_id):
-        self.chamadas.append((rodada, par_id))
-        return Julgamento(
-            par_id=par_id, juiz=self.nome, rodada=rodada, relevancia=2,
-            stance="neutro", relevancia_probs=self.probs,
-        )
+    monkeypatch.delenv("OPENAI_GEN_MODEL", raising=False)
+    fake = _FakeOpenAI(_Tema(tema="dano moral"))
+    assert atribuir_tema(TESE_JSON, client=fake) == "dano moral"
+    kw = fake.chamadas[0]
+    assert kw["response_format"] is _Tema
+    assert kw["model"] == "gpt-4o-mini"
+    assert all(t in kw["messages"][0]["content"] for t in TEMAS)
+    assert "adicional de insalubridade" in kw["messages"][1]["content"]
 
 
-def test_filtro_usa_prob_relevancia_2_ou_mais():
-    tese = {"tese_central": "x"}
-    juiz = _FakeJuiz({"0": 0.3, "1": 0.3, "2": 0.2, "3": 0.2})
-    assert passa_filtro(juiz, tese, _doc()) is False
-    juiz = _FakeJuiz({"2": 0.3, "3": 0.3})
-    assert passa_filtro(juiz, tese, _doc()) is True
-    rodada, par_id = juiz.chamadas[0]
-    assert rodada == 0 and isinstance(par_id, uuid.UUID)
+def test_atribuir_tema_recusa_vira_outro():
+    from avaliacao.temas import atribuir_tema
+
+    assert atribuir_tema(TESE_JSON, client=_FakeOpenAI(None)) == "outro"
 
 
 def test_split_deterministico_e_cobre_os_dois_lados():

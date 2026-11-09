@@ -5,13 +5,12 @@ um relatório JSON por execução.
 
     python -m avaliacao.eval --split {dev,teste} [--saida data/eval/runs/]
 
-Não chama a API do Jev, mas roda a busca real (Qdrant, índice BM25 e embedding da OpenAI).
+Roda a busca real (Qdrant, índice BM25 e embedding da OpenAI).
 """
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import uuid
@@ -21,27 +20,11 @@ from typing import Callable
 
 from pydantic import ValidationError
 
-from avaliacao.metricas import (
-    fracao_fortalece,
-    fracao_nao_julgados,
-    kappa_cohen,
-    kappa_ponderado_quadratico,
-    ndcg_at_k,
-    recall_at_k,
-)
-from avaliacao.store import Julgamento, Tese
+from avaliacao.metricas import fracao_fortalece, fracao_nao_julgados, ndcg_at_k, recall_at_k
+from avaliacao.store import Tese
 
 SAIDA_PADRAO = Path(__file__).resolve().parent.parent / "data" / "eval" / "runs"
 METRICAS = ("ndcg_10", "recall_20", "fortalece_10", "nao_julgados_10")
-LIMIAR_APROVACAO_KAPPA = 0.6
-ALVO_ACURACIA_CONFIANCA = 0.8
-
-
-def nome_juiz_atual() -> str:
-    """Mesmo nome de `JuizJev().nome`, sem instanciar o cliente do Jev."""
-    from avaliacao.juiz import MODELO_PADRAO
-
-    return f"jev:{os.getenv('TYPESAFE_MODEL', MODELO_PADRAO)}"
 
 
 # --- métricas de ranking ----------------------------------------------------
@@ -116,93 +99,6 @@ def avaliar(
     }
 
 
-# --- concordância e calibração ----------------------------------------------
-
-
-def concordancia_reteste(julgamentos: list[Julgamento]) -> dict:
-    """Concordância do mesmo juiz entre a rodada 1 e a rodada 2.
-
-    Input:  julgamentos de UM só juiz (ValueError se houver mais de um).
-    Returns: {n, kappa_relevancia (ponderado quadrático), kappa_stance,
-             concordancia_exata}; só entram os pares com as duas rodadas.
-             concordancia_exata = fração de pares com relevância E stance iguais.
-    """
-    if len({j.juiz for j in julgamentos}) > 1:
-        raise ValueError("concordancia_reteste espera julgamentos de um único juiz")
-    r1 = {j.par_id: j for j in julgamentos if j.rodada == 1}
-    r2 = {j.par_id: j for j in julgamentos if j.rodada == 2}
-    pares = [p for p in r1 if p in r2]
-    a = [r1[p] for p in pares]
-    b = [r2[p] for p in pares]
-    exatos = sum(1 for x, y in zip(a, b) if x.relevancia == y.relevancia and x.stance == y.stance)
-    return {
-        "n": len(pares),
-        "kappa_relevancia": kappa_ponderado_quadratico([x.relevancia for x in a], [y.relevancia for y in b]),
-        "kappa_stance": kappa_cohen([x.stance for x in a], [y.stance for y in b]),
-        "concordancia_exata": exatos / len(pares) if pares else None,
-    }
-
-
-def limite_confianca(
-    itens: list[tuple[float, bool]], alvo: float = ALVO_ACURACIA_CONFIANCA
-) -> tuple[float | None, int]:
-    """Menor limite de confiança t tal que a acurácia dos itens com confiança >= t é >= alvo.
-
-    Input:  itens — (confiança, acertou) por par.
-    Returns: (t, quantos itens têm confiança >= t); (None, 0) se nenhum limite atinge o alvo.
-    """
-    for t in sorted({c for c, _ in itens}):
-        acima = [acertou for c, acertou in itens if c >= t]
-        if sum(acima) / len(acima) >= alvo - 1e-9:
-            return t, len(acima)
-    return None, 0
-
-
-def _confianca(j: Julgamento) -> float:
-    return min(j.confianca_rel or 0.0, j.confianca_stance or 0.0)
-
-
-def kappas_calibracao(store) -> dict:
-    """Calibração do Jev atual contra a especialista.
-
-    Humano de referência por par: o julgamento humano mais recente (o
-    `store.julgamentos` já vem ordenado por criado_em, então é o último da lista).
-    Kappas: só os pares `sorteada` com humano e Jev rodada 1. Limite de
-    confiança: pares `incerta` com humano e Jev rodada 1 (confiança = min das
-    duas; acerto = relevância e stance exatas).
-    """
-    amostra = store.amostra()
-    humano: dict[uuid.UUID, Julgamento] = {}
-    for j in store.julgamentos("humano:"):
-        humano[j.par_id] = j  # o último sobrescreve: mais recente
-    nome = nome_juiz_atual()
-    jev = {j.par_id: j for j in store.julgamentos(nome) if j.juiz == nome and j.rodada == 1}
-
-    comuns = [p for p in jev if p in humano]
-    sorteada = [p for p in comuns if amostra.get(p) == "sorteada"]
-    incerta = [p for p in comuns if amostra.get(p) == "incerta"]
-
-    k_rel = kappa_ponderado_quadratico([humano[p].relevancia for p in sorteada], [jev[p].relevancia for p in sorteada])
-    k_stance = kappa_cohen([humano[p].stance for p in sorteada], [jev[p].stance for p in sorteada])
-    itens = [
-        (_confianca(jev[p]), jev[p].relevancia == humano[p].relevancia and jev[p].stance == humano[p].stance)
-        for p in incerta
-    ]
-    limite, n_acima = limite_confianca(itens)
-    return {
-        "n_sorteada": len(sorteada),
-        "kappa_relevancia": k_rel,
-        "kappa_stance": k_stance,
-        "aprovado": (
-            k_rel is not None and k_stance is not None
-            and k_rel >= LIMIAR_APROVACAO_KAPPA and k_stance >= LIMIAR_APROVACAO_KAPPA
-        ),
-        "n_incerta": len(incerta),
-        "limite_confianca": limite,
-        "n_acima_limite": n_acima,
-    }
-
-
 # --- relatório e CLI --------------------------------------------------------
 
 
@@ -247,7 +143,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from avaliacao.contexto import carregar_dependencias, carregar_store
-    from avaliacao.juiz import PERGUNTAS, perguntas_sha
 
     store = carregar_store()
     teses = store.listar_teses(args.split)
@@ -270,26 +165,18 @@ def main(argv: list[str] | None = None) -> int:
 
         avaliacao = avaliar(teses, buscar_ids, store.rotulos_finais)
 
-    nome = nome_juiz_atual()
     agora = datetime.now()
     relatorio = {
         "data": agora.isoformat(timespec="seconds"),
         "split": args.split,
         "commit": _commit_git(),
-        "modelo_jev": nome,
-        "perguntas_sha": perguntas_sha(),
-        "perguntas": {k: p.model_dump(mode="json") for k, p in PERGUNTAS.items()},
         "n_teses": len(teses),
         **avaliacao,
-        "reteste": concordancia_reteste([j for j in store.julgamentos(nome) if j.juiz == nome]),
-        "calibracao": kappas_calibracao(store),
     }
     caminho = gravar_relatorio(relatorio, args.saida, agora)
 
-    print(f"split={args.split} commit={relatorio['commit']} jev={nome} perguntas_sha={relatorio['perguntas_sha'][:12]}")
+    print(f"split={args.split} commit={relatorio['commit']}")
     imprimir_tabela(avaliacao)
-    print(f"reteste: {relatorio['reteste']}")
-    print(f"calibração: {relatorio['calibracao']}")
     print(f"Relatório gravado em {caminho}")
     return 0
 

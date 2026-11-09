@@ -1,11 +1,14 @@
-"""Atribuição de tema a uma tese (lista fixa), via Jev Choice."""
+"""Atribuição de tema a uma tese (lista fixa), via OpenAI com saída estruturada."""
 from __future__ import annotations
 
+import json
 import os
+from typing import Literal
 
-from typesafe_sdk import Choice, TypeSafeClient
+from openai import OpenAI
+from pydantic import BaseModel
 
-from avaliacao.juiz import MODELO_PADRAO
+from avaliacao.geracao import MODELO_GERACAO_PADRAO
 
 TEMAS: list[str] = [
     "insalubridade",
@@ -40,19 +43,28 @@ _DESCRICOES: dict[str, str | None] = {
 }
 
 
-def atribuir_tema(
-    estrutura: dict,
-    client: TypeSafeClient | None = None,
-    model: str | None = None,
-) -> str:
-    client = client or TypeSafeClient()
-    model = model or os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
-    pergunta = Choice(
-        instructions="Qual é o tema jurídico principal da tese do advogado (`tese`)?",
-        criteria={t: _DESCRICOES[t] for t in TEMAS},
+class _Tema(BaseModel):
+    tema: Literal[tuple(TEMAS)]  # type: ignore[valid-type]
+
+
+_PROMPT_TEMA = (
+    "Você classifica teses de advogados trabalhistas brasileiros. Escolha o tema "
+    "jurídico principal da tese, entre os temas da lista:\n"
+    + "\n".join(f"- {t}: {d}" if d else f"- {t}" for t, d in _DESCRICOES.items())
+)
+
+
+def atribuir_tema(estrutura: dict, client: OpenAI | None = None) -> str:
+    """Tema principal da tese, um dos TEMAS ("outro" se o modelo não escolher nenhum)."""
+    client = client or OpenAI()
+    resposta = client.chat.completions.parse(
+        model=os.getenv("OPENAI_GEN_MODEL", MODELO_GERACAO_PADRAO),
+        messages=[
+            {"role": "system", "content": _PROMPT_TEMA},
+            {"role": "user", "content": json.dumps(estrutura, ensure_ascii=False)},
+        ],
+        response_format=_Tema,
+        temperature=0,
     )
-    resposta = client.system_one(
-        state={"tese": estrutura}, questions={"tema": pergunta}, model=model
-    )
-    tema = resposta.answers["tema"].choice
-    return tema if tema in TEMAS else "outro"
+    escolha = resposta.choices[0].message.parsed
+    return escolha.tema if escolha is not None else "outro"

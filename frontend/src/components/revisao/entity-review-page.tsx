@@ -371,7 +371,7 @@ export function EntityReviewPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const resultados = await queryJurisprudencia({ estrutura: data, ordenar_por: "relevancia" });
+      const resultados = await queryJurisprudencia({ estrutura: data });
       persistEstrutura(data);
       const snapshot = { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados };
       // Cada busca bem-sucedida vira uma versão NOVA (V1 na 1ª vez, V2 ao "Refinar

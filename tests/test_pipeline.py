@@ -47,12 +47,9 @@ def _doc(**kwargs) -> DocumentoJuridico:
     return DocumentoJuridico(**base)
 
 
-def test_buscar_ordena_hierarquia_e_corta_em_20():
+def test_buscar_mantem_ordem_do_reranker_e_corta_em_20():
     docs = {f"a{i}": _doc(id_documento=f"a{i}") for i in range(25)}
-    docs["s1"] = _doc(id_documento="s1", tipo_documento=TipoDocumento.SUMULA, hierarquia_categoria=1)
-    # A súmula fica no meio do ranking (dentro do corte de 20) — só a hierarquia
-    # a põe em primeiro lugar.
-    ids = [f"a{i}" for i in range(5)] + ["s1"] + [f"a{i}" for i in range(5, 25)]
+    ids = [f"a{i}" for i in range(25)]
     hybrid = _FakeHybrid([(i, 1.0 / (n + 1)) for n, i in enumerate(ids)])
 
     resultado = buscar(
@@ -63,7 +60,7 @@ def test_buscar_ordena_hierarquia_e_corta_em_20():
     )
 
     assert len(resultado) == N_RESULTS_FINAL == 20
-    assert resultado[0].tipo_documento == TipoDocumento.SUMULA
+    assert [card.id for card in resultado] == ids[:20]
 
 
 def test_buscar_estrutura_vazia_levanta_value_error():

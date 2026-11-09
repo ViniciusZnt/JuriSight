@@ -3,9 +3,8 @@ Endpoints da tela de rotulação do harness de avaliação: a especialista receb
 um par (tese, acórdão) por vez e grava relevância (0-3) e stance.
 
 Mesmo padrão de query/api/conversa_routes.py. O acesso é restrito aos e-mails
-de `AVALIACAO_EMAILS`. A resposta da fila NUNCA carrega nada do Jev (nota,
-probabilidades, confiança, metade da amostra): a especialista rotula às cegas,
-senão o kappa humano-Jev perde o sentido.
+de `AVALIACAO_EMAILS`. A resposta da fila não diz qual sistema trouxe o acórdão
+nem a nota de outros avaliadores: quem rotula julga às cegas.
 """
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from auth.store import Usuario
-from avaliacao.juiz import TAMANHO_FUNDAMENTACAO
 from avaliacao.store import AvaliacaoStore, Julgamento
 from query.api.auth_routes import get_current_user
 from query.enrichment.schema import EstruturaArgumentativa
@@ -28,6 +26,8 @@ router = APIRouter(prefix="/avaliacao", tags=["avaliacao"])
 # Convenção: humanos sempre gravam na rodada 1; o upsert (par, juiz, rodada)
 # faz uma correção do mesmo humano sobrescrever o rótulo anterior.
 RODADA_HUMANO = 1
+# Quanto da fundamentação vai para a tela, junto com a ementa.
+TAMANHO_FUNDAMENTACAO = 3000
 
 
 def get_avaliacao_store(request: Request) -> AvaliacaoStore:
@@ -109,7 +109,6 @@ def fila(
         documento = DocumentoFila(
             id=par.documento_id,
             ementa=doc.ementa,
-            # Mesmo trecho que o Jev julgou (avaliacao.juiz.montar_estado).
             fundamentacao_inicio=(doc.fundamentacao or "")[:TAMANHO_FUNDAMENTACAO],
             link_original=doc.link_original,
             numero_processo=doc.numero_processo,
