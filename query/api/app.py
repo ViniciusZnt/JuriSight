@@ -38,7 +38,7 @@ import psycopg
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from qdrant_client import QdrantClient
 from starlette.concurrency import run_in_threadpool
 
@@ -52,7 +52,7 @@ from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
 from query.api.conversa_routes import router as conversa_router
-from query.api.filtros_routes import filtro_indisponivel, get_filtro_store
+from query.api.filtros_routes import MAX_FILTROS, MAX_TEXTO, filtro_indisponivel, get_filtro_store
 from query.api.filtros_routes import router as filtros_router
 from query.enrichment import pdf_extractor
 from query.enrichment.query_enrichment import QueryEnricher
@@ -282,7 +282,7 @@ def _normas_em_dispositivos(
     codigos = {n: codigo_de_texto(n) for n in estrutura.normas}
     try:
         existentes = store.existentes([c for c in codigos.values() if c])
-    except FiltroIndisponivel as exc:
+    except (FiltroIndisponivel, psycopg.Error) as exc:  # passo opcional: o LLM já foi pago
         logger.warning("Normas não convertidas em dispositivos: %s", exc)
         return estrutura, []
     achados = list(dict.fromkeys(c for c in codigos.values() if c in existentes))
@@ -301,6 +301,16 @@ class QueryRequest(BaseModel):
     provimento: Provimento | None = None
     data_inicio: date | None = None
     data_fim: date | None = None
+
+    @field_validator("estrutura")
+    @classmethod
+    def _filtros_no_limite(cls, e: EstruturaArgumentativa) -> EstruturaArgumentativa:
+        """Mesmo teto do /filtros/contagem (query/api/filtros_routes.py); o enrich não passa por aqui."""
+        if (len(e.dispositivos) > MAX_FILTROS or len(e.expressoes) > MAX_FILTROS
+                or any(len(t) > MAX_TEXTO for t in e.dispositivos + e.expressoes)):
+            raise ValueError(f"No máximo {MAX_FILTROS} dispositivos e {MAX_FILTROS} expressões, "
+                             f"cada um com até {MAX_TEXTO} caracteres.")
+        return e
 
 
 @app.post("/query", response_model=list[ResultCard], dependencies=[Depends(limite_diario("query"))])
@@ -323,8 +333,9 @@ async def query(
         if not ids:
             return []
     cards = await _buscar_cards(body, hybrid, retriever, reranker, ids)
-    if ids is not None:
-        cards = [c.model_copy(update={"faixa": "restrita"}) for c in cards]
+    if ids is not None:  # garantia da faixa restrita: nunca marca um card que não está entre os elegíveis
+        elegiveis = set(ids)
+        cards = [c.model_copy(update={"faixa": "restrita"}) for c in cards if c.id in elegiveis]
     return await run_in_threadpool(com_classificacao, cards, provimento_store)
 
 

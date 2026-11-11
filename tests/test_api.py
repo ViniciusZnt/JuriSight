@@ -545,6 +545,32 @@ def test_query_com_filtro_passa_elegiveis_e_marca_restrita(client, monkeypatch):
     assert store.calls == [("elegiveis", ["art_192_clt"], [])]
 
 
+def test_query_com_filtro_nunca_marca_restrita_card_fora_dos_elegiveis(client, monkeypatch):
+    _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(elegiveis=["a-id"])
+    real = api_app.buscar
+    monkeypatch.setattr(api_app, "buscar", lambda *a, **k: real(*a, **{**k, "documento_ids": None}))  # busca "esquece" o filtro
+
+    resp = client.post("/query", json=_FILTRO)
+
+    assert [(c["id"], c["faixa"]) for c in resp.json()] == [("a-id", "restrita")]
+
+
+@pytest.mark.parametrize("rota", ["/query", "/query/livre"])
+@pytest.mark.parametrize("estrutura", [
+    {"dispositivos": [f"art_{i}_clt" for i in range(21)]},
+    {"expressoes": [f"expressao {i}" for i in range(21)]},
+    {"expressoes": ["x" * 201]},
+    {"dispositivos": ["x" * 201]},
+])
+def test_query_filtros_acima_do_limite_422(client, rota, estrutura):
+    hybrid = _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore()
+    resp = client.post(rota, json={"estrutura": {"tese_central": "x", **estrutura}})
+    assert resp.status_code == 422
+    assert hybrid.calls == []
+
+
 def test_query_com_filtro_sem_elegiveis_devolve_lista_vazia_sem_buscar(client):
     hybrid = _busca_fake()
     app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(elegiveis=[])
@@ -570,7 +596,7 @@ def test_query_com_filtro_sem_store_503(client):
     app.dependency_overrides[get_filtro_store] = lambda: None
     resp = client.post("/query", json=_FILTRO)
     assert resp.status_code == 503
-    assert resp.json()["detail"] == "Filtro restrito indisponível. Rode python -m query.filtros.preparar no servidor."
+    assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."
 
 
 def test_query_com_filtro_e_tabelas_ausentes_503(client):
@@ -627,6 +653,22 @@ def test_enrich_segue_sem_converter_quando_store_falha(client):
 
     assert body["estrutura"]["normas"] == ["CLT art. 192"]
     assert body["estrutura"]["dispositivos"] == [] and body["dispositivos_ia"] == []
+
+
+class _FiltroStoreBancoFora(_FakeFiltroStore):
+    def existentes(self, codigos):
+        raise psycopg.OperationalError("conexão recusada")
+
+
+def test_enrich_segue_sem_converter_quando_banco_falha(client):
+    est = EstruturaArgumentativa(tese_central="t", normas=["CLT art. 192"])
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est)
+    app.dependency_overrides[get_filtro_store] = lambda: _FiltroStoreBancoFora()
+
+    resp = client.post("/enrich", data={"intencao": "x"})
+
+    assert resp.status_code == 200
+    assert resp.json()["estrutura"]["normas"] == ["CLT art. 192"] and resp.json()["dispositivos_ia"] == []
 
 
 def test_estrutura_e_card_antigos_validam():
