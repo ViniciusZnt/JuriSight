@@ -33,7 +33,9 @@ N_RESULTS_FINAL = 20
 N_CANDIDATOS_PARA_RERANK = 30
 # Pool de candidatos maior quando algum filtro (provimento/período) está ativo —
 # o filtro é aplicado em Python DEPOIS da busca (ver aplicar_filtros), então um
-# pool maior evita perder recall. Só o provimento filtrado nos canais dispensa. Já cobre a folga do re-ranking acima.
+# pool maior evita perder recall. Filtro dentro dos canais (provimento, lista de
+# documentos do filtro restrito) dispensa: já devolve só candidatos válidos, então
+# vale o pool normal — e pontuar 80 ementas no re-ranking custa ~3 s a mais.
 N_CANDIDATOS_COM_FILTRO = 80
 
 
@@ -118,7 +120,7 @@ def buscar(
     restrito = documento_ids is not None
     if restrito and not documento_ids:
         return []
-    n_candidatos = N_CANDIDATOS_COM_FILTRO if filtro_pos_busca or restrito else N_CANDIDATOS_PARA_RERANK
+    n_candidatos = N_CANDIDATOS_COM_FILTRO if filtro_pos_busca else N_CANDIDATOS_PARA_RERANK
 
     kwargs_busca = {"provimento": provimento.value} if provimento_nos_canais else {}
     if restrito:

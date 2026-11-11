@@ -5,7 +5,7 @@ direto, sem HTTP. Nenhuma infra real: hybrid/retriever/reranker são fakes.
 import pytest
 
 from query.enrichment.schema import EstruturaArgumentativa
-from query.search.pipeline import N_CANDIDATOS_COM_FILTRO, N_RESULTS_FINAL, buscar
+from query.search.pipeline import N_CANDIDATOS_PARA_RERANK, N_RESULTS_FINAL, buscar
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
 
@@ -149,12 +149,12 @@ def test_buscar_sem_filtrar_nos_canais_comportamento_antigo():
     assert [c.id for c in resultado] == ["b"]
 
 
-def test_buscar_com_ids_usa_pool_com_filtro():
+def test_buscar_com_ids_usa_pool_normal():
     hybrid = _FakeHybrid([("a", 1.0)])
 
     _buscar_com(hybrid, {"a": _doc(id_documento="a")}, documento_ids=["a", "b"])
 
-    assert hybrid.calls[0]["n_results"] == N_CANDIDATOS_COM_FILTRO
+    assert hybrid.calls[0]["n_results"] == N_CANDIDATOS_PARA_RERANK
     assert hybrid.ids == [["a", "b"]]
 
 
