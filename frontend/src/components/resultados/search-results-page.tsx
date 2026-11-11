@@ -305,14 +305,6 @@ export function SearchResultsPage() {
       <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-4 pb-10">
         <StepIndicator current={2} />
 
-        {restrito && results.length === 0 ? (
-          <p className="w-full max-w-[800px] mb-4 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
-            Sem decisões no filtro restrito, a resposta não é gerada.
-          </p>
-        ) : (
-          <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
-        )}
-
         {estrutura && (
           <ComoFoiBuscado
             key={`${versionNumero}|${JSON.stringify(estrutura)}`}
@@ -329,6 +321,14 @@ export function SearchResultsPage() {
                 : null
             }
           />
+        )}
+
+        {restrito && results.length === 0 ? (
+          <p className="w-full max-w-[800px] mb-4 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
+            Sem decisões no filtro restrito, a resposta não é gerada.
+          </p>
+        ) : (
+          <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
         )}
 
         {restrito && (
