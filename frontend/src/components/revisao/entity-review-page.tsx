@@ -492,7 +492,7 @@ export function EntityReviewPage() {
                 <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.amber} placeholder="Novo agente…" />
               </FieldCard>
               <FieldCard>
-                <FieldLabel label="Normas jurídicas" description="Texto livre para a busca livre (não filtra)" />
+                <FieldLabel label="Outras normas · busca livre" description="NRs e normas fora da lista de dispositivos; orientam a busca livre, não filtram" />
                 <TagList items={data.normas} onChange={set("normas")} colorScheme={colors.blue} placeholder="Ex: NR-15…" />
               </FieldCard>
             </div>

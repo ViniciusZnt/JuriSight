@@ -40,7 +40,8 @@ export function FiltroRestrito({
   onChange: (patch: { dispositivos?: string[]; expressoes?: string[] }) => void;
 }) {
   const [busca, setBusca] = useState("");
-  const [opcoes, setOpcoes] = useState<SugestaoDispositivo[]>([]);
+  // última resposta das sugestões e de qual busca ela é (null em `opcoes` = falhou)
+  const [sugestoes, setSugestoes] = useState<{ q: string; opcoes: SugestaoDispositivo[] | null } | null>(null);
   const [expr, setExpr] = useState("");
   // última contagem recebida e de qual filtro ela é (null em `dados` = falhou)
   const [recebida, setRecebida] = useState<{ chave: string; dados: ContagemFiltros | null } | null>(null);
@@ -48,22 +49,25 @@ export function FiltroRestrito({
   const buscaRef = useRef<HTMLInputElement>(null);
   const exprRef = useRef<HTMLInputElement>(null);
 
+  const q = busca.trim();
   useEffect(() => {
-    if (!busca.trim()) {
-      setOpcoes([]);
-      return;
-    }
+    if (!q) return;
     let ativo = true;
     const t = setTimeout(() => {
-      sugerirDispositivos(busca.trim())
-        .then((r) => ativo && setOpcoes(r))
-        .catch(() => ativo && setOpcoes([]));
+      sugerirDispositivos(q)
+        .then((r) => ativo && setSugestoes({ q, opcoes: r }))
+        .catch(() => ativo && setSugestoes({ q, opcoes: null }));
     }, DEBOUNCE_MS);
     return () => {
       ativo = false;
       clearTimeout(t);
     };
-  }, [busca]);
+  }, [q]);
+
+  // Só vale a resposta da busca que está no campo: a de uma busca anterior não aparece.
+  const daBusca = q && sugestoes?.q === q ? sugestoes : null;
+  const opcoes = daBusca?.opcoes ?? [];
+  const semOpcoes = !daBusca ? null : daBusca.opcoes === null ? "erro" : daBusca.opcoes.length ? null : "vazio";
 
   const chave = JSON.stringify([dispositivos, expressoes]);
   useEffect(() => {
@@ -98,7 +102,6 @@ export function FiltroRestrito({
     setRotulos((r) => ({ ...r, [codigo]: o.rotulo }));
     if (!dispositivos.includes(codigo)) onChange({ dispositivos: [...dispositivos, codigo] });
     setBusca("");
-    setOpcoes([]);
   };
 
   const addExpr = () => {
@@ -167,6 +170,16 @@ export function FiltroRestrito({
             </ul>
           )}
         </div>
+        {semOpcoes === "erro" && (
+          <p className="mt-1 text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.2px" }}>
+            Filtro restrito indisponível no momento
+          </p>
+        )}
+        {semOpcoes === "vazio" && (
+          <p className={`mt-1 ${mutedCls}`} style={{ fontSize: "13.2px" }}>
+            {`Nenhum dispositivo do acervo para “${q}”. Normas fora da lista (ex.: NRs) vão em Outras normas ou em Expressões obrigatórias.`}
+          </p>
+        )}
       </div>
 
       <div className="mb-3">
