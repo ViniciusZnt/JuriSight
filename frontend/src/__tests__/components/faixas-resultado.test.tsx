@@ -47,6 +47,15 @@ beforeEach(() => {
 });
 
 describe("faixas de resultado", () => {
+  it("cada card diz por onde foi achado; card antigo, sem canais, não diz nada", () => {
+    sessao.resultados = [card("a", { canais: ["semantica", "termos"] }), card("b", { canais: ["termos"] }), card("c")];
+    sessao.estrutura = emptyEstrutura();
+    render(<SearchResultsPage />);
+    expect(screen.getByText("Achada pela semântica e pelos termos")).toBeInTheDocument();
+    expect(screen.getByText("Achada pelos termos")).toBeInTheDocument();
+    expect(screen.getAllByText(/^Achada pel/)).toHaveLength(2);
+  });
+
   it("sem filtro mostra a lista sem faixas e a dica", () => {
     sessao.resultados = [card("a")];
     sessao.estrutura = emptyEstrutura();

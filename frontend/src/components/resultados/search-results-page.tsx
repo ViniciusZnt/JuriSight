@@ -23,6 +23,7 @@ import { ResultadoCard } from "@/components/resultados/resultado-card";
 import { FaixaLivre } from "@/components/resultados/faixa-livre";
 import { contarFiltros, temFiltroRestrito, type ContagemFiltros } from "@/lib/api";
 import { RespostaGerada, useRespostaGerada } from "@/components/resultados/resposta-gerada";
+import { ComoFoiBuscado } from "@/components/resultados/como-foi-buscado";
 import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
@@ -277,6 +278,24 @@ export function SearchResultsPage() {
           </p>
         ) : (
           <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
+        )}
+
+        {estrutura && (
+          <ComoFoiBuscado
+            key={`${versionNumero}|${JSON.stringify(estrutura)}`}
+            estrutura={estrutura}
+            filtro={
+              restrito
+                ? {
+                    itens: [
+                      ...(contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos),
+                      ...estrutura.expressoes.map((e) => `“${e}”`),
+                    ],
+                    total: contagem?.total ?? null,
+                  }
+                : null
+            }
+          />
         )}
 
         {restrito && (

@@ -68,6 +68,13 @@ export interface EnrichResponse {
   aviso: string | null;
   /** Códigos de dispositivos que a IA sugeriu para o filtro restrito. */
   dispositivos_ia?: string[];
+  /** Expressões que a IA sugere e existem no acervo; só filtram se o advogado escolher. */
+  expressoes_sugeridas?: ExpressaoSugerida[];
+}
+
+export interface ExpressaoSugerida {
+  texto: string;
+  total: number;
 }
 
 /** query/search/result_formatter.py::ResultCard — card devolvido por POST /query. */
@@ -88,6 +95,8 @@ export interface ResultCard {
   score_rrf: number;
   /** Ausente em cards antigos (conversas salvas). */
   faixa?: "restrita" | "livre";
+  /** Por onde a decisão foi achada antes da fusão; ausente em cards antigos (conversas salvas). */
+  canais?: ("semantica" | "termos")[];
   /** Ausente/null em cards antigos (conversas salvas) e em documentos não classificados. */
   classificacao_provimento?: ClassificacaoProvimento | null;
 }
@@ -202,6 +211,20 @@ export interface SugestaoDispositivo {
   codigo: string;
   rotulo: string;
   total: number;
+}
+
+/** POST /query/explicacao — o texto que virou embedding e os termos exatos do BM25 (não busca nada). */
+export interface ExplicacaoBusca {
+  semantica: string;
+  termos: string[];
+}
+
+export async function explicarBusca(estrutura: EstruturaArgumentativa): Promise<ExplicacaoBusca> {
+  return request<ExplicacaoBusca>("/query/explicacao", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ estrutura }),
+  });
 }
 
 export interface ContagemFiltros {
