@@ -1,16 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Filter,
-  TrendingUp,
-  Bookmark,
-  AlertCircle,
   Scale,
-  Calendar,
-  FileText,
   Search,
   ChevronDown,
   Check,
@@ -19,37 +13,27 @@ import {
   ArrowDown,
   AlertTriangle,
   Download,
-  Copy,
-  CheckCircle2,
 } from "lucide-react";
 import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
-import { MetaItem } from "@/components/ui/meta-item";
-import { ActionButton } from "@/components/ui/action-button";
-import { Chip } from "@/components/ui/chip";
-import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { type Outcome } from "@/lib/outcome";
-import { contarDesfechos, outcomeDe, resumoProvimento, rotuloSelo, PROVIMENTO_LABEL } from "@/lib/provimento";
-import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
+import { contarDesfechos, outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
 import { SinteseResultados } from "@/components/resultados/sintese-resultados";
+import { ResultadoCard } from "@/components/resultados/resultado-card";
+import { FaixaLivre } from "@/components/resultados/faixa-livre";
+import { contarFiltros, temFiltroRestrito, type ContagemFiltros } from "@/lib/api";
 import { RespostaGerada, useRespostaGerada } from "@/components/resultados/resposta-gerada";
 import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
-  ementaComCitacao,
   ementasRepetidas,
   formatarData,
-  matchedEntities,
   relevanceRanks,
   titleFromEmenta,
-  tituloDoCard,
   truncate,
-  TIPO_DOCUMENTO_LABEL,
 } from "@/lib/decision-view";
-import { useSaved } from "@/lib/saved";
 import { useConversations } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
-import { copiarTexto } from "@/lib/utils";
 
 /** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
 function DropdownPill({
@@ -136,7 +120,6 @@ export function SearchResultsPage() {
   const router = useRouter();
   const { resultados, estrutura, versionNumero, loadVersion } = useSearchSession();
   const { conversations, activeId } = useConversations();
-  const { isSaved, toggle } = useSaved();
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -144,8 +127,25 @@ export function SearchResultsPage() {
   const [dateTo, setDateTo] = useState<string>("");
   const [citacao, setCitacao] = useState<string | null>(null); // chip da "Base citada"
   const [tribunal, setTribunal] = useState<string | null>(null);
-  const [expandidas, setExpandidas] = useState<Set<string>>(new Set()); // "Ver ementa completa"
-  const [copiada, setCopiada] = useState<string | null>(null);
+  const [recebida, setRecebida] = useState<{ chave: string; dados: ContagemFiltros | null } | null>(null);
+  const restrito = estrutura !== null && temFiltroRestrito(estrutura);
+  const chaveFiltro = JSON.stringify([estrutura?.dispositivos, estrutura?.expressoes]);
+  useEffect(() => {
+    if (!estrutura || !temFiltroRestrito(estrutura)) return;
+    let vivo = true;
+    contarFiltros(estrutura.dispositivos, estrutura.expressoes)
+      .then((c) => vivo && setRecebida({ chave: chaveFiltro, dados: c }))
+      .catch(() => vivo && setRecebida({ chave: chaveFiltro, dados: null })); // cabeçalho cai para o número de cards
+    return () => {
+      vivo = false;
+    };
+    // `chaveFiltro` resume dispositivos + expressões
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveFiltro]);
+  // só vale a contagem do filtro atual (nunca a de um filtro anterior)
+  const contagem = recebida?.chave === chaveFiltro ? recebida.dados : null;
+  const contagemFalhou = recebida?.chave === chaveFiltro && recebida.dados === null;
+  const contando = restrito && recebida?.chave !== chaveFiltro;
 
   // Acesso direto à URL sem ter passado por Home/Revisão — não há busca em andamento.
   useEffect(() => {
@@ -206,34 +206,26 @@ export function SearchResultsPage() {
     return sortDir === "asc" ? ordered.reverse() : ordered;
   }, [results, sortBy, sortDir]);
 
-  const filteredResults = sortedResults
-    .filter((d) => filter === "all" || outcomeDe(d) === filter)
-    .filter((d) => inPeriod(d.data_julgamento))
-    .filter((d) => !citacao || idsCitacao.has(d.id))
-    .filter((d) => !tribunal || d.tribunal === tribunal);
+  // desfecho, período e tribunal valem também para a faixa livre; o chip da base citada não (ele
+  // vem das ementas da faixa restrita e esconderia toda a livre)
+  const passaFiltrosComuns = (d: (typeof results)[number]) =>
+    (filter === "all" || outcomeDe(d) === filter) && inPeriod(d.data_julgamento) && (!tribunal || d.tribunal === tribunal);
+  const passaFiltros = (d: (typeof results)[number]) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id));
 
-  const toggleSave = (d: (typeof results)[number]) => {
-    toggle({
-      id: d.id,
-      title: titleFromEmenta(d.ementa),
-      court: d.tribunal,
-      chamber: d.turma,
-      date: d.data_julgamento ?? "",
-      outcome: outcomeDe(d),
-      relevance: ranks.get(d.id) ?? 0,
-      rapporteur: d.relator,
-      processNumber: d.numero_processo,
-    });
-  };
+  const filteredResults = sortedResults.filter(passaFiltros);
 
-  const formatDate = (dateStr: string | null) => formatarData(dateStr, "short");
   const formatDateLong = (dateStr: string | null) => formatarData(dateStr, "long");
-  const alternarEmenta = (id: string) =>
-    setExpandidas((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+
+  // "CLT art. 59 e 'banco de horas'" em verbos: cita … / contém … (rótulos vêm da contagem; sem ela, os códigos)
+  const exigencias = (plural: boolean) => {
+    const [cita, contem] = plural ? ["citam", "contêm"] : ["cita", "contém"];
+    const partes: string[] = [];
+    if (estrutura?.dispositivos.length) {
+      partes.push(`${cita} ${(contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos).join(" e ")}`);
+    }
+    if (estrutura?.expressoes.length) partes.push(`${contem} ${estrutura.expressoes.map((e) => `'${e}'`).join(" e ")}`);
+    return partes.join(" e ");
+  };
 
   const { favorable: favorableCount, unfavorable: unfavorableCount, neutral: neutralCount } = contarDesfechos(results);
 
@@ -279,7 +271,24 @@ export function SearchResultsPage() {
       <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-4 pb-10">
         <StepIndicator current={2} />
 
-        <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
+        {restrito && results.length === 0 ? (
+          <p className="w-full max-w-[800px] mb-4 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
+            Sem decisões no filtro restrito, a resposta não é gerada.
+          </p>
+        ) : (
+          <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
+        )}
+
+        {restrito && (
+          <div className="w-full max-w-[800px] mb-3">
+            <h2 className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
+              Filtro restrito
+            </h2>
+            <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
+              Só entram decisões que citam todos os dispositivos e contêm todas as expressões informados.
+            </p>
+          </div>
+        )}
 
         {/* Summary banner */}
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row flex-wrap sm:items-center justify-between gap-3">
@@ -289,8 +298,32 @@ export function SearchResultsPage() {
             </div>
             <div>
               <h2 className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
-                {filteredResults.length} {filteredResults.length === 1 ? "decisão encontrada" : "decisões encontradas"}
+                {restrito
+                  ? results.length === 0
+                    ? `Nenhuma decisão do acervo (≈70 mil acórdãos de 2025) ${exigencias(false)}. Abra a busca livre abaixo para ver decisões parecidas.`
+                    : (() => {
+                        if (!contagem) {
+                          const n = filteredResults.length;
+                          return `${n} ${n === 1 ? "decisão cumpre" : "decisões cumprem"} o filtro`;
+                        }
+                        const n = contagem.total;
+                        const mostra = results.length;
+                        return `${n} ${n === 1 ? "decisão do acervo" : "decisões do acervo"} ${exigencias(n !== 1)}${
+                          n > mostra ? ` · mostrando ${mostra === 1 ? "a mais relevante" : `as ${mostra} mais relevantes`}` : ""
+                        }`;
+                      })()
+                  : `${filteredResults.length} ${filteredResults.length === 1 ? "decisão encontrada" : "decisões encontradas"}`}
               </h2>
+              {restrito && results.length > 0 && contando && (
+                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
+                  contando no acervo…
+                </p>
+              )}
+              {restrito && contagemFalhou && (
+                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
+                  contagem do acervo indisponível
+                </p>
+              )}
               {estrutura?.tese_central && (
                 <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
                   Alinhadas à tese: &ldquo;{truncate(estrutura.tese_central, 90)}&rdquo;
@@ -521,7 +554,7 @@ export function SearchResultsPage() {
         )}
 
         {/* Results list */}
-        {filteredResults.length === 0 ? (
+        {filteredResults.length === 0 && restrito && results.length === 0 ? null : filteredResults.length === 0 ? (
           <div className="w-full max-w-[800px] flex flex-col items-center justify-center py-20 text-center">
             <div className="w-12 h-12 rounded-xl bg-[#EFF4FA] dark:bg-[#1A2A3C] flex items-center justify-center mb-4">
               <Search className="w-5 h-5 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
@@ -555,141 +588,16 @@ export function SearchResultsPage() {
           </div>
         ) : (
           <div className="w-full max-w-[800px] space-y-4">
-            {filteredResults.map((decision) => {
-              const saved = isSaved(decision.id);
-              const title = tituloDoCard(decision);
-              const outcome = outcomeDe(decision);
-              const rank = ranks.get(decision.id);
-              const entidades = matchedEntities(estrutura, decision.ementa);
-              const original = repetidas.get(decision.id);
-              const expandida = expandidas.has(decision.id);
-
-              return (
-                // O título é o link (Ctrl+clique, nova aba, Tab); o ::after dele cobre o card inteiro
-                // para o clique em qualquer ponto abrir a decisão. Controles internos ficam com z-10.
-                <div
-                  key={decision.id}
-                  id={`decisao-${decision.id}`}
-                  className="relative scroll-mt-16 target:ring-2 target:ring-[#1A3A5C]/40 dark:target:ring-[#8AB0DC]/50 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group"
-                >
-                  {/* Header */}
-                  <div className="px-6 pt-5 pb-4 border-b border-[#F0F0F6] dark:border-[#26262C]">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4 mb-3">
-                      <h3 className="text-[#0F1117] dark:text-[#ECECEF] leading-snug group-hover:text-[#1A3A5C] dark:group-hover:text-[#8AB0DC] transition-colors flex-1" style={{ fontSize: "16.7px", fontWeight: 600 }}>
-                        <Link href={`/decisao/${decision.id}`} className="after:absolute after:inset-0">
-                          {title}
-                        </Link>
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                        <OutcomeBadge outcome={outcome} label={rotuloSelo(decision)} size="sm" />
-                        <div
-                          title={`${rank}º mais relevante de ${results.length} nesta busca`}
-                          aria-label={`${rank}º mais relevante de ${results.length} nesta busca`}
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]"
-                        >
-                          <TrendingUp className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
-                          <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                            #{rank}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.2px" }}>
-                      <MetaItem icon={Scale} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span>{decision.tribunal} — {decision.turma}</span>
-                      </MetaItem>
-                      <MetaItem icon={Calendar} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span>{formatDate(decision.data_julgamento)}</span>
-                      </MetaItem>
-                      <MetaItem icon={FileText} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                        <span className="font-mono">{decision.numero_processo}</span>
-                      </MetaItem>
-                    </div>
-                  </div>
-
-                  {/* Provimento (Jev) */}
-                  <div className="relative z-10 px-6 py-3 border-b border-[#F0F0F6] dark:border-[#26262C]">
-                    <ProvimentoPanel compacto documentoId={decision.id} provimento={decision.provimento} classificacao={decision.classificacao_provimento} />
-                  </div>
-
-                  {/* Summary */}
-                  <div className="px-6 py-4">
-                    <p className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 whitespace-pre-line" style={{ fontSize: "14.4px" }}>
-                      {expandida ? decision.ementa.trim() : truncate(decision.ementa, 400)}
-                    </p>
-                    {decision.ementa.trim().length > 400 && (
-                      <button
-                        onClick={() => alternarEmenta(decision.id)}
-                        aria-expanded={expandida}
-                        className="relative z-10 flex items-center gap-1 -mt-1 mb-3 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
-                        style={{ fontSize: "13.2px", fontWeight: 500 }}
-                      >
-                        {expandida ? "Recolher ementa" : "Ver ementa completa"}
-                        <ChevronDown className={`w-3 h-3 transition-transform ${expandida ? "rotate-180" : ""}`} strokeWidth={2} />
-                      </button>
-                    )}
-
-                    {entidades.length > 0 && (
-                      <div className="flex items-start gap-2 mb-3">
-                        <AlertCircle className="w-3 h-3 text-[#9090A8] dark:text-[#7C7C88] mt-0.5 flex-shrink-0" strokeWidth={1.8} />
-                        <div className="flex flex-wrap gap-1.5 items-center">
-                          <span className="text-[#9090A8] dark:text-[#7C7C88]" style={{ fontSize: "12.6px" }}>Entidades correspondentes:</span>
-                          {entidades.map((entity, idx) => (
-                            <Chip key={idx} tone="amber" size="sm">
-                              {entity}
-                            </Chip>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap gap-1.5">
-                      <Chip tone="blue" size="sm">
-                        {TIPO_DOCUMENTO_LABEL[decision.tipo_documento]}
-                      </Chip>
-                      {original && (
-                        <Chip tone="amber" size="sm">
-                          Ementa igual à de #{ranks.get(original)}
-                        </Chip>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Footer actions */}
-                  <div className="px-6 py-3 bg-[#FAFAFA] dark:bg-[#1C1C21] border-t border-[#F0F0F6] dark:border-[#26262C] flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[#6B6B80] dark:text-[#A6A6B4]" style={{ fontSize: "12.6px" }}>
-                      Rel. {decision.relator}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <ActionButton
-                        icon={copiada === decision.id ? CheckCircle2 : Copy}
-                        label={copiada === decision.id ? "Copiada!" : "Copiar ementa"}
-                        tone={copiada === decision.id ? "success" : "neutral"}
-                        size="sm"
-                        className="relative z-10"
-                        title="Copiar a ementa com a linha de citação (tribunal, turma, processo, data, relator)"
-                        onClick={() =>
-                          copiarTexto(ementaComCitacao(decision)).then(() => {
-                            setCopiada(decision.id);
-                            setTimeout(() => setCopiada(null), 2000);
-                          })
-                        }
-                      />
-                      <ActionButton
-                        icon={Bookmark}
-                        label={saved ? "Salvo" : "Salvar"}
-                        tone={saved ? "accent" : "neutral"}
-                        size="sm"
-                        iconFill={saved}
-                        className="relative z-10"
-                        onClick={() => toggleSave(decision)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {filteredResults.map((decision) => (
+              <ResultadoCard
+                key={decision.id}
+                decision={decision}
+                estrutura={estrutura}
+                rank={ranks.get(decision.id)}
+                total={results.length}
+                ementaIgualA={repetidas.has(decision.id) ? ranks.get(repetidas.get(decision.id)!) : undefined}
+              />
+            ))}
 
             <div className="flex justify-center pt-2">
               <button
@@ -702,6 +610,15 @@ export function SearchResultsPage() {
               </button>
             </div>
           </div>
+        )}
+
+        {estrutura && restrito && (
+          <FaixaLivre key={`${versionNumero}|${JSON.stringify(estrutura)}`} estrutura={estrutura} excluir={new Set(results.map((d) => d.id))} passa={passaFiltrosComuns} />
+        )}
+        {!restrito && (
+          <p className="w-full max-w-[800px] mt-6 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
+            Busca só semântica. Para restringir, informe dispositivos ou expressões na Revisão de Contexto.
+          </p>
         )}
       </div>
     </main>

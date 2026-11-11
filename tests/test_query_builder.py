@@ -36,6 +36,11 @@ def test_build_bm25_query_inclui_termos_exatos():
     assert "NR-15" in q and "CLT art. 192" in q
 
 
+def test_bm25_query_inclui_rotulos_e_expressoes():
+    q = build_bm25_query(_estrutura(dispositivos=["art_192_clt"], expressoes=["adicional noturno"]))
+    assert "CLT art. 192" in q and "adicional noturno" in q
+
+
 def test_build_bm25_query_exclui_tese_central_e_setor_cargo():
     q = build_bm25_query(_estrutura())
     assert "tinha ciência do risco" not in q

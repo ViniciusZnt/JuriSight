@@ -191,6 +191,7 @@ class LoadedBM25:
         self._chunk_ids = chunk_ids
         self._mascaras: dict[str, np.ndarray] | None = None
         self._avisou_sem_provimentos = False
+        self._doc_ids: np.ndarray | None = None  # documento_id por chunk, montado na 1ª busca restrita
         if provimentos is not None:
             arr = np.asarray(provimentos)
             self._mascaras = {
@@ -198,16 +199,22 @@ class LoadedBM25:
             }
 
     def search(
-        self, query: str, n: int = 20, provimento: str | None = None
+        self,
+        query: str,
+        n: int = 20,
+        provimento: str | None = None,
+        documento_ids: set[str] | None = None,
     ) -> list[tuple[str, float]]:
         """Busca lexical: pontua a query contra o corpus e devolve os top-n.
 
         Com `provimento`, aplica a máscara do bm25s (score x 0 fora do provimento)
         e descarta score <= 0: com poucos chunks do provimento, o top-k seria
-        completado com documentos de score zero.
+        completado com documentos de score zero. O mesmo vale para `documento_ids`
+        (máscara 1.0 nos chunks desses documentos, multiplicada pela de provimento).
 
         Input:  query — texto da busca; n — quantos resultados; provimento —
-                valor a filtrar (None = sem filtro).
+                valor a filtrar (None = sem filtro); documento_ids — restringe aos
+                chunks desses documentos (None = sem restrição).
         Returns: lista [(chunk_id, score)] ordenada por score desc.
         """
         tokens = _tokenize(query)
@@ -227,6 +234,13 @@ class LoadedBM25:
                 mascara = self._mascaras.get(provimento)
                 if mascara is None:
                     return []
+        filtrado = provimento is not None
+        if documento_ids is not None:
+            if self._doc_ids is None:
+                self._doc_ids = np.asarray([c.rsplit(":", 1)[0] for c in self._chunk_ids])
+            por_doc = np.isin(self._doc_ids, list(documento_ids)).astype(np.float32)
+            mascara = por_doc if mascara is None else mascara * por_doc
+            filtrado = True
         n = min(n, len(self._chunk_ids))
         # corpus=self._chunk_ids: o bm25s devolve o chunk_id diretamente (em vez
         # do índice numérico interno), então não precisamos traduzir na mão.
@@ -238,5 +252,5 @@ class LoadedBM25:
         return [
             (docs[i], float(scores[i]))
             for i in range(len(docs))
-            if provimento is None or scores[i] > 0
+            if not filtrado or scores[i] > 0
         ]

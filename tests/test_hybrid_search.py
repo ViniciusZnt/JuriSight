@@ -140,3 +140,29 @@ def test_sem_filtro_chamadas_identicas():
     assert all(c["where"] is None for c in chroma.calls)
     assert bm25.calls == [("tese", 50)]
     assert bm25.kwargs == [{}]  # sem o kwarg provimento
+
+
+# --------------------------------------------------------------------------- #
+# HybridSearch.search — restrição a uma lista de documentos                    #
+# --------------------------------------------------------------------------- #
+
+def test_hybrid_repassa_ids_aos_tres_canais():
+    embedder, chroma, bm25 = _FakeEmbedder(), _FakeChroma(), _FakeBM25()
+    hybrid = HybridSearch(embedder, chroma, bm25)
+
+    hybrid.search("tese", documento_ids=["d1", "d2"], provimento="APROVADO")
+
+    assert all(
+        c["where"] == {"provimento": "APROVADO", "documento_id": ["d1", "d2"]} for c in chroma.calls
+    )
+    assert bm25.kwargs == [{"provimento": "APROVADO", "documento_ids": {"d1", "d2"}}]
+
+
+def test_hybrid_sem_ids_nao_passa_kwarg_ao_bm25():
+    embedder, chroma, bm25 = _FakeEmbedder(), _FakeChroma(), _FakeBM25()
+    hybrid = HybridSearch(embedder, chroma, bm25)
+
+    hybrid.search("tese")
+
+    assert bm25.kwargs == [{}]
+    assert all(c["where"] is None for c in chroma.calls)

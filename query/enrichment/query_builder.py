@@ -12,6 +12,7 @@ caso via LLM, este só formata o que já foi entendido.
 """
 from __future__ import annotations
 
+from query.filtros.dispositivos import rotulo
 from query.enrichment.schema import EstruturaArgumentativa
 
 
@@ -29,6 +30,8 @@ def build_bm25_query(estrutura: EstruturaArgumentativa) -> str:
         *estrutura.agente_nocivo,
         *estrutura.violacoes,
         *estrutura.normas,
+        *(rotulo(c) for c in estrutura.dispositivos),
+        *estrutura.expressoes,
     ]
     return " ".join(t for t in termos if t and t.strip())
 

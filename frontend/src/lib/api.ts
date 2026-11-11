@@ -41,6 +41,9 @@ export interface EstruturaArgumentativa {
   setor: string | null;
   cargo: string | null;
   tese_central: string;
+  /** Filtro restrito: códigos de dispositivos legais e expressões que a decisão TEM de ter. */
+  dispositivos: string[];
+  expressoes: string[];
 }
 
 export function emptyEstrutura(): EstruturaArgumentativa {
@@ -53,6 +56,8 @@ export function emptyEstrutura(): EstruturaArgumentativa {
     setor: null,
     cargo: null,
     tese_central: "",
+    dispositivos: [],
+    expressoes: [],
   };
 }
 
@@ -61,6 +66,8 @@ export interface EnrichResponse {
   /** null = nenhum PDF enviado; true = extraído com sucesso; false = FA02 (PDF sem texto). */
   pdf_extraido: boolean | null;
   aviso: string | null;
+  /** Códigos de dispositivos que a IA sugeriu para o filtro restrito. */
+  dispositivos_ia?: string[];
 }
 
 /** query/search/result_formatter.py::ResultCard — card devolvido por POST /query. */
@@ -79,6 +86,8 @@ export interface ResultCard {
   provimento: Provimento;
   link_original: string | null;
   score_rrf: number;
+  /** Ausente em cards antigos (conversas salvas). */
+  faixa?: "restrita" | "livre";
   /** Ausente/null em cards antigos (conversas salvas) e em documentos não classificados. */
   classificacao_provimento?: ClassificacaoProvimento | null;
 }
@@ -177,6 +186,45 @@ export async function queryJurisprudencia(body: QueryRequestBody): Promise<Resul
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+/** POST /query/livre — a mesma busca, sem o filtro restrito (faixa "livre"). */
+export async function queryLivre(body: QueryRequestBody): Promise<ResultCard[]> {
+  return request<ResultCard[]>("/query/livre", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface SugestaoDispositivo {
+  codigo: string;
+  rotulo: string;
+  total: number;
+}
+
+export interface ContagemFiltros {
+  total: number;
+  dispositivos: SugestaoDispositivo[];
+  expressoes: { texto: string; total: number }[];
+}
+
+export function temFiltroRestrito(e: EstruturaArgumentativa): boolean {
+  return e.dispositivos.length > 0 || e.expressoes.length > 0;
+}
+
+/** GET /filtros/dispositivos — autocompletar de dispositivos legais do acervo indexado. */
+export async function sugerirDispositivos(q: string): Promise<SugestaoDispositivo[]> {
+  return request<SugestaoDispositivo[]>(`/filtros/dispositivos?q=${encodeURIComponent(q)}`);
+}
+
+/** POST /filtros/contagem — quantas decisões cumprem cada filtro e todos juntos (503 = índice não preparado). */
+export async function contarFiltros(dispositivos: string[], expressoes: string[]): Promise<ContagemFiltros> {
+  return request<ContagemFiltros>("/filtros/contagem", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dispositivos, expressoes }),
   });
 }
 

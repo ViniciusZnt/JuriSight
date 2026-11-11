@@ -17,6 +17,7 @@ import {
   PencilLine,
   Loader2,
 } from "lucide-react";
+import { FiltroRestrito } from "@/components/revisao/filtro-restrito";
 import { useSearchSession } from "@/lib/search-session";
 import { useConversations } from "@/lib/conversations";
 import { emptyEstrutura, queryJurisprudencia, ApiError, type EstruturaArgumentativa } from "@/lib/api";
@@ -156,8 +157,9 @@ function TagList({
               </span>
             )}
             {!isEditing && (
-              <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity pr-1 ml-1 gap-0.5">
+              <div className="flex items-center pr-1 ml-1 gap-0.5">
                 <button
+                  aria-label={`Editar ${item}`}
                   onClick={() => {
                     setEditIdx(idx);
                     setEditVal(item);
@@ -168,6 +170,7 @@ function TagList({
                   <Pencil className={`opacity-55 ${colorScheme.text}`} style={{ width: "9px", height: "9px" }} strokeWidth={2} />
                 </button>
                 <button
+                  aria-label={`Remover ${item}`}
                   onClick={() => remove(idx)}
                   className="flex items-center justify-center rounded hover:bg-black/8 dark:hover:bg-white/10 transition-colors"
                   style={{ width: "18px", height: "18px" }}
@@ -351,7 +354,7 @@ export function EntityReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const manualParam = searchParams.get("modo") === "manual";
-  const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, setEstrutura: persistEstrutura, loadVersion } = useSearchSession();
+  const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, dispositivosIa, setEstrutura: persistEstrutura, loadVersion } = useSearchSession();
   const { activeId, addVersion } = useConversations();
 
   // Sem estrutura na sessão (ex.: acesso direto à URL) cai no mesmo modo manual do UC02.
@@ -365,7 +368,7 @@ export function EntityReviewPage() {
   const set = <K extends keyof EstruturaArgumentativa>(key: K) => (val: EstruturaArgumentativa[K]) =>
     setData((prev) => ({ ...prev, [key]: val }));
 
-  const entidadesConfirmadas = data.agente_nocivo.length + data.violacoes.length + data.normas.length;
+  const entidadesConfirmadas = data.agente_nocivo.length + data.violacoes.length + data.normas.length + data.dispositivos.length + data.expressoes.length;
 
   const buscar = async () => {
     setError(null);
@@ -476,13 +479,20 @@ export function EntityReviewPage() {
               <InlineEdit value={data.pedido_principal} onChange={(v) => set("pedido_principal")(v ?? "")} placeholder="Ex: adicional de insalubridade grau máximo" />
             </FieldCard>
 
+            <FiltroRestrito
+              dispositivos={data.dispositivos}
+              expressoes={data.expressoes}
+              dispositivosIa={dispositivosIa}
+              onChange={(patch) => setData((prev) => ({ ...prev, ...patch }))}
+            />
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FieldCard>
                 <FieldLabel label="Agentes nocivos" description="Agentes de risco identificados" />
                 <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.amber} placeholder="Novo agente…" />
               </FieldCard>
               <FieldCard>
-                <FieldLabel label="Normas jurídicas" description="Normas e dispositivos citados" />
+                <FieldLabel label="Normas jurídicas" description="Texto livre para a busca livre (não filtra)" />
                 <TagList items={data.normas} onChange={set("normas")} colorScheme={colors.blue} placeholder="Ex: NR-15…" />
               </FieldCard>
             </div>

@@ -17,6 +17,8 @@ interface SearchSessionState {
   /** Número da versão (V1, V2, ...) atualmente exibida — null antes da primeira busca
    *  completar (ainda não existe versão pra essa conversa). Ver @/lib/conversations. */
   versionNumero: number | null;
+  /** Códigos de dispositivos sugeridos pela IA no /enrich (para o selo na Revisão). */
+  dispositivosIa: string[];
 }
 
 interface EnrichResultInput {
@@ -25,6 +27,7 @@ interface EnrichResultInput {
   fileName: string | null;
   pdfExtraido: boolean | null;
   aviso: string | null;
+  dispositivosIa?: string[];
 }
 
 interface SearchSessionCtx extends SearchSessionState {
@@ -46,6 +49,7 @@ const initialState: SearchSessionState = {
   aviso: null,
   resultados: null,
   versionNumero: null,
+  dispositivosIa: [],
 };
 
 const Ctx = createContext<SearchSessionCtx | null>(null);
@@ -65,6 +69,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       pdfExtraido: data.pdfExtraido,
       aviso: data.aviso,
       resultados: null, // nova consulta invalida os resultados anteriores
+      dispositivosIa: data.dispositivosIa ?? [],
       versionNumero: null, // ainda não existe versão — só depois do 1º /query bem-sucedido
     }));
   }, []);
@@ -75,13 +80,15 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
 
   const loadVersion = useCallback((version: ConversationVersion) => {
     setState({
-      estrutura: version.estrutura,
+      // versões salvas antes do filtro restrito não têm esses campos
+      estrutura: { ...version.estrutura, dispositivos: version.estrutura.dispositivos ?? [], expressoes: version.estrutura.expressoes ?? [] },
       hasFile: version.hasFile,
       fileName: version.fileName,
       pdfExtraido: version.pdfExtraido,
       aviso: version.aviso,
       resultados: version.resultados,
       versionNumero: version.numero,
+      dispositivosIa: [],
     });
   }, []);
 

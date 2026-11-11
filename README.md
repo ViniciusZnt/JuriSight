@@ -532,6 +532,53 @@ uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--con
 
 ---
 
+## Filtro restrito
+
+Além do texto livre, a busca aceita **dispositivos** (ex.: `art_791_clt`, `b_ii_art_10_adct`, escolhidos
+com autocompletar) e **expressões obrigatórias** (ex.: "dano moral coletivo", singular ou plural, sem
+depender de acento ou quebra de linha). Com algum deles, o `/query` devolve só decisões que cumprem
+**todos** os dispositivos e expressões (faixa "restrita"); a busca livre, sem esses filtros, vem sob
+demanda em `/query/livre` (faixa "livre"). `/filtros/*` dá o autocompletar e as contagens. `/filtros/*` e
+`/query/livre` exigem login; só o `/query` conta no limite diário.
+
+Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas antes do primeiro uso (rode de novo quando entrarem decisões novas):
+
+```bash
+# local
+uv run python -m query.filtros.preparar
+
+# produção
+docker compose -f docker-compose.prod.yml exec api python -m query.filtros.preparar
+```
+
+- **Tempo:** na máquina local, 2m10 para as 69 mil decisões quando o índice de texto é feito do zero;
+  rodando de novo, ~8 s (o índice de texto só acrescenta as decisões novas).
+- **Disco:** `documento_tsv` ocupa ~550 MB (dos quais 71 MB do índice GIN),
+  `documento_dispositivo` ~96 MB e `dispositivo` ~1,5 MB, medidos com `pg_total_relation_size`.
+  Confira o `df -h` antes de rodar na VPS.
+- **Na VPS, rode fora do horário de uso:** o preparo refaz os dispositivos com `TRUNCATE`, e o
+  autocompletar, as contagens e a busca com filtro esperam até ele terminar (~8 s local; ~2 min quando
+  o índice de texto é refeito do zero).
+- **Latência:** a busca restrita usa o mesmo pool de 30 candidatos da busca normal, então fica
+  praticamente no mesmo tempo. Medido a quente, só o `buscar` (3 execuções): sem filtro 2,8 a 2,9 s;
+  "dano moral coletivo" (137 ids) 2,1 a 2,2 s; `art_791_clt` (18.037 ids) 2,9 a 3,1 s. A consulta dos ids
+  elegíveis fica de fora (~0,1 s). A contagem roda uma consulta por expressão, em paralelo: expressão
+  rara ~0,1 s; comum ("horas extras", 13,8 mil decisões) ~0,5 s; "justiça gratuita" + "dano moral" +
+  "horas extras" juntas ~0,5 s.
+- **Texto indexado:** só letras sem acento e números; hífen e pontuação viram espaço e o ponto entre
+  dígitos sai, então "auxílio-doença" casa "auxilio doença" e "Lei 13.467" casa "Lei 13467". Se essa
+  forma mudar (`_VERSAO_TEXTO` em `query/filtros/preparar.py`), o próximo preparo refaz o índice de
+  texto do zero sozinho.
+- **Códigos do acervo:** o acervo grava o art. 59-B da CLT como `b_art_59_clt`, então ele aparece como
+  "CLT art. 59, b", e escolher "CLT art. 59" também traz quem cita só o 59-B.
+- **Decisões novas:** só entram no filtro depois de rodar o preparo de novo (os dispositivos são
+  refeitos do zero; o índice de texto só acrescenta as decisões que ainda não estão nele).
+  Sem o preparo, o filtro responde 503.
+- **Testes:** `tests/test_filtros_store_integration.py` só lê o banco já preparado; o teste que roda o
+  preparo (reescreve as tabelas) só roda com `JURISIGHT_TESTAR_PREPARO=1`.
+
+---
+
 ## Stack
 
 | Tecnologia         | Função                                      |

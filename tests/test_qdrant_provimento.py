@@ -6,6 +6,7 @@ from indexing.vector_store.qdrant_store import (
     COLLECTION_COMPLETO,
     COLLECTION_EMENTA,
     QdrantStore,
+    _build_filter,
 )
 
 DOC_A = "aaaaaaaa-0000-0000-0000-000000000001"
@@ -77,3 +78,9 @@ def test_query_filtra_por_provimento(store):
     for colecao in (COLLECTION_COMPLETO, COLLECTION_EMENTA):
         res = store.query(VEC, n_results=10, where={"provimento": "APROVADO"}, collection=colecao)
         assert res and {r["documento_id"] for r in res} == {DOC_A}
+
+
+def test_build_filter_lista_vira_match_any():
+    f = _build_filter({"documento_id": [DOC_A, DOC_B], "provimento": "APROVADO"})
+    assert f.must[0] == models.FieldCondition(key="documento_id", match=models.MatchAny(any=[DOC_A, DOC_B]))
+    assert f.must[1].match == models.MatchValue(value="APROVADO")

@@ -33,7 +33,9 @@ N_RESULTS_FINAL = 20
 N_CANDIDATOS_PARA_RERANK = 30
 # Pool de candidatos maior quando algum filtro (provimento/período) está ativo —
 # o filtro é aplicado em Python DEPOIS da busca (ver aplicar_filtros), então um
-# pool maior evita perder recall. Só o provimento filtrado nos canais dispensa. Já cobre a folga do re-ranking acima.
+# pool maior evita perder recall. Filtro dentro dos canais (provimento, lista de
+# documentos do filtro restrito) dispensa: já devolve só candidatos válidos, então
+# vale o pool normal — e pontuar 80 ementas no re-ranking custa ~3 s a mais.
 N_CANDIDATOS_COM_FILTRO = 80
 
 
@@ -94,8 +96,12 @@ def buscar(
     data_inicio: date | None = None,
     data_fim: date | None = None,
     filtrar_nos_canais: bool = True,
+    documento_ids: list[str] | None = None,
 ) -> list[ResultCard]:
     """Roda o pipeline completo do /query (síncrono).
+
+    documento_ids: restringe a busca a essa lista (filtro restrito); lista vazia
+    devolve [] sem buscar.
 
     Raises: ValueError (do query_builder) se a estrutura não tiver conteúdo.
     """
@@ -111,9 +117,14 @@ def buscar(
         data_inicio is not None or data_fim is not None
         or (provimento is not None and not filtrar_nos_canais)
     )
+    restrito = documento_ids is not None
+    if restrito and not documento_ids:
+        return []
     n_candidatos = N_CANDIDATOS_COM_FILTRO if filtro_pos_busca else N_CANDIDATOS_PARA_RERANK
 
     kwargs_busca = {"provimento": provimento.value} if provimento_nos_canais else {}
+    if restrito:
+        kwargs_busca["documento_ids"] = documento_ids
     rankings = hybrid.search(frase_tese, n_candidatos, bm25_query=bm25_query, **kwargs_busca)
     docs = retriever.fetch([doc_id for doc_id, _ in rankings])
 
