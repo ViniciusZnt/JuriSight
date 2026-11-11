@@ -62,16 +62,16 @@ Só as que aparecem no texto.
 - setor (string ou null): ramo de atividade da empresa.
 - cargo (string ou null): cargo do trabalhador.
 - tese_central (string): uma frase que resume o argumento principal do caso.
-- expressoes_chave (lista de strings): até 3 expressões jurídicas curtas (2 a 4 palavras) \
-que nomeiam o tema do caso como os tribunais escrevem nas ementas (ex.: "dano moral \
-coletivo", "estabilidade da gestante", "adicional de insalubridade"). Nada de frases longas \
-nem fatos do caso.
+- expressoes_chave (lista de strings): de 1 a 3 expressões jurídicas curtas (2 a 4 palavras) \
+que nomeiam o tema do caso como os tribunais escrevem nas ementas (ex.: "horas extras", \
+"dano moral coletivo", "estabilidade da gestante", "adicional de insalubridade", "trabalho \
+externo"). Nada de frases longas nem fatos do caso.
 
 REGRAS IMPORTANTES:
 - NUNCA invente informação que não esteja no texto.
 - Se um campo não puder ser determinado a partir do texto, use null (para \
 empresa_ciente/setor/cargo) ou lista vazia (para agente_nocivo/violacoes/normas). \
-Não deixe de responder um campo — na dúvida, prefira null/lista vazia a adivinhar.
+expressoes_chave NUNCA fica vazia: ela nomeia o tema, não é um fato do caso. Não deixe de responder um campo — na dúvida, prefira null/lista vazia a adivinhar.
 
 Exemplo:
 Texto: {_EXEMPLO_CASO}
