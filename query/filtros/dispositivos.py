@@ -11,7 +11,8 @@ ANCORAS = ("art", "sumula", "oj", "convencao", "lei")
 SIGLAS = {"clt": "CLT", "cf": "CF", "adct": "ADCT", "cpc": "CPC",
           "ccb": "CC", "cp": "CP", "cdc": "CDC"}
 _ROMANO = re.compile(r"^(?=.)x{0,3}(ix|iv|v?i{0,3})$")
-_PALAVRAS_VAZIAS = {"da", "do", "de", "das", "dos"}
+_CONECTIVOS = {"de", "da", "do", "das", "dos", "e"}
+_ORGAO = re.compile(r"^(tst|stf|stj|tse|oit|sdc|sdi\d|trt\d{1,2})$")
 
 
 def _indice_ancora(tokens: list[str]) -> int | None:
@@ -75,7 +76,7 @@ def rotulo(codigo: str) -> str:
             if resto[1] == "lei":
                 lei = _rotulo_lei(resto[1:])
             else:
-                lei = SIGLAS.get("_".join(resto[1:]), "_".join(resto[1:]).upper())
+                lei = SIGLAS.get("_".join(resto[1:])) or " ".join(resto[1:]).upper()
             principal = f"{lei} art. {resto[0]}"
         elif ancora == "sumula":
             principal = f"Súmula {resto[0]} do {resto[1].upper()}"
@@ -94,20 +95,21 @@ def rotulo(codigo: str) -> str:
 
 
 def tokens_da_busca(texto: str) -> list[str]:
-    """Fichas normalizadas do texto: sem acento, `art.`->art, `§`->prgf, etc."""
+    """Fichas normalizadas do texto: sem acento, `art.`->art, `§`->prgf, sem
+    conectivos (de, da, do, das, dos, e)."""
     t = unicodedata.normalize("NFD", texto.lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
     t = re.sub(r"[ºª°]", "", t).replace("§", " prgf ")
     t = re.sub(r"(?<=\d)\.(?=\d)", "", t)
     t = re.sub(r"sdi\s*-\s*(\d)", r"sdi\1", t)
     trocas = {"artigo": "art", "paragrafo": "prgf", "cc": "ccb"}
-    return [trocas.get(f, f) for f in re.findall(r"[a-z0-9]+", t)]
+    return [trocas.get(f, f) for f in re.findall(r"[a-z0-9]+", t) if f not in _CONECTIVOS]
 
 
 def codigo_de_texto(texto: str) -> str | None:
     """Converte uma citação (`CLT art. 791, § 2º`) em código. Conservador:
     sem âncora ou sem lei/órgão, devolve None."""
-    fichas = [f for f in tokens_da_busca(texto) if f not in _PALAVRAS_VAZIAS]
+    fichas = [f for f in tokens_da_busca(texto) if f != "item"]
     lei = []
     for j in range(len(fichas) - 2):
         if fichas[j] == "lei" and fichas[j + 1].isdigit() and fichas[j + 2].isdigit():
@@ -122,19 +124,21 @@ def codigo_de_texto(texto: str) -> str | None:
     depois, k = fichas[i + 2:], 0
     while k < len(depois):
         f = depois[k]
-        if f == "prgf" and k + 1 < len(depois):
+        if f == "prgf":
+            if k + 1 == len(depois) or not (depois[k + 1].isdigit() or depois[k + 1] == "unico"):
+                return None
             unidades.append(f"prgf_{depois[k + 1]}")
             k += 1
-        elif f == "caput" or _ROMANO.match(f) or len(f) == 1:
+        elif f == "caput" or _ROMANO.match(f) or (len(f) == 1 and f.isalpha()):
             unidades.append(f)
         else:
             outros.append(f)
         k += 1
     if ancora == "art":
-        lei = lei or [f for f in outros if f in SIGLAS][:1]
-        destino = lei
+        destino = lei or [f for f in outros if f in SIGLAS][:1]
+        sobras = [f for f in outros if f not in destino]
     else:
-        destino = outros
-    if not destino:
+        destino, sobras = outros, [f for f in outros if not _ORGAO.match(f)]
+    if not destino or sobras:
         return None
     return "_".join(unidades[::-1] + [ancora, numero] + destino)

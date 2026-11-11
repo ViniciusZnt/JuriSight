@@ -32,6 +32,8 @@ def test_eh_dispositivo():
     ("convencao_155_oit", "Convenção 155 da OIT"),
     ("lei_13467_17", "Lei 13.467/17"),
     ("art_28_lei_8078_90", "Lei 8.078/90 art. 28"),
+    ("art_97_ri_trt9", "RI TRT9 art. 97"),
+    ("prgf_6_art_11_ri_trt9", "RI TRT9 art. 11, § 6º"),
     ("algo_estranho", "algo_estranho"),
 ])
 def test_rotulo(codigo, esperado):
@@ -50,6 +52,10 @@ def test_rotulo(codigo, esperado):
     ("CC art. 186", "art_186_ccb"),
     ("art. 186", None),        # sem lei: não converte (spec: conversão conservadora)
     ("NR-15", None),
+    ("Súmula 85, item VI, do TST", "vi_sumula_85_tst"),
+    ("CLT art. 192 e art. 193", None),
+    ("art. 5 7 CLT", None),
+    ("Súmula 85 do TST foo", None),
     ("", None),
 ])
 def test_codigo_de_texto(texto, esperado):
@@ -66,6 +72,8 @@ def test_codigo_de_texto_e_rotulo_sao_inversos():
     ("Súmula 85", ["sumula", "85"]),
     ("lei 8.078/90", ["lei", "8078", "90"]),
     ("CC 186", ["ccb", "186"]),
+    ("Súmula 85 do TST", ["sumula", "85", "tst"]),
+    ("art 10 do adct", ["art", "10", "adct"]),
 ])
 def test_tokens_da_busca(texto, esperado):
     assert tokens_da_busca(texto) == esperado
