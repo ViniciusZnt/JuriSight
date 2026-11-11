@@ -83,10 +83,26 @@ def test_extract_estrutura_retorna_estrutura_validada():
     assert estrutura.empresa_ciente is True
 
 
-def test_extract_estrutura_usa_format_json_schema():
+def test_extract_estrutura_pede_schema_sem_campos_de_filtro_restrito():
+    """O LLM não preenche dispositivos/expressões: viram filtro restrito sem o advogado ver."""
     enricher, fake = _enricher([_JSON_COMPLETO])
     enricher.extract_estrutura("texto", None)
-    assert fake.calls[0]["format"] == EstruturaArgumentativa.model_json_schema()
+    propriedades = fake.calls[0]["format"]["properties"]
+    assert "dispositivos" not in propriedades and "expressoes" not in propriedades
+    assert "expressoes_chave" in propriedades and "normas" in propriedades
+
+
+def test_extrair_separa_expressoes_sugeridas_da_estrutura():
+    json_llm = (
+        '{"pedido_principal": "indenização", "tese_central": "Houve dano coletivo.", '
+        '"expressoes_chave": ["dano moral coletivo", " ", "dano moral coletivo", "ação civil pública"], '
+        '"expressoes": ["não deve entrar"], "dispositivos": ["art_1_clt"]}'
+    )
+    enricher, _ = _enricher([json_llm])
+    extracao = enricher.extrair("texto", None)
+    assert extracao.expressoes_sugeridas == ["dano moral coletivo", "ação civil pública"]
+    assert extracao.estrutura.expressoes == [] and extracao.estrutura.dispositivos == []
+    assert extracao.estrutura.tese_central == "Houve dano coletivo."
 
 
 def test_extract_estrutura_campos_ausentes_caem_no_default_rn05():

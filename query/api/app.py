@@ -52,7 +52,7 @@ from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
 from query.api.conversa_routes import router as conversa_router
-from query.api.filtros_routes import MAX_FILTROS, MAX_TEXTO, filtro_indisponivel, get_filtro_store
+from query.api.filtros_routes import MAX_FILTROS, MAX_TEXTO, ExpressaoView, filtro_indisponivel, get_filtro_store
 from query.api.filtros_routes import router as filtros_router
 from query.enrichment import pdf_extractor
 from query.enrichment.query_enrichment import QueryEnricher
@@ -220,6 +220,8 @@ class EnrichResponse(BaseModel):
     pdf_extraido: bool | None
     aviso: str | None = None
     dispositivos_ia: list[str] = Field(default_factory=list)  # códigos que a IA achou e já estão em estrutura.dispositivos
+    # expressões que a IA sugere e existem no acervo; só filtram se o advogado escolher
+    expressoes_sugeridas: list[ExpressaoView] = Field(default_factory=list)
 
 
 # Teto do PDF da busca: o arquivo é lido inteiro na memória. O Caddy corta um pouco acima disso
@@ -265,12 +267,16 @@ async def enrich(
             raise HTTPException(status_code=400, detail="PDF inválido ou corrompido.") from exc
 
     try:
-        estrutura = await run_in_threadpool(enricher.extract_estrutura, texto_pdf, intencao)
+        estrutura, sugeridas = await run_in_threadpool(enricher.extrair, texto_pdf, intencao)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     estrutura, dispositivos_ia = await run_in_threadpool(_normas_em_dispositivos, estrutura, filtro_store)
-    return EnrichResponse(estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso, dispositivos_ia=dispositivos_ia)
+    expressoes_sugeridas = await run_in_threadpool(_expressoes_no_acervo, sugeridas, filtro_store)
+    return EnrichResponse(
+        estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso,
+        dispositivos_ia=dispositivos_ia, expressoes_sugeridas=expressoes_sugeridas,
+    )
 
 
 def _normas_em_dispositivos(
@@ -290,6 +296,18 @@ def _normas_em_dispositivos(
         return estrutura, []
     normas = [n for n, c in codigos.items() if c not in existentes]
     return estrutura.model_copy(update={"dispositivos": achados, "normas": normas}), achados
+
+
+def _expressoes_no_acervo(sugeridas: list[str], store: FiltroStore | None) -> list[ExpressaoView]:
+    """Só as expressões sugeridas que aparecem em alguma decisão: uma que zera o filtro não ajuda."""
+    if store is None or not sugeridas:
+        return []
+    try:
+        contagem = store.contar([], sugeridas)
+    except (FiltroIndisponivel, psycopg.Error) as exc:  # passo opcional, como a conversão das normas
+        logger.warning("Expressões sugeridas não conferidas no acervo: %s", exc)
+        return []
+    return [ExpressaoView(texto=t, total=n) for t, n in contagem.expressoes if n > 0]
 
 
 # --------------------------------------------------------------------------- #
