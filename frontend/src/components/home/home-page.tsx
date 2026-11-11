@@ -96,6 +96,7 @@ export function HomePage() {
         fileName,
         pdfExtraido: res.pdf_extraido,
         aviso: res.aviso,
+        dispositivosIa: res.dispositivos_ia,
       });
       if (res.pdf_extraido === false) {
         // FA02: o backend já seguiu como FA01 (a estrutura acima veio só da intenção digitada,

@@ -1,0 +1,195 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { X } from "lucide-react";
+import { contarFiltros, sugerirDispositivos, type ContagemFiltros, type SugestaoDispositivo } from "@/lib/api";
+
+const DEBOUNCE_MS = 250;
+
+const chipCls =
+  "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 bg-[#EEF3FB] dark:bg-[#1A2A3C] border-[#C8D9EF] dark:border-[#2A3A4C] text-[#1A3A5C] dark:text-[#8AB0DC]";
+const inputCls =
+  "w-full rounded-lg border border-[#E4E4EC] dark:border-[#26262C] bg-[#FAFAFA] dark:bg-[#1C1C21] px-3 py-2 outline-none text-[#1A1A2A] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC]";
+const mutedCls = "text-[#AEAEBF] dark:text-[#6E6E7C]";
+
+function Chip({ children, onRemove, label }: { children: React.ReactNode; onRemove: () => void; label: string }) {
+  return (
+    <div className={chipCls} style={{ fontSize: "13.8px", fontWeight: 500 }}>
+      {children}
+      <button onClick={onRemove} aria-label={`Remover ${label}`} className="opacity-50 hover:opacity-100">
+        <X style={{ width: "10px", height: "10px" }} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+}
+
+/** Filtro restrito da Revisão: dispositivos legais (autocompletar no acervo) e expressões
+ *  obrigatórias, com a contagem de decisões que cumprem cada um e todos juntos. */
+export function FiltroRestrito({
+  dispositivos,
+  expressoes,
+  dispositivosIa,
+  onChange,
+}: {
+  dispositivos: string[];
+  expressoes: string[];
+  dispositivosIa: string[];
+  onChange: (patch: { dispositivos?: string[]; expressoes?: string[] }) => void;
+}) {
+  const [busca, setBusca] = useState("");
+  const [opcoes, setOpcoes] = useState<SugestaoDispositivo[]>([]);
+  const [expr, setExpr] = useState("");
+  const [contagem, setContagem] = useState<ContagemFiltros | null>(null);
+  const [indisponivel, setIndisponivel] = useState(false);
+
+  useEffect(() => {
+    if (!busca.trim()) {
+      setOpcoes([]);
+      return;
+    }
+    let ativo = true;
+    const t = setTimeout(() => {
+      sugerirDispositivos(busca.trim())
+        .then((r) => ativo && setOpcoes(r))
+        .catch(() => ativo && setOpcoes([]));
+    }, DEBOUNCE_MS);
+    return () => {
+      ativo = false;
+      clearTimeout(t);
+    };
+  }, [busca]);
+
+  useEffect(() => {
+    if (!dispositivos.length && !expressoes.length) {
+      setContagem(null);
+      setIndisponivel(false);
+      return;
+    }
+    let ativo = true;
+    const t = setTimeout(() => {
+      contarFiltros(dispositivos, expressoes)
+        .then((r) => {
+          if (!ativo) return;
+          setContagem(r);
+          setIndisponivel(false);
+        })
+        .catch(() => {
+          if (!ativo) return;
+          setContagem(null);
+          setIndisponivel(true);
+        });
+    }, DEBOUNCE_MS);
+    return () => {
+      ativo = false;
+      clearTimeout(t);
+    };
+  }, [dispositivos, expressoes]);
+
+  const rotulo = (codigo: string) => contagem?.dispositivos.find((d) => d.codigo === codigo)?.rotulo ?? codigo;
+  const totalExpr = (texto: string) => contagem?.expressoes.find((e) => e.texto === texto)?.total;
+
+  const escolher = (codigo: string) => {
+    if (!dispositivos.includes(codigo)) onChange({ dispositivos: [...dispositivos, codigo] });
+    setBusca("");
+    setOpcoes([]);
+  };
+
+  const addExpr = () => {
+    const t = expr.trim();
+    if (t && !expressoes.includes(t)) onChange({ expressoes: [...expressoes, t] });
+    setExpr("");
+  };
+
+  return (
+    <div className="p-4 rounded-xl border border-[#C8D9EF] dark:border-[#2A3A4C] bg-[#F5F8FD] dark:bg-[#131C28]">
+      <h3 className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "14.9px", fontWeight: 700 }}>
+        Filtro restrito
+      </h3>
+      <p className="text-[#7A7A8E] dark:text-[#9E9EAC] mb-4" style={{ fontSize: "13.2px" }}>
+        Só entram decisões que citam todos os dispositivos e contêm todas as expressões. Os outros campos orientam a busca livre.
+      </p>
+
+      <div className="mb-4">
+        <div className="mb-2 text-[#4A4A5A] dark:text-[#C4C4CE] tracking-[0.04em] uppercase" style={{ fontSize: "11.5px", fontWeight: 700 }}>
+          Dispositivos legais
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {dispositivos.map((c) => (
+            <Chip key={c} label={rotulo(c)} onRemove={() => onChange({ dispositivos: dispositivos.filter((x) => x !== c) })}>
+              <span>{rotulo(c)}</span>
+              {dispositivosIa.includes(c) && (
+                <span className="rounded px-1.5 bg-[#EDF7F2] dark:bg-[#122A1E] text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "11px" }}>
+                  sugestão da IA
+                </span>
+              )}
+            </Chip>
+          ))}
+        </div>
+        <div className="relative">
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar dispositivo (ex: CLT 59, Súmula 85)…"
+            className={inputCls}
+            style={{ fontSize: "14px" }}
+          />
+          {opcoes.length > 0 && (
+            <ul className="absolute z-10 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-lg border border-[#E4E4EC] dark:border-[#26262C] bg-white dark:bg-[#17171B] shadow-lg">
+              {opcoes.map((o) => (
+                <li key={o.codigo}>
+                  <button
+                    onClick={() => escolher(o.codigo)}
+                    className="w-full text-left px-3 py-2 text-[#1A1A2A] dark:text-[#ECECEF] hover:bg-[#EEF3FB] dark:hover:bg-[#1A2A3C]"
+                    style={{ fontSize: "13.8px" }}
+                  >
+                    {`${o.rotulo} · ${o.total} decisões`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <div className="mb-2 text-[#4A4A5A] dark:text-[#C4C4CE] tracking-[0.04em] uppercase" style={{ fontSize: "11.5px", fontWeight: 700 }}>
+          Expressões obrigatórias
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {expressoes.map((t) => (
+            <Chip key={t} label={t} onRemove={() => onChange({ expressoes: expressoes.filter((x) => x !== t) })}>
+              <span>{t}</span>
+              {totalExpr(t) !== undefined && <span className={mutedCls}>{`· ${totalExpr(t)} decisões`}</span>}
+            </Chip>
+          ))}
+        </div>
+        <input
+          value={expr}
+          onChange={(e) => setExpr(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addExpr()}
+          placeholder="Expressão que a decisão deve conter (Enter para adicionar)"
+          className={inputCls}
+          style={{ fontSize: "14px" }}
+        />
+      </div>
+
+      {indisponivel && (
+        <p className="text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.2px" }}>
+          Filtro restrito indisponível no momento
+        </p>
+      )}
+      {contagem && (
+        <>
+          <p className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "13.8px", fontWeight: 600 }}>
+            {`Com todos os filtros: ${contagem.total} decisões`}
+          </p>
+          {contagem.total === 0 && (
+            <p className="text-[#6B3B0A] dark:text-[#E0AC6C]" style={{ fontSize: "13.2px" }}>
+              Nenhuma decisão do acervo cumpre todos os filtros. A faixa restrita virá vazia.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

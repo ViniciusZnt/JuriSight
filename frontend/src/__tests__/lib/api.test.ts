@@ -14,6 +14,8 @@ import {
   ApiError,
   enviarCorrecaoProvimento,
   gerarResposta,
+  emptyEstrutura,
+  temFiltroRestrito,
   type EstruturaArgumentativa,
 } from "@/lib/api";
 
@@ -34,6 +36,8 @@ const estrutura: EstruturaArgumentativa = {
   setor: null,
   cargo: null,
   tese_central: "tese",
+  dispositivos: [],
+  expressoes: [],
 };
 
 afterEach(() => {
@@ -240,5 +244,19 @@ describe("gerarResposta", () => {
   it("503 vira ApiError com o detail do backend", async () => {
     mockFetchOnce(503, { detail: "A resposta gerada está indisponível agora." });
     await expect(gerarResposta(estrutura, ["a"])).rejects.toEqual(new ApiError("A resposta gerada está indisponível agora.", 503));
+  });
+});
+
+describe("filtro restrito", () => {
+  it("emptyEstrutura traz dispositivos e expressoes vazios", () => {
+    const e = emptyEstrutura();
+    expect(e.dispositivos).toEqual([]);
+    expect(e.expressoes).toEqual([]);
+  });
+
+  it("temFiltroRestrito é verdadeiro só com dispositivos ou expressões", () => {
+    expect(temFiltroRestrito(emptyEstrutura())).toBe(false);
+    expect(temFiltroRestrito({ ...emptyEstrutura(), dispositivos: ["CLT:59"] })).toBe(true);
+    expect(temFiltroRestrito({ ...emptyEstrutura(), expressoes: ["hora extra"] })).toBe(true);
   });
 });
