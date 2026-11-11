@@ -97,11 +97,13 @@ def buscar(
     data_fim: date | None = None,
     filtrar_nos_canais: bool = True,
     documento_ids: list[str] | None = None,
+    marcar_canais: bool = False,
 ) -> list[ResultCard]:
     """Roda o pipeline completo do /query (síncrono).
 
     documento_ids: restringe a busca a essa lista (filtro restrito); lista vazia
-    devolve [] sem buscar.
+    devolve [] sem buscar. marcar_canais: preenche ResultCard.canais (por onde
+    cada decisão foi achada) — o kwarg só vai ao hybrid quando pedido.
 
     Raises: ValueError (do query_builder) se a estrutura não tiver conteúdo.
     """
@@ -125,6 +127,9 @@ def buscar(
     kwargs_busca = {"provimento": provimento.value} if provimento_nos_canais else {}
     if restrito:
         kwargs_busca["documento_ids"] = documento_ids
+    canais: dict[str, list[str]] = {}
+    if marcar_canais:
+        kwargs_busca["canais"] = canais
     rankings = hybrid.search(frase_tese, n_candidatos, bm25_query=bm25_query, **kwargs_busca)
     docs = retriever.fetch([doc_id for doc_id, _ in rankings])
 
@@ -164,4 +169,7 @@ def buscar(
             for (doc_id, doc, _), score_norm in zip(triplos, scores_normalizados)
         ]
 
-    return format_results(triplos)
+    cards = format_results(triplos)
+    if marcar_canais:
+        cards = [c.model_copy(update={"canais": canais.get(c.id, [])}) for c in cards]
+    return cards

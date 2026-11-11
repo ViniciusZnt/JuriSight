@@ -75,3 +75,14 @@ def test_build_frase_tese_levanta_erro_quando_tudo_vazio():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+def test_termos_bm25_lista_cada_termo_na_ordem_sem_vazios():
+    from query.enrichment.query_builder import termos_bm25
+
+    estrutura = EstruturaArgumentativa(
+        pedido_principal="indenização", agente_nocivo=["  "], violacoes=["assédio"],
+        normas=["NR-15"], dispositivos=["art_192_clt"], expressoes=["dano moral coletivo"],
+    )
+    assert termos_bm25(estrutura) == ["indenização", "assédio", "NR-15", "CLT art. 192", "dano moral coletivo"]
+    assert build_bm25_query(estrutura) == " ".join(termos_bm25(estrutura))

@@ -92,6 +92,7 @@ class HybridSearch:
         bm25_query: str | None = None,
         provimento: str | None = None,
         documento_ids: list[str] | None = None,
+        canais: dict[str, list[str]] | None = None,
     ) -> list[tuple[str, float]]:
         """Busca híbrida: vetorial (2 coleções) + lexical, fundidos por RRF.
 
@@ -104,7 +105,9 @@ class HybridSearch:
                 provimento — valor do enum (str); filtra os TRÊS canais (payload
                 do Qdrant e máscara do BM25). None não muda nenhuma chamada;
                 documento_ids — restringe os TRÊS canais a esses documentos (filtro
-                restrito); None não muda nenhuma chamada.
+                restrito); None não muda nenhuma chamada; canais — se vier um
+                dict, recebe {documento_id: ["semantica", "termos"]} com os
+                canais em que cada documento devolvido apareceu.
         Returns: lista [(documento_id, score_rrf)] top-N, melhor primeiro.
 
         Nota: o `where` filtra só as buscas do Qdrant; o BM25 só filtra por
@@ -145,4 +148,8 @@ class HybridSearch:
         r_bm25 = _dedup_ordenado([_doc_id_do_chunk(cid) for cid, _ in hits_bm25])
 
         fundidos = reciprocal_rank_fusion([r_completo, r_ementa, r_bm25])
+        if canais is not None:  # por onde cada documento foi achado ("Como esta busca foi feita")
+            semantica, termos = set(r_completo) | set(r_ementa), set(r_bm25)
+            for doc_id, _ in fundidos[:n_results]:
+                canais[doc_id] = [c for c, ids in (("semantica", semantica), ("termos", termos)) if doc_id in ids]
         return fundidos[:n_results]

@@ -54,7 +54,7 @@ from query.api.auth_routes import router as auth_router
 from query.api.conversa_routes import router as conversa_router
 from query.api.filtros_routes import MAX_FILTROS, MAX_TEXTO, ExpressaoView, filtro_indisponivel, get_filtro_store
 from query.api.filtros_routes import router as filtros_router
-from query.enrichment import pdf_extractor
+from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
 from query.filtros.dispositivos import codigo_de_texto
@@ -383,9 +383,30 @@ async def _buscar_cards(body: QueryRequest, hybrid, retriever, reranker, ids: li
             data_inicio=body.data_inicio,
             data_fim=body.data_fim,
             documento_ids=ids,
+            marcar_canais=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class ExplicacaoRequest(BaseModel):
+    estrutura: EstruturaArgumentativa
+
+
+class ExplicacaoResponse(BaseModel):
+    semantica: str  # texto exato que virou embedding
+    termos: list[str]  # termos exatos enviados ao BM25, na ordem
+
+
+@app.post("/query/explicacao", response_model=ExplicacaoResponse, dependencies=[Depends(get_current_user)])
+async def query_explicacao(body: ExplicacaoRequest) -> ExplicacaoResponse:
+    """O que a busca usa para esta estrutura ("Como esta busca foi feita"). Só monta os textos,
+    com o mesmo query_builder da /query, sem buscar: funciona também para conversas antigas."""
+    try:
+        semantica = query_builder.build_frase_tese(body.estrutura)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ExplicacaoResponse(semantica=semantica, termos=query_builder.termos_bm25(body.estrutura))
 
 
 # --------------------------------------------------------------------------- #

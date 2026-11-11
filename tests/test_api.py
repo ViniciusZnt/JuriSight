@@ -48,12 +48,14 @@ class _FakeHybrid:
         self._resultados = resultados
         self.calls: list[dict] = []
 
-    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None, documento_ids=None):
+    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None, documento_ids=None, canais=None):
         self.calls.append(
             {"query": query, "n_results": n_results, "bm25_query": bm25_query, "provimento": provimento,
              "documento_ids": documento_ids}
         )
         achados = [r for r in self._resultados if documento_ids is None or r[0] in documento_ids]
+        if canais is not None:
+            canais.update({doc_id: ["semantica"] for doc_id, _ in achados})
         return achados[:n_results]
 
 
@@ -337,6 +339,28 @@ def test_query_fim_a_fim_ordena_e_formata(client):
     body = resp.json()
     # a ordem final é a do reranker (o fake mantém a ordem de entrada).
     assert [card["id"] for card in body] == ["a-id", "b-id"]
+    assert body[0]["canais"] == ["semantica"]
+
+
+def test_query_explicacao_devolve_texto_semantico_e_termos(client):
+    resp = client.post("/query/explicacao", json={"estrutura": {
+        "tese_central": "A gestante tem estabilidade.", "pedido_principal": "reintegração",
+        "dispositivos": ["b_ii_art_10_adct"], "expressoes": ["estabilidade da gestante"]}})
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "semantica": "A gestante tem estabilidade.",
+        "termos": ["reintegração", "ADCT art. 10, II, b", "estabilidade da gestante"],
+    }
+
+
+def test_query_explicacao_estrutura_vazia_422(client):
+    assert client.post("/query/explicacao", json={"estrutura": {}}).status_code == 422
+
+
+def test_query_explicacao_sem_sessao_401(client):
+    app.dependency_overrides.pop(get_current_user, None)
+    assert client.post("/query/explicacao", json={"estrutura": {"tese_central": "x"}}).status_code == 401
 
 
 def test_query_estrutura_vazia_422(client):
