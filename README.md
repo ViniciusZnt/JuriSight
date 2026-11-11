@@ -538,9 +538,10 @@ Além do texto livre, a busca aceita **dispositivos** (ex.: `art_791_clt`, `b_ii
 com autocompletar) e **expressões obrigatórias** (ex.: "dano moral coletivo", singular ou plural, sem
 depender de acento ou quebra de linha). Com algum deles, o `/query` devolve só decisões que cumprem
 **todos** os dispositivos e expressões (faixa "restrita"); a busca livre, sem esses filtros, vem sob
-demanda em `/query/livre` (faixa "livre"). `/filtros` dá o autocompletar e as contagens.
+demanda em `/query/livre` (faixa "livre"). `/filtros/*` dá o autocompletar e as contagens. `/filtros/*` e
+`/query/livre` exigem login; só o `/query` conta no limite diário.
 
-Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas uma vez:
+Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas antes do primeiro uso (rode de novo quando entrarem decisões novas):
 
 ```bash
 # local
@@ -554,6 +555,10 @@ docker compose -f docker-compose.prod.yml exec api python -m query.filtros.prepa
 - **Disco:** `documento_tsv` ocupa ~567 MB (dos quais 78 MB do índice GIN),
   `documento_dispositivo` ~98 MB e `dispositivo` ~1,5 MB, medidos com `pg_total_relation_size`.
   Confira o `df -h` antes de rodar na VPS.
+- **Latência:** a busca restrita usa o mesmo pool de 30 candidatos da busca normal, então não fica
+  mais lenta que ela. Medido a quente, só o `buscar` (3 execuções): sem filtro 2,8 a 2,9 s;
+  "dano moral coletivo" (137 ids) 2,1 a 2,2 s; `art_791_clt` (18.037 ids) 2,9 a 3,1 s. A consulta dos ids
+  elegíveis fica de fora (~0,1 s; a contagem leva ~0,3 s).
 - **Decisões novas:** só entram no filtro depois de rodar o preparo de novo (os dispositivos são
   refeitos do zero; o índice de texto só acrescenta as decisões que ainda não estão nele).
   Sem o preparo, o filtro responde 503.
