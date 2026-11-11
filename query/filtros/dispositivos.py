@@ -145,3 +145,11 @@ def codigo_de_texto(texto: str) -> str | None:
     if not destino or sobras:
         return None
     return "_".join(unidades[::-1] + [ancora, numero] + destino)
+
+
+def citada_em(norma: str, texto: str) -> bool:
+    """A norma ("CLT art. 192", "NR-15") está escrita no texto? Todas as fichas dela (lei,
+    números, incisos) precisam aparecer no texto, em qualquer ordem. Serve para separar a norma
+    que o advogado citou da que o modelo deduziu (que só pode virar sugestão)."""
+    fichas = set(tokens_da_busca(norma))
+    return bool(fichas) and fichas <= set(tokens_da_busca(texto))

@@ -52,12 +52,14 @@ from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
 from query.api.conversa_routes import router as conversa_router
-from query.api.filtros_routes import MAX_FILTROS, MAX_TEXTO, ExpressaoView, filtro_indisponivel, get_filtro_store
+from query.api.filtros_routes import (
+    MAX_FILTROS, MAX_TEXTO, DispositivoView, ExpressaoView, filtro_indisponivel, get_filtro_store,
+)
 from query.api.filtros_routes import router as filtros_router
 from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
-from query.filtros.dispositivos import codigo_de_texto
+from query.filtros.dispositivos import citada_em, codigo_de_texto
 from query.filtros.store import FiltroIndisponivel, FiltroStore
 from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
@@ -222,6 +224,8 @@ class EnrichResponse(BaseModel):
     dispositivos_ia: list[str] = Field(default_factory=list)  # códigos que a IA achou e já estão em estrutura.dispositivos
     # expressões que a IA sugere e existem no acervo; só filtram se o advogado escolher
     expressoes_sugeridas: list[ExpressaoView] = Field(default_factory=list)
+    # dispositivos que a IA relaciona ao tema (sem estarem citados no texto), também só sob clique
+    dispositivos_sugeridos: list[DispositivoView] = Field(default_factory=list)
 
 
 # Teto do PDF da busca: o arquivo é lido inteiro na memória. O Caddy corta um pouco acima disso
@@ -237,6 +241,7 @@ async def enrich(
     filtro_store: FiltroStore | None = Depends(get_filtro_store),
 ) -> EnrichResponse:
     texto_pdf: str | None = None
+    texto_original = ""  # texto do PDF antes do resumo: é onde se confere se uma norma foi citada
     pdf_extraido: bool | None = None
     aviso: str | None = None
 
@@ -248,10 +253,10 @@ async def enrich(
                 detail=f"O PDF passa do limite de {MAX_PDF_MB} MB. Envie um arquivo menor ou descreva o caso no campo de texto.",
             )
         try:
-            texto_pdf = await run_in_threadpool(pdf_extractor.extract_text, pdf_bytes)
+            texto_original = await run_in_threadpool(pdf_extractor.extract_text, pdf_bytes)
             texto_pdf = await run_in_threadpool(
                 pdf_extractor.resumir_hierarquico,
-                texto_pdf,
+                texto_original,
                 resumir_bloco=enricher.resumir_bloco,
                 condensar=enricher.condensar,
             )
@@ -267,15 +272,23 @@ async def enrich(
             raise HTTPException(status_code=400, detail="PDF inválido ou corrompido.") from exc
 
     try:
-        estrutura, sugeridas = await run_in_threadpool(enricher.extrair, texto_pdf, intencao)
+        estrutura, sugeridas, dispositivos_texto = await run_in_threadpool(enricher.extrair, texto_pdf, intencao)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # O modelo pequeno põe em `normas` artigos que não estão no texto (e às vezes errados): só a
+    # norma escrita pelo advogado vira filtro ativo; a deduzida vai para as sugestões clicáveis.
+    texto_do_caso = f"{texto_original} {intencao or ''}"
+    deduzidas = [n for n in estrutura.normas if not citada_em(n, texto_do_caso)]
+    estrutura = estrutura.model_copy(update={"normas": [n for n in estrutura.normas if n not in deduzidas]})
     estrutura, dispositivos_ia = await run_in_threadpool(_normas_em_dispositivos, estrutura, filtro_store)
     expressoes_sugeridas = await run_in_threadpool(_expressoes_no_acervo, sugeridas, filtro_store)
+    dispositivos_sugeridos = await run_in_threadpool(
+        _dispositivos_no_acervo, [*deduzidas, *dispositivos_texto], estrutura.dispositivos, filtro_store
+    )
     return EnrichResponse(
-        estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso,
-        dispositivos_ia=dispositivos_ia, expressoes_sugeridas=expressoes_sugeridas,
+        estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso, dispositivos_ia=dispositivos_ia,
+        expressoes_sugeridas=expressoes_sugeridas, dispositivos_sugeridos=dispositivos_sugeridos,
     )
 
 
@@ -298,6 +311,10 @@ def _normas_em_dispositivos(
     return estrutura.model_copy(update={"dispositivos": achados, "normas": normas}), achados
 
 
+# Sugestão da IA com menos decisões que isso não ajuda (e costuma ser lixo do modelo, ex.: "indenizaÅó").
+MIN_DECISOES_SUGESTAO = 5
+
+
 def _expressoes_no_acervo(sugeridas: list[str], store: FiltroStore | None) -> list[ExpressaoView]:
     """Só as expressões sugeridas que aparecem em alguma decisão: uma que zera o filtro não ajuda."""
     if store is None or not sugeridas:
@@ -307,7 +324,27 @@ def _expressoes_no_acervo(sugeridas: list[str], store: FiltroStore | None) -> li
     except (FiltroIndisponivel, psycopg.Error) as exc:  # passo opcional, como a conversão das normas
         logger.warning("Expressões sugeridas não conferidas no acervo: %s", exc)
         return []
-    return [ExpressaoView(texto=t, total=n) for t, n in contagem.expressoes if n > 0]
+    return [ExpressaoView(texto=t, total=n) for t, n in contagem.expressoes if n >= MIN_DECISOES_SUGESTAO]
+
+
+def _dispositivos_no_acervo(
+    textos: list[str], ja_no_filtro: list[str], store: FiltroStore | None
+) -> list[DispositivoView]:
+    """Dispositivos sugeridos que convertem para um código do acervo, citado em alguma decisão,
+    e que ainda não estão no filtro (os citados no texto já entram por _normas_em_dispositivos)."""
+    codigos = [c for c in dict.fromkeys(codigo_de_texto(t) for t in textos) if c and c not in ja_no_filtro]
+    if store is None or not codigos:
+        return []
+    try:
+        contagem = store.contar(codigos, [])
+    except (FiltroIndisponivel, psycopg.Error) as exc:  # passo opcional
+        logger.warning("Dispositivos sugeridos não conferidos no acervo: %s", exc)
+        return []
+    return [
+        DispositivoView(codigo=d.codigo, rotulo=d.rotulo, total=d.total)
+        for d in contagem.dispositivos
+        if d.total >= MIN_DECISOES_SUGESTAO
+    ]
 
 
 # --------------------------------------------------------------------------- #

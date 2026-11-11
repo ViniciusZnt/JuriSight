@@ -354,7 +354,7 @@ export function EntityReviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const manualParam = searchParams.get("modo") === "manual";
-  const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, dispositivosIa, expressoesSugeridas, setEstrutura: persistEstrutura, loadVersion } = useSearchSession();
+  const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, dispositivosIa, expressoesSugeridas, dispositivosSugeridos, setEstrutura: persistEstrutura, loadVersion } = useSearchSession();
   const { activeId, addVersion } = useConversations();
 
   // Sem estrutura na sessão (ex.: acesso direto à URL) cai no mesmo modo manual do UC02.
@@ -484,6 +484,7 @@ export function EntityReviewPage() {
               expressoes={data.expressoes}
               dispositivosIa={dispositivosIa}
               expressoesSugeridas={expressoesSugeridas}
+              dispositivosSugeridos={dispositivosSugeridos}
               onChange={(patch) => setData((prev) => ({ ...prev, ...patch }))}
             />
 

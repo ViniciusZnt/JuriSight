@@ -100,3 +100,16 @@ def test_codigo_de_texto_e_rotulo_sao_inversos():
 ])
 def test_tokens_da_busca(texto, esperado):
     assert tokens_da_busca(texto) == esperado
+
+
+@pytest.mark.parametrize("norma,texto,esperado", [
+    ("CLT art. 192", "Pede o adicional com base no art. 192 da CLT.", True),
+    ("NR-15", "conforme a NR 15, anexo 1", True),
+    ("Súmula 85 do TST", "aplica-se a súmula nº 85 do TST", True),
+    ("ADCT art. 10, II, b", "A gestante dispensada tem estabilidade.", False),
+    ("CLT art. 193", "O bancário em cargo de confiança quer a 7ª e 8ª horas.", False),
+    ("CLT art. 192", "art. 192 do código", False),  # número sem a lei
+])
+def test_citada_em(norma, texto, esperado):
+    from query.filtros.dispositivos import citada_em
+    assert citada_em(norma, texto) is esperado

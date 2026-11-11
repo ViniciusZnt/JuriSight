@@ -29,7 +29,8 @@ from query.api.uso_diario import LimiteDiarioExcedido
 from query.enrichment.pdf_extractor import PDFSemTextoError
 from query.enrichment.query_enrichment import Extracao, _montar_conteudo
 from query.enrichment.schema import EstruturaArgumentativa
-from query.filtros.store import ContagemFiltros, FiltroIndisponivel
+from query.filtros.dispositivos import rotulo
+from query.filtros.store import ContagemFiltros, FiltroIndisponivel, SugestaoDispositivo
 from query.search.result_formatter import ResultCard
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
@@ -78,9 +79,11 @@ class _FakeDocRetriever:
 
 
 class _FakeEnricher:
-    def __init__(self, estrutura: EstruturaArgumentativa | None = None, sugeridas: list[str] | None = None):
+    def __init__(self, estrutura: EstruturaArgumentativa | None = None, sugeridas: list[str] | None = None,
+                 dispositivos: list[str] | None = None):
         self.estrutura = estrutura or EstruturaArgumentativa(tese_central="tese fake")
         self.sugeridas = sugeridas or []
+        self.dispositivos = dispositivos or []
         self.calls: list[tuple] = []
 
     def resumir_bloco(self, texto: str) -> str:
@@ -92,7 +95,7 @@ class _FakeEnricher:
     def extrair(self, texto_caso, intencao=None):
         self.calls.append((texto_caso, intencao))
         _montar_conteudo(texto_caso, intencao)  # levanta ValueError se ambos vazios
-        return Extracao(self.estrutura, self.sugeridas)
+        return Extracao(self.estrutura, self.sugeridas, self.dispositivos)
 
 
 def _doc(**kwargs) -> DocumentoJuridico:
@@ -537,8 +540,12 @@ class _FakeFiltroStore:
 
     def contar(self, dispositivos, expressoes):
         self._check()
-        totais = {"dano moral coletivo": 137, "ação civil pública": 0}
-        return ContagemFiltros(total=0, dispositivos=[], expressoes=[(e, totais.get(e, 5)) for e in expressoes])
+        totais = {"dano moral coletivo": 137, "ação civil pública": 0, "termo raro": 3}
+        return ContagemFiltros(
+            total=0,
+            dispositivos=[SugestaoDispositivo(c, rotulo(c), 40 if c in self._existentes else 0) for c in dispositivos],
+            expressoes=[(e, totais.get(e, 5)) for e in expressoes],
+        )
 
 
 class _UsoContador:
@@ -662,16 +669,40 @@ def test_query_livre_sem_sessao_401(client):
     assert client.post("/query/livre", json=_FILTRO).status_code == 401
 
 
-def test_enrich_converte_normas_existentes_em_dispositivos(client):
+def test_enrich_norma_citada_no_texto_vira_filtro_ativo(client):
     est = EstruturaArgumentativa(tese_central="t", normas=["CLT art. 192", "NR-15"])
     app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est)
     app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore()
 
-    body = client.post("/enrich", data={"intencao": "x"}).json()
+    body = client.post("/enrich", data={"intencao": "Pede o adicional com base na NR-15 e no art. 192 da CLT."}).json()
 
     assert body["estrutura"]["dispositivos"] == ["art_192_clt"]
     assert body["dispositivos_ia"] == ["art_192_clt"]
     assert body["estrutura"]["normas"] == ["NR-15"]
+    assert body["dispositivos_sugeridos"] == []
+
+
+def test_enrich_norma_que_a_ia_deduziu_so_vira_sugestao(client):
+    """O modelo pequeno põe em `normas` artigos que não estão no texto (e às vezes errados):
+    eles não podem virar filtro ativo, só sugestão clicável, e saem do texto da busca livre."""
+    est = EstruturaArgumentativa(tese_central="t", normas=["CLT art. 192", "NR-15"])
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est)
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore()
+
+    body = client.post("/enrich", data={"intencao": "O trabalhador exposto a ruído quer o adicional."}).json()
+
+    assert body["estrutura"]["dispositivos"] == [] and body["dispositivos_ia"] == []
+    assert body["estrutura"]["normas"] == []
+    assert body["dispositivos_sugeridos"] == [{"codigo": "art_192_clt", "rotulo": "CLT art. 192", "total": 40}]
+
+
+def test_enrich_descarta_sugestoes_com_menos_de_5_decisoes(client):
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(sugeridas=["dano moral coletivo", "termo raro"])
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore()
+
+    body = client.post("/enrich", data={"intencao": "x"}).json()
+
+    assert [e["texto"] for e in body["expressoes_sugeridas"]] == ["dano moral coletivo"]
 
 
 def test_enrich_sugere_so_expressoes_que_existem_no_acervo(client):
@@ -685,13 +716,25 @@ def test_enrich_sugere_so_expressoes_que_existem_no_acervo(client):
     assert body["estrutura"]["expressoes"] == []  # sugestão não filtra até o advogado escolher
 
 
+def test_enrich_sugere_dispositivos_que_existem_e_ainda_nao_estao_no_filtro(client):
+    est = EstruturaArgumentativa(tese_central="t", normas=["CLT art. 192"])
+    sugeridos = ["CLT art. 192", "Súmula 85 do TST", "CLT art. 9999", "art. 62"]  # repetido, existente, inexistente, sem lei
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est, dispositivos=sugeridos)
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(existentes=("art_192_clt", "sumula_85_tst"))
+
+    body = client.post("/enrich", data={"intencao": "Pede o adicional do art. 192 da CLT."}).json()
+
+    assert body["estrutura"]["dispositivos"] == ["art_192_clt"]  # citado no texto: já ativo
+    assert body["dispositivos_sugeridos"] == [{"codigo": "sumula_85_tst", "rotulo": "Súmula 85 do TST", "total": 40}]
+
+
 def test_enrich_sem_store_nao_sugere_expressoes(client):
     app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(sugeridas=["dano moral coletivo"])
     app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(indisponivel=True)
 
     body = client.post("/enrich", data={"intencao": "x"}).json()
 
-    assert body["expressoes_sugeridas"] == []
+    assert body["expressoes_sugeridas"] == [] and body["dispositivos_sugeridos"] == []
 
 
 def test_enrich_segue_sem_converter_quando_store_falha(client):
@@ -699,7 +742,7 @@ def test_enrich_segue_sem_converter_quando_store_falha(client):
     app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est)
     app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(indisponivel=True)
 
-    body = client.post("/enrich", data={"intencao": "x"}).json()
+    body = client.post("/enrich", data={"intencao": "Pede o adicional do art. 192 da CLT."}).json()
 
     assert body["estrutura"]["normas"] == ["CLT art. 192"]
     assert body["estrutura"]["dispositivos"] == [] and body["dispositivos_ia"] == []
@@ -715,7 +758,7 @@ def test_enrich_segue_sem_converter_quando_banco_falha(client):
     app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est)
     app.dependency_overrides[get_filtro_store] = lambda: _FiltroStoreBancoFora()
 
-    resp = client.post("/enrich", data={"intencao": "x"})
+    resp = client.post("/enrich", data={"intencao": "Pede o adicional do art. 192 da CLT."})
 
     assert resp.status_code == 200
     assert resp.json()["estrutura"]["normas"] == ["CLT art. 192"] and resp.json()["dispositivos_ia"] == []
