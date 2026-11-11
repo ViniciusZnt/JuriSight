@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Filter,
   Scale,
+  Calendar,
+  TrendingUp,
   Search,
   ChevronDown,
   Check,
@@ -18,7 +19,7 @@ import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
 import { type Outcome } from "@/lib/outcome";
 import { contarDesfechos, outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "@/lib/provimento";
-import { SinteseResultados } from "@/components/resultados/sintese-resultados";
+import { ResumoDecisoes } from "@/components/resultados/resumo-decisoes";
 import { ResultadoCard } from "@/components/resultados/resultado-card";
 import { FaixaLivre } from "@/components/resultados/faixa-livre";
 import { contarFiltros, temFiltroRestrito, type ContagemFiltros } from "@/lib/api";
@@ -37,13 +38,23 @@ import { useConversations } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 
 /** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
+/** Segmentos da barra de filtros, com as cores dos selos de desfecho. */
+const SEGMENTOS: { valor: "all" | Outcome; rotulo: string; cor: string | null; ativo: string }[] = [
+  { valor: "all", rotulo: "Todas", cor: null, ativo: "bg-[#1A3A5C] dark:bg-[#8AB0DC] text-white dark:text-[#0E0E11] shadow-[0_1px_6px_rgba(26,58,92,0.24)]" },
+  { valor: "favorable", rotulo: "Favoráveis", cor: "bg-[#2D8A5F] dark:bg-[#3DA372]", ativo: "bg-[#2D8A5F] dark:bg-[#3DA372] text-white dark:text-[#0E0E11] shadow-[0_1px_6px_rgba(45,138,95,0.24)]" },
+  { valor: "unfavorable", rotulo: "Desfavoráveis", cor: "bg-[#C44040] dark:bg-[#D96B6B]", ativo: "bg-[#C44040] dark:bg-[#D96B6B] text-white dark:text-[#0E0E11] shadow-[0_1px_6px_rgba(196,64,64,0.24)]" },
+  { valor: "neutral", rotulo: "Neutras", cor: "bg-[#9A9AAA] dark:bg-[#7C7C88]", ativo: "bg-[#6A6A7A] dark:bg-[#9494A2] text-white dark:text-[#0E0E11]" },
+];
+
 function DropdownPill({
   label,
   active,
+  icon: Icone,
   children,
 }: {
   label: string;
   active: boolean;
+  icon?: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -82,8 +93,9 @@ function DropdownPill({
             ? "bg-[#EFF4FA] dark:bg-[#1A2A3C] border-[#C8D9EF] dark:border-[#2A3A4C] text-[#1A3A5C] dark:text-[#8AB0DC]"
             : "bg-white dark:bg-[#17171B] border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30"
         }`}
-        style={{ fontSize: "13.8px", fontWeight: active ? 600 : 400 }}
+        style={{ fontSize: "13.4px", fontWeight: active ? 600 : 400 }}
       >
+        {Icone && <Icone className={`w-3.5 h-3.5 ${active ? "" : "text-[#9090A8] dark:text-[#7C7C88]"}`} strokeWidth={1.8} />}
         {label}
         <ChevronDown className="w-3 h-3" strokeWidth={2} />
       </button>
@@ -217,18 +229,39 @@ export function SearchResultsPage() {
 
   const formatDateLong = (dateStr: string | null) => formatarData(dateStr, "long");
 
-  // "CLT art. 59 e 'banco de horas'" em verbos: cita … / contém … (rótulos vêm da contagem; sem ela, os códigos)
-  const exigencias = (plural: boolean) => {
-    const [cita, contem] = plural ? ["citam", "contêm"] : ["cita", "contém"];
-    const partes: string[] = [];
-    if (estrutura?.dispositivos.length) {
-      partes.push(`${cita} ${(contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos).join(" e ")}`);
-    }
-    if (estrutura?.expressoes.length) partes.push(`${contem} ${estrutura.expressoes.map((e) => `'${e}'`).join(" e ")}`);
-    return partes.join(" e ");
-  };
 
-  const { favorable: favorableCount, unfavorable: unfavorableCount, neutral: neutralCount } = contarDesfechos(results);
+  const contagemDesfecho = contarDesfechos(results);
+
+  // Topo do resumo: quantas decisões, o que foi exigido e uma nota (corte em 20, contagem, vazio).
+  const resumoTopo = (() => {
+    const grupos: { verbo: string; itens: string[] }[] = [];
+    if (restrito && estrutura) {
+      const varias = (contagem?.total ?? results.length) !== 1;
+      if (estrutura.dispositivos.length) {
+        grupos.push({ verbo: varias ? "citam" : "cita", itens: contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos });
+      }
+      if (estrutura.expressoes.length) grupos.push({ verbo: varias ? "contêm" : "contém", itens: estrutura.expressoes });
+    }
+    if (!restrito) return { total: results.length, descricao: results.length === 1 ? "decisão encontrada" : "decisões encontradas", grupos, nota: null };
+    if (results.length === 0) {
+      return { total: 0, descricao: "decisões do acervo (≈70 mil acórdãos de 2025)", grupos, nota: "Abra a busca livre abaixo para ver decisões parecidas." };
+    }
+    if (!contagem) {
+      return {
+        total: results.length,
+        descricao: results.length === 1 ? "decisão cumpre o filtro" : "decisões cumprem o filtro",
+        grupos,
+        nota: contagemFalhou ? "contagem do acervo indisponível" : contando ? "contando no acervo…" : null,
+      };
+    }
+    const mostra = results.length;
+    return {
+      total: contagem.total,
+      descricao: contagem.total === 1 ? "decisão do acervo" : "decisões do acervo",
+      grupos,
+      nota: contagem.total > mostra ? `mostrando ${mostra === 1 ? "a mais relevante" : `as ${mostra} mais relevantes`}` : null,
+    };
+  })();
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
@@ -309,146 +342,48 @@ export function SearchResultsPage() {
           </div>
         )}
 
-        {/* Summary banner */}
-        <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row flex-wrap sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#EFF4FA] dark:bg-[#1A2A3C] flex-shrink-0">
-              <Scale className="w-5 h-5 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
-            </div>
-            <div>
-              <h2 className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
-                {restrito
-                  ? results.length === 0
-                    ? `Nenhuma decisão do acervo (≈70 mil acórdãos de 2025) ${exigencias(false)}. Abra a busca livre abaixo para ver decisões parecidas.`
-                    : (() => {
-                        if (!contagem) {
-                          const n = filteredResults.length;
-                          return `${n} ${n === 1 ? "decisão cumpre" : "decisões cumprem"} o filtro`;
-                        }
-                        const n = contagem.total;
-                        const mostra = results.length;
-                        return `${n} ${n === 1 ? "decisão do acervo" : "decisões do acervo"} ${exigencias(n !== 1)}${
-                          n > mostra ? ` · mostrando ${mostra === 1 ? "a mais relevante" : `as ${mostra} mais relevantes`}` : ""
-                        }`;
-                      })()
-                  : `${filteredResults.length} ${filteredResults.length === 1 ? "decisão encontrada" : "decisões encontradas"}`}
-              </h2>
-              {restrito && results.length > 0 && contando && (
-                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
-                  contando no acervo…
-                </p>
-              )}
-              {restrito && contagemFalhou && (
-                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
-                  contagem do acervo indisponível
-                </p>
-              )}
-              {estrutura?.tese_central && (
-                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
-                  Alinhadas à tese: &ldquo;{truncate(estrutura.tese_central, 90)}&rdquo;
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-wrap sm:flex-shrink-0 items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EDF7F2] dark:bg-[#122A1E] border border-[#BDE0CF] dark:border-[#1E4A34]">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#2D8A5F] dark:bg-[#3DA372]" />
-              <span className="text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                {favorableCount} {favorableCount === 1 ? "favorável" : "favoráveis"}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FBF0F0] dark:bg-[#2A1517] border border-[#E8C2C2] dark:border-[#4A2529]">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#C44040] dark:bg-[#D96B6B]" />
-              <span className="text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                {unfavorableCount} {unfavorableCount === 1 ? "desfavorável" : "desfavoráveis"}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F5F5F8] dark:bg-[#1C1C21] border border-[#DCDCE8] dark:border-[#2A2A32]">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#9090A8] dark:bg-[#7C7C88]" />
-              <span className="text-[#6A6A7A] dark:text-[#9494A2]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                {neutralCount} neutro{neutralCount === 1 ? "" : "s"}
-              </span>
-            </div>
-          </div>
-          {sintese && (
-            <SinteseResultados sintese={sintese} porId={porId} ranks={ranks} citacao={citacao} onCitacao={setCitacao} onIr={irPara} />
-          )}
-        </div>
+        {/* Resumo das decisões: total, termos exigidos, desfechos, panorama, base citada, para citar */}
+        <ResumoDecisoes
+          total={resumoTopo.total}
+          descricao={resumoTopo.descricao}
+          grupos={resumoTopo.grupos}
+          nota={resumoTopo.nota}
+          tese={estrutura?.tese_central ? truncate(estrutura.tese_central, 180) : ""}
+          desfechos={contagemDesfecho}
+          mostradas={results.length}
+          filtro={filter}
+          onFiltro={setFilter}
+          sintese={sintese}
+          porId={porId}
+          ranks={ranks}
+          citacao={citacao}
+          onCitacao={setCitacao}
+          onIr={irPara}
+        />
 
-        {/* Versões (V1/V2/...) e refinar consulta */}
-        <div className="w-full max-w-[800px] flex items-center justify-between gap-3 mb-3">
-          {versoes.length > 1 ? (
-            <DropdownPill label={`Versão V${versionNumero ?? versoes[versoes.length - 1].numero}`} active={false}>
-              {(close) => (
-                <>
-                  {[...versoes].reverse().map((v) => (
-                    <DropdownOption
-                      key={v.numero}
-                      label={`V${v.numero}${v.numero === versoes.length ? " (mais recente)" : ""}`}
-                      active={v.numero === versionNumero}
-                      onClick={() => {
-                        loadVersion(v);
-                        close();
-                      }}
-                    />
-                  ))}
-                </>
-              )}
-            </DropdownPill>
-          ) : (
-            <span />
-          )}
-          <button
-            onClick={() => router.push("/revisao")}
-            className="flex items-center gap-1.5 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline"
-            style={{ fontSize: "13.8px", fontWeight: 500 }}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
-            Refinar consulta
-          </button>
-        </div>
-
-        {/* Filters and sort */}
-        <div className="w-full max-w-[800px] flex flex-wrap items-center justify-between gap-3 mb-5">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Filter className="w-3.5 h-3.5 text-[#9090A8] dark:text-[#7C7C88]" strokeWidth={1.8} />
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                filter === "all"
-                  ? "bg-[#1A3A5C] dark:bg-[#8AB0DC] text-white dark:text-[#0E0E11] shadow-[0_1px_6px_rgba(26,58,92,0.24)]"
-                  : "bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#1A3A5C]/30 dark:hover:border-[#8AB0DC]/30"
-              }`}
-              style={{ fontSize: "13.8px", fontWeight: filter === "all" ? 600 : 400 }}
-            >
-              Todas ({results.length})
-            </button>
-            <button
-              onClick={() => setFilter("favorable")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                filter === "favorable"
-                  ? "bg-[#2D8A5F] dark:bg-[#3DA372] text-white dark:text-[#0E0E11] shadow-[0_1px_6px_rgba(45,138,95,0.24)]"
-                  : "bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#2D8A5F]/30 dark:hover:border-[#3DA372]/30"
-              }`}
-              style={{ fontSize: "13.8px", fontWeight: filter === "favorable" ? 600 : 400 }}
-            >
-              Favoráveis ({favorableCount})
-            </button>
-            <button
-              onClick={() => setFilter("unfavorable")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                filter === "unfavorable"
-                  ? "bg-[#C44040] dark:bg-[#D96B6B] text-white dark:text-[#0E0E11] shadow-[0_1px_6px_rgba(196,64,64,0.24)]"
-                  : "bg-white dark:bg-[#17171B] border border-[#E0E0EA] dark:border-[#2A2A32] text-[#6B6B80] dark:text-[#A6A6B4] hover:border-[#C44040]/30 dark:hover:border-[#D96B6B]/30"
-              }`}
-              style={{ fontSize: "13.8px", fontWeight: filter === "unfavorable" ? 600 : 400 }}
-            >
-              Desfavoráveis ({unfavorableCount})
-            </button>
+        {/* Barra de filtros: desfecho (segmentos), tribunal, data e ordem; versões e refinar à direita */}
+        <div className="w-full max-w-[800px] mb-5 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-3.5 py-3 flex flex-wrap items-center gap-x-3 gap-y-2.5">
+          <div role="group" aria-label="Filtrar por desfecho" className="inline-flex p-[3px] gap-0.5 rounded-[10px] border border-[#E0E0EA] dark:border-[#2A2A32] bg-[#FAFAFC] dark:bg-[#1C1C21]">
+            {SEGMENTOS.map((sgm) => {
+              const n = sgm.valor === "all" ? results.length : contagemDesfecho[sgm.valor];
+              const ativo = filter === sgm.valor;
+              return (
+                <button
+                  key={sgm.valor}
+                  onClick={() => setFilter(sgm.valor)}
+                  aria-pressed={ativo}
+                  className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-[7px] transition-all ${ativo ? sgm.ativo : "text-[#6B6B80] dark:text-[#A6A6B4] hover:bg-white dark:hover:bg-[#17171B]"}`}
+                  style={{ fontSize: "13.4px", fontWeight: ativo ? 600 : 400 }}
+                >
+                  {sgm.cor && <span className={`w-[7px] h-[7px] rounded-full ${ativo ? "bg-white/90" : sgm.cor}`} />}
+                  <span className={sgm.valor === "all" ? "" : "hidden sm:inline"}>{sgm.rotulo}</span>
+                  <span className="tabular-nums opacity-80" style={{ fontSize: "12px" }}>{n}</span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <DropdownPill label={tribunal ?? "Todos os tribunais"} active={tribunal !== null}>
+            <DropdownPill icon={Scale} label={tribunal ?? "Todos os tribunais"} active={tribunal !== null}>
               {(close) => (
                 <div className="p-1 max-h-[320px] overflow-y-auto">
                   {[[null, results.length] as const, ...tribunais].map(([t, n]) => (
@@ -466,7 +401,7 @@ export function SearchResultsPage() {
               )}
             </DropdownPill>
 
-            <DropdownPill label={periodLabel} active={dateFrom !== "" || dateTo !== ""}>
+            <DropdownPill icon={Calendar} label={periodLabel} active={dateFrom !== "" || dateTo !== ""}>
               {(close) => (
                 <div className="p-1">
                   <p className="px-2 pb-1.5 text-[#9090A8] dark:text-[#7C7C88] uppercase tracking-[0.06em]" style={{ fontSize: "11.5px", fontWeight: 600 }}>
@@ -519,7 +454,7 @@ export function SearchResultsPage() {
               )}
             </DropdownPill>
 
-            <DropdownPill label={sortBy === "relevance" ? "Relevância" : "Data"} active={false}>
+            <DropdownPill icon={TrendingUp} label={sortBy === "relevance" ? "Relevância" : "Data"} active={false}>
               {(close) => (
                 <div className="p-1">
                   <DropdownOption
@@ -554,7 +489,40 @@ export function SearchResultsPage() {
                 <ArrowDown className="w-3.5 h-3.5" strokeWidth={2} />
               )}
             </button>
-          </div>
+          <span className="flex-1" />
+
+          {versoes.length > 1 && (
+            <div role="tablist" aria-label="Versões da consulta" className="inline-flex p-[3px] gap-0.5 rounded-[9px] border border-[#E0E0EA] dark:border-[#2A2A32] bg-[#FAFAFC] dark:bg-[#1C1C21]">
+              {versoes.map((v) => {
+                const ativa = v.numero === (versionNumero ?? versoes[versoes.length - 1].numero);
+                return (
+                  <button
+                    key={v.numero}
+                    role="tab"
+                    aria-selected={ativa}
+                    onClick={() => loadVersion(v)}
+                    title={v.numero === versoes.length ? "Versão mais recente" : `Versão ${v.numero}`}
+                    className={`px-2.5 py-1 rounded-[6px] transition-all ${
+                      ativa
+                        ? "bg-white dark:bg-[#17171B] text-[#1A3A5C] dark:text-[#8AB0DC] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+                        : "text-[#8A8A9A] dark:text-[#9494A2] hover:text-[#4A4A5A] dark:hover:text-[#C4C4CE]"
+                    }`}
+                    style={{ fontSize: "12.6px", fontWeight: ativa ? 600 : 400 }}
+                  >
+                    V{v.numero}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <button
+            onClick={() => router.push("/revisao")}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#C8D9EF] dark:border-[#2A3A4C] bg-[#EEF3FB] dark:bg-[#1A2A3C] text-[#1A3A5C] dark:text-[#8AB0DC] hover:border-[#1A3A5C]/40 transition-colors"
+            style={{ fontSize: "13.4px", fontWeight: 600 }}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
+            Refinar consulta
+          </button>
         </div>
 
         {/* FA04 — filtro de provimento com poucos resultados */}

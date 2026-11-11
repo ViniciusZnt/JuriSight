@@ -70,6 +70,27 @@ export function ementaComCitacao(d: Citavel): string {
 
 /** Título do card: classe, identificação e data antes da verbetação, para cards de mesmo tema (e até
  *  de ementa igual, da mesma turma) não ficarem iguais ("RORSum · TRT2 · 11ª Turma · 12/05/2025 — ADICIONAL…"). */
+// Siglas que continuam em maiúsculas quando o assunto da ementa vira frase.
+const SIGLAS = new Set(["CLT", "TST", "STF", "STJ", "TRT", "TRF", "CF", "CPC", "CC", "ADCT", "OJ", "SDI", "SBDI", "EPI", "EPIS", "NR", "FGTS", "CTPS", "INSS", "PLR", "PPP", "LTCAT", "CIPA", "MPT", "ACP", "RPV", "CTVA", "COVID", "LGPD", "CNH", "PJE", "IRDR", "IAC", "ROT", "RORSUM", "AP", "AIRR", "RR"]);
+const ROMANO = /^[IVXLC]+$/;
+
+/** Assunto da ementa para o título do card: o que está todo em maiúsculas ("MOTORISTA
+ *  PROFISSIONAL. HORAS EXTRAS.") vira frase ("Motorista profissional. Horas extras."), com as
+ *  siglas e os números romanos preservados; texto que já tem minúsculas fica como está. */
+export function assuntoDoCard(assunto: string): string {
+  if (/\p{Ll}/u.test(assunto)) return assunto;
+  const palavras = assunto.split(/(\s+)/).map((p) => {
+    const nucleo = p.replace(/[^\p{L}\d-]/gu, "");
+    const base = nucleo.split("-")[0];
+    if (SIGLAS.has(base) || (ROMANO.test(nucleo) && nucleo.length <= 4)) return p;
+    return p.toLocaleLowerCase("pt-BR");
+  });
+  let frase = palavras.join("");
+  // maiúscula no começo e depois de cada ponto
+  frase = frase.replace(/(^|[.!?]\s+)(\p{Ll})/gu, (_, antes: string, letra: string) => antes + letra.toLocaleUpperCase("pt-BR"));
+  return frase;
+}
+
 export function tituloDoCard(d: Pick<ResultCard, "ementa" | "tribunal" | "turma" | "sigla_classe" | "data_julgamento">): string {
   const data = d.data_julgamento && formatarData(d.data_julgamento);
   const id = [d.sigla_classe, d.tribunal, d.turma, data].filter(Boolean).join(" · ");
