@@ -197,3 +197,16 @@ def test_indexa_texto_bruto_e_nao_texto():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+def test_bm25_restringe_aos_documentos(tmp_path):
+    loaded = BM25Builder.load(_indice_com_provimentos(tmp_path))
+    res = loaded.search("benzeno", n=10, documento_ids={"d1", "d4"})
+    assert [c for c, _ in res] == ["d1:0"]  # d4 tem score 0 e é descartado
+    assert all(s > 0 for _, s in res)
+
+
+def test_bm25_ids_e_provimento_juntos(tmp_path):
+    loaded = BM25Builder.load(_indice_com_provimentos(tmp_path))
+    res = loaded.search("benzeno", n=10, provimento="NEGADO", documento_ids={"d1", "d2"})
+    assert [c for c, _ in res] == ["d1:0"]  # d2 está na lista mas é APROVADO

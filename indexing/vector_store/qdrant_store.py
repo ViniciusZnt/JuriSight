@@ -108,14 +108,16 @@ def _to_payload_documento(chunk: Chunk) -> dict:
 
 
 def _build_filter(where: dict | None) -> models.Filter | None:
-    """Traduz o filtro de igualdade simples do HybridSearch (ex.: {"provimento":
-    "APROVADO"}) para um Filter do Qdrant. Só suporta igualdade — é tudo que o
-    chamador (query/search/hybrid_search.py) usa hoje."""
+    """Traduz o filtro do HybridSearch (ex.: {"provimento": "APROVADO"}) para um
+    Filter do Qdrant. Valor escalar vira igualdade; lista vira "qualquer um de"
+    (ex.: {"documento_id": [ids]} na busca restrita)."""
     if not where:
         return None
-    return models.Filter(
-        must=[models.FieldCondition(key=k, match=models.MatchValue(value=v)) for k, v in where.items()]
-    )
+
+    def _match(v):
+        return models.MatchAny(any=list(v)) if isinstance(v, (list, tuple, set)) else models.MatchValue(value=v)
+
+    return models.Filter(must=[models.FieldCondition(key=k, match=_match(v)) for k, v in where.items()])
 
 
 class QdrantStore:

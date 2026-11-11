@@ -91,6 +91,7 @@ class HybridSearch:
         *,
         bm25_query: str | None = None,
         provimento: str | None = None,
+        documento_ids: list[str] | None = None,
     ) -> list[tuple[str, float]]:
         """Busca híbrida: vetorial (2 coleções) + lexical, fundidos por RRF.
 
@@ -101,7 +102,9 @@ class HybridSearch:
                 Query Builder), se diferente de `query`; default None usa `query`
                 nos dois canais (comportamento anterior, retrocompatível);
                 provimento — valor do enum (str); filtra os TRÊS canais (payload
-                do Qdrant e máscara do BM25). None não muda nenhuma chamada.
+                do Qdrant e máscara do BM25). None não muda nenhuma chamada;
+                documento_ids — restringe os TRÊS canais a esses documentos (filtro
+                restrito); None não muda nenhuma chamada.
         Returns: lista [(documento_id, score_rrf)] top-N, melhor primeiro.
 
         Nota: o `where` filtra só as buscas do Qdrant; o BM25 só filtra por
@@ -116,6 +119,9 @@ class HybridSearch:
             kwargs_bm25 = {"provimento": provimento}
         else:
             kwargs_bm25 = {}  # índices antigos e o pooling não conhecem o kwarg
+        if documento_ids is not None:
+            where = {**(where or {}), "documento_id": documento_ids}
+            kwargs_bm25["documento_ids"] = set(documento_ids)
 
         # Os 3 canais são independentes entre si (BM25 nem depende do embedding) —
         # rodavam em série antes, somando os tempos de rede do Qdrant (x2) + BM25.

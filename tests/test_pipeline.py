@@ -5,7 +5,7 @@ direto, sem HTTP. Nenhuma infra real: hybrid/retriever/reranker são fakes.
 import pytest
 
 from query.enrichment.schema import EstruturaArgumentativa
-from query.search.pipeline import N_RESULTS_FINAL, buscar
+from query.search.pipeline import N_CANDIDATOS_COM_FILTRO, N_RESULTS_FINAL, buscar
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
 
@@ -13,9 +13,11 @@ class _FakeHybrid:
     def __init__(self, resultados: list[tuple[str, float]]):
         self._resultados = resultados
         self.calls: list[dict] = []
+        self.ids: list[list[str] | None] = []
 
-    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None):
+    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None, documento_ids=None):
         self.calls.append({"n_results": n_results, "provimento": provimento})
+        self.ids.append(documento_ids)
         return self._resultados[:n_results]
 
 
@@ -145,3 +147,19 @@ def test_buscar_sem_filtrar_nos_canais_comportamento_antigo():
 
     assert hybrid.calls == [{"n_results": 80, "provimento": None}]
     assert [c.id for c in resultado] == ["b"]
+
+
+def test_buscar_com_ids_usa_pool_com_filtro():
+    hybrid = _FakeHybrid([("a", 1.0)])
+
+    _buscar_com(hybrid, {"a": _doc(id_documento="a")}, documento_ids=["a", "b"])
+
+    assert hybrid.calls[0]["n_results"] == N_CANDIDATOS_COM_FILTRO
+    assert hybrid.ids == [["a", "b"]]
+
+
+def test_buscar_com_lista_vazia_nao_busca():
+    hybrid = _FakeHybrid([("a", 1.0)])
+
+    assert _buscar_com(hybrid, {"a": _doc(id_documento="a")}, documento_ids=[]) == []
+    assert hybrid.calls == []

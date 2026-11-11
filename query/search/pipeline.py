@@ -94,8 +94,12 @@ def buscar(
     data_inicio: date | None = None,
     data_fim: date | None = None,
     filtrar_nos_canais: bool = True,
+    documento_ids: list[str] | None = None,
 ) -> list[ResultCard]:
     """Roda o pipeline completo do /query (síncrono).
+
+    documento_ids: restringe a busca a essa lista (filtro restrito); lista vazia
+    devolve [] sem buscar.
 
     Raises: ValueError (do query_builder) se a estrutura não tiver conteúdo.
     """
@@ -111,9 +115,14 @@ def buscar(
         data_inicio is not None or data_fim is not None
         or (provimento is not None and not filtrar_nos_canais)
     )
-    n_candidatos = N_CANDIDATOS_COM_FILTRO if filtro_pos_busca else N_CANDIDATOS_PARA_RERANK
+    restrito = documento_ids is not None
+    if restrito and not documento_ids:
+        return []
+    n_candidatos = N_CANDIDATOS_COM_FILTRO if filtro_pos_busca or restrito else N_CANDIDATOS_PARA_RERANK
 
     kwargs_busca = {"provimento": provimento.value} if provimento_nos_canais else {}
+    if restrito:
+        kwargs_busca["documento_ids"] = documento_ids
     rankings = hybrid.search(frase_tese, n_candidatos, bm25_query=bm25_query, **kwargs_busca)
     docs = retriever.fetch([doc_id for doc_id, _ in rankings])
 
