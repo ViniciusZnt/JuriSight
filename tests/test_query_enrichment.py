@@ -90,6 +90,7 @@ def test_extract_estrutura_pede_schema_sem_campos_de_filtro_restrito():
     propriedades = fake.calls[0]["format"]["properties"]
     assert "dispositivos" not in propriedades and "expressoes" not in propriedades
     assert "expressoes_chave" in propriedades and "normas" in propriedades
+    assert "dispositivos_relacionados" in propriedades
 
 
 def test_extrair_separa_expressoes_sugeridas_da_estrutura():
@@ -144,3 +145,14 @@ def test_condensar_junta_resumos_num_unico_prompt():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+def test_extrair_separa_dispositivos_sugeridos():
+    json_llm = (
+        '{"pedido_principal": "horas extras", "normas": [], '
+        '"dispositivos_relacionados": ["CLT art. 62, I", " ", "CLT art. 62, I", "CLT art. 74"]}'
+    )
+    enricher, _ = _enricher([json_llm])
+    extracao = enricher.extrair("texto", None)
+    assert extracao.dispositivos_sugeridos == ["CLT art. 62, I", "CLT art. 74"]
+    assert extracao.estrutura.dispositivos == [] and extracao.estrutura.normas == []

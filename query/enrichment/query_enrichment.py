@@ -44,7 +44,8 @@ _EXEMPLO_JSON = (
     '"setor": "metalurgia", '
     '"cargo": "operador de prensa", '
     '"tese_central": "A empresa tinha ciência do risco e não forneceu proteção adequada.", '
-    '"expressoes_chave": ["adicional de insalubridade", "equipamento de proteção individual"]}'
+    '"expressoes_chave": ["adicional de insalubridade", "equipamento de proteção individual"], '
+    '"dispositivos_relacionados": ["CLT art. 189", "CLT art. 191"]}'
 )
 
 _SYSTEM_PROMPT = f"""Você extrai a estrutura argumentativa de um caso trabalhista \
@@ -66,6 +67,10 @@ Só as que aparecem no texto.
 que nomeiam o tema do caso como os tribunais escrevem nas ementas (ex.: "horas extras", \
 "dano moral coletivo", "estabilidade da gestante", "adicional de insalubridade", "trabalho \
 externo"). Nada de frases longas nem fatos do caso.
+- dispositivos_relacionados (lista de strings): até 3 dispositivos legais que costumam \
+fundamentar esse tema nas decisões trabalhistas, mesmo que não citados no texto, sempre com a \
+lei ou o tribunal (ex.: "CLT art. 62, I", "ADCT art. 10, II, b", "Súmula 338 do TST"). Só os \
+que você tem certeza; senão, lista vazia.
 
 REGRAS IMPORTANTES:
 - NUNCA invente informação que não esteja no texto.
@@ -110,11 +115,18 @@ class _SaidaLLM(EstruturaArgumentativa):
     dispositivos: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
     expressoes: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
     expressoes_chave: list[str] = Field(default_factory=list)
+    dispositivos_relacionados: list[str] = Field(default_factory=list)
+
+
+def _sem_repetidos(itens: list[str]) -> list[str]:
+    return list(dict.fromkeys(i.strip() for i in itens if i.strip()))
 
 
 class Extracao(NamedTuple):
     estrutura: EstruturaArgumentativa
-    expressoes_sugeridas: list[str]  # ainda não filtram: o advogado escolhe na Revisão
+    # sugestões: ainda não filtram, o advogado escolhe na Revisão
+    expressoes_sugeridas: list[str]
+    dispositivos_sugeridos: list[str] = []  # em texto ("CLT art. 62, I"); o /enrich converte e confere no acervo
 
 
 class QueryEnricher:
@@ -134,12 +146,12 @@ class QueryEnricher:
         return self.extrair(texto_caso, intencao).estrutura
 
     def extrair(self, texto_caso: str | None, intencao: str | None = None) -> Extracao:
-        """Extrai a EstruturaArgumentativa via LLM (RF02) e as expressões que ele sugere.
+        """Extrai a EstruturaArgumentativa via LLM (RF02) e as expressões e dispositivos que ele sugere.
 
         Input:  texto_caso — texto do PDF (já resumido, se longo); intencao —
                 intenção argumentativa digitada.
-        Returns: Extracao — a estrutura validada (dispositivos/expressões sempre vazios) e
-                 as expressões sugeridas, sem repetidas nem vazias.
+        Returns: Extracao — a estrutura validada (dispositivos/expressões sempre vazios), as
+                 expressões e os dispositivos sugeridos, sem repetidos nem vazios.
         Raises: ValueError se não houver texto/intenção (propagado de _montar_conteudo).
         """
         conteudo = _montar_conteudo(texto_caso, intencao)
@@ -158,9 +170,8 @@ class QueryEnricher:
             options={"temperature": 0, "num_predict": 600},
         )
         saida = _SaidaLLM.model_validate_json(resp.message.content)
-        sugeridas = list(dict.fromkeys(e.strip() for e in saida.expressoes_chave if e.strip()))
-        estrutura = EstruturaArgumentativa(**saida.model_dump(exclude={"expressoes_chave"}))
-        return Extracao(estrutura, sugeridas)
+        estrutura = EstruturaArgumentativa(**saida.model_dump(exclude={"expressoes_chave", "dispositivos_relacionados"}))
+        return Extracao(estrutura, _sem_repetidos(saida.expressoes_chave), _sem_repetidos(saida.dispositivos_relacionados))
 
     def resumir_bloco(self, texto: str) -> str:
         """Resume um bloco de texto do PDF (usado na sumarização hierárquica — FA04).
