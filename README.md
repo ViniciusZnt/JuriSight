@@ -532,6 +532,34 @@ uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--con
 
 ---
 
+## Filtro restrito
+
+Além do texto livre, a busca aceita **dispositivos** (ex.: `art_791_clt`, `b_ii_art_10_adct`, escolhidos
+com autocompletar) e **expressões obrigatórias** (ex.: "dano moral coletivo", singular ou plural, sem
+depender de acento ou quebra de linha). Com algum deles, o `/query` devolve só decisões que cumprem
+**todos** os dispositivos e expressões (faixa "restrita"); a busca livre, sem esses filtros, vem sob
+demanda em `/query/livre` (faixa "livre"). `/filtros` dá o autocompletar e as contagens.
+
+Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas uma vez:
+
+```bash
+# local
+uv run python -m query.filtros.preparar
+
+# produção
+docker compose -f docker-compose.prod.yml exec api python -m query.filtros.preparar
+```
+
+- **Tempo:** cerca de 1m47 para as 69 mil decisões, na máquina local.
+- **Disco:** `documento_tsv` ocupa ~567 MB (dos quais 78 MB do índice GIN),
+  `documento_dispositivo` ~98 MB e `dispositivo` ~1,5 MB, medidos com `pg_total_relation_size`.
+  Confira o `df -h` antes de rodar na VPS.
+- **Decisões novas:** só entram no filtro depois de rodar o preparo de novo (os dispositivos são
+  refeitos do zero; o índice de texto só acrescenta as decisões que ainda não estão nele).
+  Sem o preparo, o filtro responde 503.
+
+---
+
 ## Stack
 
 | Tecnologia         | Função                                      |
