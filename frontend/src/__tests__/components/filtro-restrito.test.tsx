@@ -100,6 +100,19 @@ describe("FiltroRestrito", () => {
     expect(await screen.findByText(/Nenhuma decisão do acervo cumpre todos os filtros/)).toBeInTheDocument();
   });
 
+  it("erro nas sugestões avisa em vez de não abrir a lista", async () => {
+    sugerir.mockRejectedValue(new ApiError("x", 503));
+    render(<Harness />);
+    await userEvent.type(screen.getByPlaceholderText(/buscar dispositivo/i), "clt 59");
+    expect(await screen.findByText("Filtro restrito indisponível no momento")).toBeInTheDocument();
+  });
+
+  it("busca sem resultado avisa que o dispositivo não está no acervo", async () => {
+    render(<Harness />);
+    await userEvent.type(screen.getByPlaceholderText(/buscar dispositivo/i), "nr 15");
+    expect(await screen.findByText(/Nenhum dispositivo do acervo para “nr 15”/)).toBeInTheDocument();
+  });
+
   it("erro na contagem mostra indisponível sem quebrar", async () => {
     contar.mockRejectedValue(new ApiError("x", 503));
     render(<Harness exp={["xyz"]} />);
