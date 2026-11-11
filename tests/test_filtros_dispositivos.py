@@ -35,6 +35,10 @@ def test_eh_dispositivo():
     ("art_97_ri_trt9", "RI TRT9 art. 97"),
     ("prgf_6_art_11_ri_trt9", "RI TRT9 art. 11, § 6º"),
     ("algo_estranho", "algo_estranho"),
+    ("lv_art_5_cf", "CF art. 5, LV"),
+    ("lxxiv_art_5_cf", "CF art. 5, LXXIV"),
+    ("xl_art_7_cf", "CF art. 7, XL"),
+    ("xc_art_1_cf", "CF art. 1, XC"),
 ])
 def test_rotulo(codigo, esperado):
     assert rotulo(codigo) == esperado
@@ -57,12 +61,27 @@ def test_rotulo(codigo, esperado):
     ("art. 5 7 CLT", None),
     ("Súmula 85 do TST foo", None),
     ("", None),
+    ("art. 5º, LV, da CF", "lv_art_5_cf"),
+    ("art. 5º, LXXIV, da CF", "lxxiv_art_5_cf"),
+    ("Súmula nº 85 do TST", "sumula_85_tst"),
+    ("Súmula n. 85 do TST", "sumula_85_tst"),
+    ("Lei nº 13.467/2017", "lei_13467_17"),
+    ("Lei 13.467/17", "lei_13467_17"),
+    ("Lei nº 8.078/1990, art. 28", "art_28_lei_8078_90"),
+    ("art. 7º, XXIX, da CF/88", "xxix_art_7_cf"),
+    ("CF/1988, art. 7º", "art_7_cf"),
+    ("OJ 394 da SBDI-1 do TST", "oj_394_sdi1_tst"),
+    ("OJ nº 394 da SDI1 do TST", "oj_394_sdi1_tst"),
+    ("arts. 186 do CC", "art_186_ccb"),
+    ("arts. 186 e 927 do CC", None),
+    ("Lei 13.467/2017 foo", None),
 ])
 def test_codigo_de_texto(texto, esperado):
     assert codigo_de_texto(texto) == esperado
 
 def test_codigo_de_texto_e_rotulo_sao_inversos():
-    for c in ["art_15_clt", "b_ii_art_10_adct", "prgf_2_art_791_clt", "sumula_85_tst", "oj_394_sdi1_tst"]:
+    for c in ["art_15_clt", "b_ii_art_10_adct", "prgf_2_art_791_clt", "sumula_85_tst", "oj_394_sdi1_tst",
+              "lv_art_5_cf", "lei_13467_17"]:
         assert codigo_de_texto(rotulo(c)) == c
 
 @pytest.mark.parametrize("texto,esperado", [
@@ -74,6 +93,10 @@ def test_codigo_de_texto_e_rotulo_sao_inversos():
     ("CC 186", ["ccb", "186"]),
     ("Súmula 85 do TST", ["sumula", "85", "tst"]),
     ("art 10 do adct", ["art", "10", "adct"]),
+    ("Súmula nº 85", ["sumula", "85"]),
+    ("CF/88 art 5", ["cf", "art", "5"]),
+    ("SBDI-1", ["sdi1"]),
+    ("arts. 186", ["art", "186"]),
 ])
 def test_tokens_da_busca(texto, esperado):
     assert tokens_da_busca(texto) == esperado

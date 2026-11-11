@@ -10,7 +10,7 @@ import unicodedata
 ANCORAS = ("art", "sumula", "oj", "convencao", "lei")
 SIGLAS = {"clt": "CLT", "cf": "CF", "adct": "ADCT", "cpc": "CPC",
           "ccb": "CC", "cp": "CP", "cdc": "CDC"}
-_ROMANO = re.compile(r"^(?=.)x{0,3}(ix|iv|v?i{0,3})$")
+_ROMANO = re.compile(r"^(?=.)(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$")  # i a lxxxix
 _CONECTIVOS = {"de", "da", "do", "das", "dos", "e"}
 _ORGAO = re.compile(r"^(tst|stf|stj|tse|oit|sdc|sdi\d|trt\d{1,2})$")
 
@@ -95,14 +95,16 @@ def rotulo(codigo: str) -> str:
 
 
 def tokens_da_busca(texto: str) -> list[str]:
-    """Fichas normalizadas do texto: sem acento, `art.`->art, `§`->prgf, sem
-    conectivos (de, da, do, das, dos, e)."""
+    """Fichas normalizadas do texto: sem acento, `art.`/`arts.`->art, `§`->prgf, sem `nº`,
+    `CF/88`->cf, `SBDI-1`->sdi1, sem conectivos (de, da, do, das, dos, e)."""
     t = unicodedata.normalize("NFD", texto.lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
+    t = re.sub(r"\bn\s*[º°]?\.?\s*(?=\d)", " ", t)  # "nº 85", "n. 85"
     t = re.sub(r"[ºª°]", "", t).replace("§", " prgf ")
     t = re.sub(r"(?<=\d)\.(?=\d)", "", t)
-    t = re.sub(r"sdi\s*-\s*(\d)", r"sdi\1", t)
-    trocas = {"artigo": "art", "paragrafo": "prgf", "cc": "ccb"}
+    t = re.sub(r"\bsb?di\s*-?\s*(\d)", r"sdi\1", t)
+    t = re.sub(r"\bcf\s*/\s*(19)?88\b", "cf", t)
+    trocas = {"artigo": "art", "arts": "art", "paragrafo": "prgf", "cc": "ccb"}
     return [trocas.get(f, f) for f in re.findall(r"[a-z0-9]+", t) if f not in _CONECTIVOS]
 
 
@@ -113,12 +115,13 @@ def codigo_de_texto(texto: str) -> str | None:
     lei = []
     for j in range(len(fichas) - 2):
         if fichas[j] == "lei" and fichas[j + 1].isdigit() and fichas[j + 2].isdigit():
-            lei, fichas = fichas[j:j + 3], fichas[:j] + fichas[j + 3:]
+            # o acervo usa o ano com 2 dígitos: "Lei 13.467/2017" -> lei_13467_17
+            lei, fichas = ["lei", fichas[j + 1], fichas[j + 2][-2:]], fichas[:j] + fichas[j + 3:]
             break
     i = next((k for k, f in enumerate(fichas[:-1])
               if f in ("art", "sumula", "oj") and fichas[k + 1].isdigit()), None)
     if i is None:
-        return None
+        return "_".join(lei) if lei and not fichas else None
     ancora, numero = fichas[i], fichas[i + 1]
     unidades, outros = [], fichas[:i]
     depois, k = fichas[i + 2:], 0

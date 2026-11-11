@@ -1,7 +1,8 @@
 """
 Testes de integração de query/filtros/store.py contra o Postgres local (corpus real).
-Pulado se DATABASE_URL não estiver definida ou o Postgres não responder.
-Requer `python -m query.filtros.preparar` já rodado (o primeiro teste também roda).
+Pulado se DATABASE_URL não estiver definida, o Postgres não responder ou o preparo
+(`python -m query.filtros.preparar`) ainda não tiver rodado. Os testes só leem o banco; o que roda
+o preparo (reescreve as tabelas, leva minutos e trava a leitura) só roda com JURISIGHT_TESTAR_PREPARO=1.
 """
 from __future__ import annotations
 
@@ -34,13 +35,30 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def store():
-    preparar(DATABASE_URL)
+    with psycopg.connect(DATABASE_URL) as conn:
+        prontas = conn.execute("SELECT to_regclass('public.documento_tsv') IS NOT NULL "
+                               "AND to_regclass('public.dispositivo') IS NOT NULL").fetchone()[0]
+    if not prontas:
+        pytest.skip("Rode `python -m query.filtros.preparar` antes.")
     return FiltroStore(DATABASE_URL)
 
 
-def test_preparar_e_idempotente(store):
+@pytest.mark.skipif(os.getenv("JURISIGHT_TESTAR_PREPARO") != "1",
+                    reason="Reescreve as tabelas do banco (minutos); ligue com JURISIGHT_TESTAR_PREPARO=1.")
+def test_preparar_e_idempotente():
     preparar(DATABASE_URL)
     preparar(DATABASE_URL)
+    assert FiltroStore(DATABASE_URL).existentes(["art_15_clt"]) == {"art_15_clt"}
+
+
+def test_frase_com_hifen_casa_como_no_texto(store):
+    # "auxílio-doença" e "auxilio doenca" valem o mesmo; a contagem bate com uma regex no texto
+    with psycopg.connect(DATABASE_URL) as conn:
+        regex = conn.execute(
+            r"""SELECT count(*) FROM documentos WHERE lower(public.jurisight_unaccent(
+                 coalesce(ementa,'') || ' ' || coalesce(fundamentacao,''))) ~ %s""",
+            [r"\mconcess(ao|oes|aos)[^a-z0-9]+(do|dos)[^a-z0-9]+auxilios?[^a-z0-9]+doencas?\M"]).fetchone()[0]
+    assert store.contar([], ["concessão do auxílio-doença"]).total == regex > 0
 
 
 def test_niveis_entram_na_tabela(store):
