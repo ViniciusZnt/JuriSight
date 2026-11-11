@@ -9,7 +9,7 @@ interface Props {
   estrutura: EstruturaArgumentativa;
   /** Ids já mostrados na faixa restrita (não repetem aqui). */
   excluir: Set<string>;
-  /** Mesmos filtros de desfecho/período que a tela aplica à faixa restrita. */
+  /** Mesmos filtros de desfecho/período/tribunal que a tela aplica à faixa restrita (sem o da base citada). */
   passa: (d: ResultCard) => boolean;
 }
 

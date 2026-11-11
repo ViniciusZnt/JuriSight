@@ -42,8 +42,8 @@ export function FiltroRestrito({
   const [busca, setBusca] = useState("");
   const [opcoes, setOpcoes] = useState<SugestaoDispositivo[]>([]);
   const [expr, setExpr] = useState("");
-  const [contagem, setContagem] = useState<ContagemFiltros | null>(null);
-  const [indisponivel, setIndisponivel] = useState(false);
+  // última contagem recebida e de qual filtro ela é (null em `dados` = falhou)
+  const [recebida, setRecebida] = useState<{ chave: string; dados: ContagemFiltros | null } | null>(null);
   const [rotulos, setRotulos] = useState<Record<string, string>>({});
   const buscaRef = useRef<HTMLInputElement>(null);
   const exprRef = useRef<HTMLInputElement>(null);
@@ -65,34 +65,33 @@ export function FiltroRestrito({
     };
   }, [busca]);
 
+  const chave = JSON.stringify([dispositivos, expressoes]);
   useEffect(() => {
-    if (!dispositivos.length && !expressoes.length) {
-      setContagem(null);
-      setIndisponivel(false);
-      return;
-    }
+    if (!dispositivos.length && !expressoes.length) return;
     let ativo = true;
     const t = setTimeout(() => {
       contarFiltros(dispositivos, expressoes)
-        .then((r) => {
-          if (!ativo) return;
-          setContagem(r);
-          setIndisponivel(false);
-        })
-        .catch(() => {
-          if (!ativo) return;
-          setContagem(null);
-          setIndisponivel(true);
-        });
+        .then((r) => ativo && setRecebida({ chave, dados: r }))
+        .catch(() => ativo && setRecebida({ chave, dados: null }));
     }, DEBOUNCE_MS);
     return () => {
       ativo = false;
       clearTimeout(t);
     };
-  }, [dispositivos, expressoes]);
+    // `chave` resume dispositivos + expressões
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave]);
 
-  const rotulo = (codigo: string) => rotulos[codigo] ?? contagem?.dispositivos.find((d) => d.codigo === codigo)?.rotulo ?? codigo;
-  const totalExpr = (texto: string) => contagem?.expressoes.find((e) => e.texto === texto)?.total;
+  // O total combinado só vale para o filtro atual: enquanto a contagem nova não chega, "contando…".
+  // O total de cada chip não depende dos outros filtros, então o da última contagem continua certo.
+  const temFiltro = dispositivos.length > 0 || expressoes.length > 0;
+  const atual = temFiltro && recebida?.chave === chave ? recebida : null;
+  const contagem = atual?.dados ?? null;
+  const indisponivel = atual !== null && atual.dados === null;
+  const contando = temFiltro && atual === null;
+  const ultima = recebida?.dados;
+  const rotulo = (codigo: string) => rotulos[codigo] ?? ultima?.dispositivos.find((d) => d.codigo === codigo)?.rotulo ?? codigo;
+  const totalExpr = (texto: string) => ultima?.expressoes.find((e) => e.texto === texto)?.total;
 
   const escolher = (o: SugestaoDispositivo) => {
     const codigo = o.codigo;
@@ -197,6 +196,8 @@ export function FiltroRestrito({
           value={expr}
           onChange={(e) => setExpr(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && addExpr()}
+          onBlur={addExpr} // como nos outros campos: texto digitado não se perde ao clicar em Buscar
+          maxLength={200}
           placeholder="Expressão que a decisão deve conter (Enter para adicionar)"
           className={inputCls}
           style={{ fontSize: "14px" }}
@@ -206,6 +207,11 @@ export function FiltroRestrito({
       {indisponivel && (
         <p className="text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.2px" }}>
           Filtro restrito indisponível no momento
+        </p>
+      )}
+      {contando && (
+        <p className={mutedCls} style={{ fontSize: "13.8px", fontWeight: 600 }}>
+          Com todos os filtros: contando…
         </p>
       )}
       {contagem && (

@@ -12,19 +12,22 @@ jest.mock("@/lib/api", () => ({
 const sugerir = sugerirDispositivos as jest.Mock;
 const contar = contarFiltros as jest.Mock;
 
-function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[] }) {
+function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[], onBuscar = (() => {}) as (e: string[]) => void }) {
   const [d, setD] = useState(disp);
   const [e, setE] = useState(exp);
   return (
-    <FiltroRestrito
-      dispositivos={d}
-      expressoes={e}
-      dispositivosIa={ia}
-      onChange={(p) => {
-        if (p.dispositivos) setD(p.dispositivos);
-        if (p.expressoes) setE(p.expressoes);
-      }}
-    />
+    <>
+      <FiltroRestrito
+        dispositivos={d}
+        expressoes={e}
+        dispositivosIa={ia}
+        onChange={(p) => {
+          if (p.dispositivos) setD(p.dispositivos);
+          if (p.expressoes) setE(p.expressoes);
+        }}
+      />
+      <button onClick={() => onBuscar(e)}>Buscar jurisprudências</button>
+    </>
   );
 }
 
@@ -62,6 +65,34 @@ describe("FiltroRestrito", () => {
     await userEvent.type(screen.getByPlaceholderText(/expressão/i), "hora extra{Enter}");
     expect(await screen.findByText(/· 7 decisões/)).toBeInTheDocument();
     expect(await screen.findByText("Com todos os filtros: 7 decisões")).toBeInTheDocument();
+  });
+
+  it("mostra contando… enquanto a contagem nova não chega, sem o total anterior", async () => {
+    contar.mockResolvedValueOnce({ total: 7, dispositivos: [], expressoes: [{ texto: "hora extra", total: 7 }] });
+    let responder: (v: unknown) => void = () => {};
+    contar.mockReturnValueOnce(new Promise((r) => (responder = r)));
+    render(<Harness exp={["hora extra"]} />);
+    expect(await screen.findByText("Com todos os filtros: 7 decisões")).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText(/expressão/i), "banco de horas{Enter}");
+    expect(await screen.findByText("Com todos os filtros: contando…")).toBeInTheDocument();
+    expect(screen.queryByText("Com todos os filtros: 7 decisões")).not.toBeInTheDocument();
+    responder({ total: 2, dispositivos: [], expressoes: [{ texto: "hora extra", total: 7 }, { texto: "banco de horas", total: 3 }] });
+    expect(await screen.findByText("Com todos os filtros: 2 decisões")).toBeInTheDocument();
+    expect(screen.queryByText(/contando…/)).not.toBeInTheDocument();
+  });
+
+  it("texto digitado sem Enter entra como chip ao clicar em Buscar", async () => {
+    const onBuscar = jest.fn();
+    render(<Harness onBuscar={onBuscar} />);
+    await userEvent.type(screen.getByPlaceholderText(/expressão/i), "  dano moral coletivo ");
+    await userEvent.click(screen.getByRole("button", { name: "Buscar jurisprudências" }));
+    expect(onBuscar).toHaveBeenCalledWith(["dano moral coletivo"]);
+    expect(screen.getByLabelText("Nova expressão obrigatória")).toHaveValue("");
+  });
+
+  it("campo de expressão aceita no máximo 200 caracteres", () => {
+    render(<Harness />);
+    expect(screen.getByLabelText("Nova expressão obrigatória")).toHaveAttribute("maxLength", "200");
   });
 
   it("contagem zero mostra o aviso de faixa vazia", async () => {

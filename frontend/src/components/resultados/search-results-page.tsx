@@ -145,6 +145,7 @@ export function SearchResultsPage() {
   // só vale a contagem do filtro atual (nunca a de um filtro anterior)
   const contagem = recebida?.chave === chaveFiltro ? recebida.dados : null;
   const contagemFalhou = recebida?.chave === chaveFiltro && recebida.dados === null;
+  const contando = restrito && recebida?.chave !== chaveFiltro;
 
   // Acesso direto à URL sem ter passado por Home/Revisão — não há busca em andamento.
   useEffect(() => {
@@ -205,11 +206,11 @@ export function SearchResultsPage() {
     return sortDir === "asc" ? ordered.reverse() : ordered;
   }, [results, sortBy, sortDir]);
 
-  const passaFiltros = (d: (typeof results)[number]) =>
-    (filter === "all" || outcomeDe(d) === filter) &&
-    inPeriod(d.data_julgamento) &&
-    (!citacao || idsCitacao.has(d.id)) &&
-    (!tribunal || d.tribunal === tribunal);
+  // desfecho, período e tribunal valem também para a faixa livre; o chip da base citada não (ele
+  // vem das ementas da faixa restrita e esconderia toda a livre)
+  const passaFiltrosComuns = (d: (typeof results)[number]) =>
+    (filter === "all" || outcomeDe(d) === filter) && inPeriod(d.data_julgamento) && (!tribunal || d.tribunal === tribunal);
+  const passaFiltros = (d: (typeof results)[number]) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id));
 
   const filteredResults = sortedResults.filter(passaFiltros);
 
@@ -313,6 +314,11 @@ export function SearchResultsPage() {
                       })()
                   : `${filteredResults.length} ${filteredResults.length === 1 ? "decisão encontrada" : "decisões encontradas"}`}
               </h2>
+              {restrito && results.length > 0 && contando && (
+                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
+                  contando no acervo…
+                </p>
+              )}
               {restrito && contagemFalhou && (
                 <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
                   contagem do acervo indisponível
@@ -607,7 +613,7 @@ export function SearchResultsPage() {
         )}
 
         {estrutura && restrito && (
-          <FaixaLivre key={`${versionNumero}|${JSON.stringify(estrutura)}`} estrutura={estrutura} excluir={new Set(results.map((d) => d.id))} passa={passaFiltros} />
+          <FaixaLivre key={`${versionNumero}|${JSON.stringify(estrutura)}`} estrutura={estrutura} excluir={new Set(results.map((d) => d.id))} passa={passaFiltrosComuns} />
         )}
         {!restrito && (
           <p className="w-full max-w-[800px] mt-6 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>

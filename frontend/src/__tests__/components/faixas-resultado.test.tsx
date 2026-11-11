@@ -105,6 +105,26 @@ describe("faixas de resultado", () => {
     expect(screen.getAllByText("Ementa da decisão a")).toHaveLength(1);
   });
 
+  it("contagem em andamento aparece como contando, sem número do acervo", async () => {
+    (contarFiltros as jest.Mock).mockReturnValue(new Promise(() => {}));
+    sessao.resultados = [card("a", { faixa: "restrita" })];
+    sessao.estrutura = restrita;
+    render(<SearchResultsPage />);
+    expect(await screen.findByText("contando no acervo…")).toBeInTheDocument();
+    expect(screen.queryByText(/decisões do acervo/)).not.toBeInTheDocument();
+  });
+
+  it("chip da base citada não esconde a faixa livre", async () => {
+    const cita = { ementa: "Aplica-se a Súmula 85 do TST ao caso." };
+    sessao.resultados = [card("a", { faixa: "restrita", ...cita }), card("b", { faixa: "restrita", ...cita })];
+    sessao.estrutura = restrita;
+    (queryLivre as jest.Mock).mockResolvedValue([card("z", { faixa: "livre" })]);
+    render(<SearchResultsPage />);
+    await userEvent.click(screen.getByRole("button", { name: /Súmula 85 do TST/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Busca livre \(semântica\)/ }));
+    expect(await screen.findByText("Ementa da decisão z")).toBeInTheDocument();
+  });
+
   it("faixa restrita vazia mostra o aviso com o acervo e não pede resposta", async () => {
     sessao.resultados = [];
     sessao.estrutura = restrita;
