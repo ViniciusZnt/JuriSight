@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { ComoFoiBuscado } from "@/components/resultados/como-foi-buscado";
 import { emptyEstrutura, explicarBusca } from "@/lib/api";
 
@@ -19,12 +18,10 @@ beforeEach(() => {
 });
 
 describe("Como esta busca foi feita", () => {
-  it("começa fechado e só pede a explicação ao abrir", async () => {
+  it("aparece aberto, sem botão de abrir, e carrega a explicação sozinho", async () => {
     render(<ComoFoiBuscado estrutura={estrutura} filtro={null} />);
-    expect(explicar).not.toHaveBeenCalled();
-    expect(screen.queryByText("Busca semântica")).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /Como esta busca foi feita/ }));
+    expect(screen.getByRole("heading", { name: "Como esta busca foi feita" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Como esta busca foi feita/ })).not.toBeInTheDocument();
 
     expect(await screen.findByText("“A empresa violou o segredo industrial.”")).toBeInTheDocument();
     expect(screen.getByText("violação de segredo industrial")).toBeInTheDocument();
@@ -34,14 +31,12 @@ describe("Como esta busca foi feita", () => {
 
   it("sem filtro restrito não mostra a linha do filtro", async () => {
     render(<ComoFoiBuscado estrutura={estrutura} filtro={null} />);
-    await userEvent.click(screen.getByRole("button", { name: /Como esta busca foi feita/ }));
     await screen.findByText("Busca semântica");
     expect(screen.queryByText("Filtro restrito")).not.toBeInTheDocument();
   });
 
   it("com filtro mostra os dispositivos, as expressões e quantas decisões passaram", async () => {
     render(<ComoFoiBuscado estrutura={estrutura} filtro={{ itens: ["CPC art. 473, § 3º", "“dano moral coletivo”"], total: 82 }} />);
-    await userEvent.click(screen.getByRole("button", { name: /Como esta busca foi feita/ }));
     expect(await screen.findByText("Filtro restrito")).toBeInTheDocument();
     expect(screen.getByText("“dano moral coletivo”")).toBeInTheDocument();
     expect(screen.getByText(/82 de 69\.349 decisões passaram; só elas foram ordenadas\./)).toBeInTheDocument();
@@ -50,7 +45,6 @@ describe("Como esta busca foi feita", () => {
   it("se a explicação falhar, avisa sem quebrar", async () => {
     explicar.mockRejectedValue(new Error("x"));
     render(<ComoFoiBuscado estrutura={estrutura} filtro={null} />);
-    await userEvent.click(screen.getByRole("button", { name: /Como esta busca foi feita/ }));
     expect(await screen.findByText(/Não foi possível carregar como a busca foi feita/)).toBeInTheDocument();
   });
 });

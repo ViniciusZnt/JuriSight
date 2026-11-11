@@ -1,4 +1,4 @@
-import { dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
+import { assuntoDoCard, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -135,5 +135,18 @@ describe("dispositivoETexto", () => {
       "Se a empregada está grávida, é vedada a dispensa",
     ]);
     expect(dispositivoETexto("NR-15 Anexo 1")).toEqual([null, "NR-15 Anexo 1"]);
+  });
+});
+
+
+describe("assuntoDoCard", () => {
+  it("passa o assunto em maiúsculas para frase, mantendo as siglas", () => {
+    expect(assuntoDoCard("MOTORISTA PROFISSIONAL. HORAS EXTRAS. ART. 62, I, DA CLT.")).toBe("Motorista profissional. Horas extras. Art. 62, I, da CLT.");
+    expect(assuntoDoCard("ADICIONAL DE INSALUBRIDADE. EPI INEFICAZ. NR-15.")).toBe("Adicional de insalubridade. EPI ineficaz. NR-15.");
+    expect(assuntoDoCard("SÚMULA 338 DO TST. CONTROLE DE JORNADA.")).toBe("Súmula 338 do TST. Controle de jornada.");
+  });
+
+  it("não mexe em assunto que já tem minúsculas", () => {
+    expect(assuntoDoCard("Comprovada a exposição ao ruído, é devido o adicional.")).toBe("Comprovada a exposição ao ruído, é devido o adicional.");
   });
 });

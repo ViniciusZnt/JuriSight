@@ -9,7 +9,7 @@ import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { outcomeDe, rotuloSelo } from "@/lib/provimento";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
-import { ementaComCitacao, formatarData, matchedEntities, titleFromEmenta, tituloDoCard, truncate, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
+import { assuntoDoCard, ementaComCitacao, formatarData, matchedEntities, titleFromEmenta, truncate, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
 import { copiarTexto } from "@/lib/utils";
 import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
@@ -38,7 +38,7 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
   const [expandida, setExpandida] = useState(false);
   const [copiada, setCopiada] = useState(false);
   const saved = isSaved(decision.id);
-  const title = tituloDoCard(decision);
+  const title = assuntoDoCard(titleFromEmenta(decision.ementa));
   const outcome = outcomeDe(decision);
   const entidades = matchedEntities(estrutura, decision.ementa);
 
@@ -61,8 +61,29 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
           // para o clique em qualquer ponto abrir a decisão. Controles internos ficam com z-10.
           <div
             id={`${idPrefix}-${decision.id}`}
-            className="relative scroll-mt-16 target:ring-2 target:ring-[#1A3A5C]/40 dark:target:ring-[#8AB0DC]/50 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group"
+            className={`relative scroll-mt-16 target:ring-2 target:ring-[#1A3A5C]/40 dark:target:ring-[#8AB0DC]/50 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all overflow-hidden group ${
+              rank !== undefined ? "grid grid-cols-[56px_minmax(0,1fr)]" : ""
+            }`}
           >
+            {/* Posição na busca: a âncora visual do card */}
+            {rank !== undefined && (
+              <div
+                title={`${rank}º mais relevante de ${total} nesta busca`}
+                aria-label={`${rank}º mais relevante de ${total} nesta busca`}
+                className="flex flex-col items-center gap-0.5 pt-5 bg-[#F5F8FD] dark:bg-[#131C28] border-r border-[#E8EEF7] dark:border-[#26313F]"
+              >
+                <TrendingUp className="w-3.5 h-3.5 mb-0.5 text-[#9090A8] dark:text-[#7C8AA0]" strokeWidth={1.8} />
+                <span className="text-[#1A3A5C] dark:text-[#8AB0DC] tabular-nums" style={{ fontSize: "18px", fontWeight: 700, lineHeight: 1 }}>
+                  #{rank}
+                </span>
+                {total !== undefined && (
+                  <span className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "10.5px", fontWeight: 600 }}>
+                    de {total}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="min-w-0">
             {/* Header */}
             <div className="px-6 pt-5 pb-4 border-b border-[#F0F0F6] dark:border-[#26262C]">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4 mb-3">
@@ -73,24 +94,12 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
                 </h3>
                 <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
                   <OutcomeBadge outcome={outcome} label={rotuloSelo(decision)} size="sm" />
-                  {rank !== undefined && (
-                  <div
-                    title={`${rank}º mais relevante de ${total} nesta busca`}
-                    aria-label={`${rank}º mais relevante de ${total} nesta busca`}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#FAFAFA] dark:bg-[#1C1C21] border border-[#EBEBF2] dark:border-[#26262C]"
-                  >
-                    <TrendingUp className="w-3 h-3 text-[#1A3A5C] dark:text-[#8AB0DC]" strokeWidth={1.8} />
-                    <span className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "12.6px", fontWeight: 600 }}>
-                      #{rank}
-                    </span>
-                  </div>
-                  )}
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.2px" }}>
                 <MetaItem icon={Scale} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                  <span>{decision.tribunal} — {decision.turma}</span>
+                  <span>{[decision.sigla_classe, decision.tribunal].filter(Boolean).join(" · ")} — {decision.turma}</span>
                 </MetaItem>
                 <MetaItem icon={Calendar} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
                   <span>{formatDate(decision.data_julgamento)}</span>
@@ -187,6 +196,7 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
                   onClick={() => toggleSave()}
                 />
               </div>
+            </div>
             </div>
           </div>
   );
