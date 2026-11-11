@@ -24,10 +24,13 @@ import query.api.app as api_app
 from auth.store import Usuario
 from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid, get_reranker, get_uso_diario
 from query.api.auth_routes import get_usuario_store
+from query.api.filtros_routes import get_filtro_store
 from query.api.uso_diario import LimiteDiarioExcedido
 from query.enrichment.pdf_extractor import PDFSemTextoError
 from query.enrichment.query_enrichment import _montar_conteudo
 from query.enrichment.schema import EstruturaArgumentativa
+from query.filtros.store import FiltroIndisponivel
+from query.search.result_formatter import ResultCard
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
 _USUARIO_FAKE = Usuario(
@@ -45,11 +48,13 @@ class _FakeHybrid:
         self._resultados = resultados
         self.calls: list[dict] = []
 
-    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None):
+    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None, documento_ids=None):
         self.calls.append(
-            {"query": query, "n_results": n_results, "bm25_query": bm25_query, "provimento": provimento}
+            {"query": query, "n_results": n_results, "bm25_query": bm25_query, "provimento": provimento,
+             "documento_ids": documento_ids}
         )
-        return self._resultados[:n_results]
+        achados = [r for r in self._resultados if documento_ids is None or r[0] in documento_ids]
+        return achados[:n_results]
 
 
 class _FakeReranker:
@@ -481,3 +486,156 @@ def test_document_anexa_classificacao(client):
     app.dependency_overrides[get_provimento_store] = lambda: _FakeProvimentoStore()
     body = client.get("/document/a-id").json()
     assert body["classificacao_provimento"]["recorrente"] == "reclamada"
+
+
+# --------------------------------------------------------------------------- #
+# Filtro restrito: /query com faixas, /query/livre e /enrich                  #
+# --------------------------------------------------------------------------- #
+
+class _FakeFiltroStore:
+    def __init__(self, elegiveis=("a-id",), existentes=("art_192_clt",), indisponivel=False):
+        self._elegiveis, self._existentes, self._indisponivel = list(elegiveis), set(existentes), indisponivel
+        self.calls: list[tuple] = []
+
+    def _check(self):
+        if self._indisponivel:
+            raise FiltroIndisponivel("sem preparo")
+
+    def elegiveis(self, dispositivos, expressoes):
+        self._check()
+        self.calls.append(("elegiveis", dispositivos, expressoes))
+        return self._elegiveis
+
+    def existentes(self, codigos):
+        self._check()
+        return {c for c in codigos if c in self._existentes}
+
+
+class _UsoContador:
+    def __init__(self):
+        self.acoes = []
+
+    def consumir(self, usuario_id, acao):
+        self.acoes.append(acao)
+
+
+_FILTRO = {"estrutura": {"tese_central": "insalubridade", "dispositivos": ["art_192_clt"]}}
+
+
+def _busca_fake():
+    hybrid = _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
+    app.dependency_overrides[get_hybrid] = lambda: hybrid
+    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever({"a-id": _doc(), "b-id": _doc()})
+    return hybrid
+
+
+def test_query_com_filtro_passa_elegiveis_e_marca_restrita(client, monkeypatch):
+    _busca_fake()
+    store = _FakeFiltroStore(elegiveis=["a-id"])
+    app.dependency_overrides[get_filtro_store] = lambda: store
+    vistos = {}
+    real = api_app.buscar
+    monkeypatch.setattr(api_app, "buscar", lambda *a, **k: vistos.update(k) or real(*a, **k))
+
+    resp = client.post("/query", json=_FILTRO)
+
+    assert resp.status_code == 200
+    assert vistos["documento_ids"] == ["a-id"]
+    assert [(c["id"], c["faixa"]) for c in resp.json()] == [("a-id", "restrita")]
+    assert store.calls == [("elegiveis", ["art_192_clt"], [])]
+
+
+def test_query_com_filtro_sem_elegiveis_devolve_lista_vazia_sem_buscar(client):
+    hybrid = _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(elegiveis=[])
+
+    resp = client.post("/query", json=_FILTRO)
+
+    assert resp.status_code == 200 and resp.json() == []
+    assert hybrid.calls == []
+
+
+def test_query_com_codigo_inexistente_devolve_200_vazio(client):
+    hybrid = _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(elegiveis=[])
+
+    resp = client.post("/query", json={"estrutura": {"tese_central": "x", "dispositivos": ["art_999_xyz"]}})
+
+    assert resp.status_code == 200 and resp.json() == []
+    assert hybrid.calls == []
+
+
+def test_query_com_filtro_sem_store_503(client):
+    _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: None
+    resp = client.post("/query", json=_FILTRO)
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Filtro restrito indisponível. Rode python -m query.filtros.preparar no servidor."
+
+
+def test_query_com_filtro_e_tabelas_ausentes_503(client):
+    _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(indisponivel=True)
+    assert client.post("/query", json=_FILTRO).status_code == 503
+
+
+def test_query_sem_filtro_sem_store_funciona(client):
+    _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: None
+    resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
+    assert resp.status_code == 200
+    assert [(c["id"], c["faixa"]) for c in resp.json()] == [("a-id", "livre"), ("b-id", "livre")]
+
+
+def test_query_livre_ignora_filtro_e_nao_consome_limite(client):
+    hybrid = _busca_fake()
+    store, uso = _FakeFiltroStore(elegiveis=["a-id"]), _UsoContador()
+    app.dependency_overrides[get_filtro_store] = lambda: store
+    app.dependency_overrides[get_uso_diario] = lambda: uso
+
+    resp = client.post("/query/livre", json=_FILTRO)
+
+    assert resp.status_code == 200
+    assert [(c["id"], c["faixa"]) for c in resp.json()] == [("a-id", "livre"), ("b-id", "livre")]
+    assert store.calls == [] and uso.acoes == []
+    assert "art. 192" in hybrid.calls[0]["bm25_query"]  # só no texto do BM25
+
+
+def test_query_livre_sem_sessao_401(client):
+    app.dependency_overrides.pop(get_current_user, None)
+    assert client.post("/query/livre", json=_FILTRO).status_code == 401
+
+
+def test_enrich_converte_normas_existentes_em_dispositivos(client):
+    est = EstruturaArgumentativa(tese_central="t", normas=["CLT art. 192", "NR-15"])
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est)
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore()
+
+    body = client.post("/enrich", data={"intencao": "x"}).json()
+
+    assert body["estrutura"]["dispositivos"] == ["art_192_clt"]
+    assert body["dispositivos_ia"] == ["art_192_clt"]
+    assert body["estrutura"]["normas"] == ["NR-15"]
+
+
+def test_enrich_segue_sem_converter_quando_store_falha(client):
+    est = EstruturaArgumentativa(tese_central="t", normas=["CLT art. 192"])
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est)
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(indisponivel=True)
+
+    body = client.post("/enrich", data={"intencao": "x"}).json()
+
+    assert body["estrutura"]["normas"] == ["CLT art. 192"]
+    assert body["estrutura"]["dispositivos"] == [] and body["dispositivos_ia"] == []
+
+
+def test_estrutura_e_card_antigos_validam():
+    e = EstruturaArgumentativa.model_validate({"tese_central": "x", "normas": ["NR-15"]})
+    assert e.dispositivos == [] and e.expressoes == []
+    assert "dispositivos" not in e.model_dump(mode="json", exclude_defaults=True)  # chave do cache da resposta
+    card = ResultCard.model_validate({
+        "id": "a", "tipo_documento": "ACORDAO", "hierarquia_categoria": 4, "numero_processo": "RR-1",
+        "tribunal": "TST", "turma": "", "relator": "R", "data_julgamento": None, "ementa": "e",
+        "provimento": "APROVADO", "link_original": None, "score_rrf": 0.5,
+    })
+    assert card.faixa == "livre"

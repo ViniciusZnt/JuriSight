@@ -22,6 +22,8 @@ class EstruturaArgumentativa(BaseModel):
     agente_nocivo: list[str] = Field(default_factory=list)
     violacoes: list[str] = Field(default_factory=list)
     normas: list[str] = Field(default_factory=list)
+    dispositivos: list[str] = Field(default_factory=list)  # códigos (ex.: art_192_clt) — filtro restrito
+    expressoes: list[str] = Field(default_factory=list)  # expressões obrigatórias — filtro restrito
     empresa_ciente: bool | None = None
     setor: str | None = None
     cargo: str | None = None

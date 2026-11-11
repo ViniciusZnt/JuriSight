@@ -7,7 +7,9 @@ Orquestra o pipeline completo: PDF Extractor -> Query Enrichment -> Query Builde
 Endpoints (Tabela 6 / Tabela 13) — todos exigem sessão (cookie httpOnly, ver
 query/api/auth_routes.py::get_current_user), exceto /health:
   - POST /enrich          — extrai a EstruturaArgumentativa do PDF e/ou da intenção.
-  - POST /query           — busca híbrida sobre a EstruturaArgumentativa revisada.
+  - POST /query           — busca híbrida sobre a EstruturaArgumentativa revisada; com dispositivos
+                            ou expressões, só devolve decisões que cumprem todos (faixa "restrita").
+  - POST /query/livre     — a mesma busca sem os filtros restritos (faixa "livre"), sob demanda.
   - POST /resposta        — resposta curta gerada (OpenAI) e ancorada nas ementas dos resultados.
   - GET  /document/{id}   — detalhe completo de um documento.
   - GET  /health          — liveness (público).
@@ -50,9 +52,13 @@ from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
 from query.api.conversa_routes import router as conversa_router
+from query.api.filtros_routes import filtro_indisponivel, get_filtro_store
+from query.api.filtros_routes import router as filtros_router
 from query.enrichment import pdf_extractor
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
+from query.filtros.dispositivos import codigo_de_texto
+from query.filtros.store import FiltroIndisponivel, FiltroStore
 from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
 from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados em tests/test_api.py)
@@ -97,6 +103,7 @@ async def lifespan(app: FastAPI):
     app.state.provimento_store = ProvimentoJevStore(DATABASE_URL)
     ensure_uso_diario_schema(DATABASE_URL)  # depende de auth.usuarios (FK)
     app.state.uso_diario = UsoDiario(DATABASE_URL)
+    app.state.filtro_store = FiltroStore(DATABASE_URL)  # as tabelas vêm de `python -m query.filtros.preparar`
     ensure_resposta_cache_schema(DATABASE_URL)
     app.state.resposta_cache = RespostaCache(DATABASE_URL)
     app.state.openai = openai.OpenAI(max_retries=0)  # timeout curto por chamada (query/search/resposta.py)
@@ -130,6 +137,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(conversa_router)
 app.include_router(provimento_router)
+app.include_router(filtros_router)
 
 
 def com_classificacao(cards: list, store: ProvimentoJevStore | None) -> list:
@@ -211,6 +219,7 @@ class EnrichResponse(BaseModel):
     # None = nenhum PDF enviado (FA01) / True = extraído com sucesso / False = FA02.
     pdf_extraido: bool | None
     aviso: str | None = None
+    dispositivos_ia: list[str] = Field(default_factory=list)  # códigos que a IA achou e já estão em estrutura.dispositivos
 
 
 # Teto do PDF da busca: o arquivo é lido inteiro na memória. O Caddy corta um pouco acima disso
@@ -223,6 +232,7 @@ async def enrich(
     pdf: UploadFile | None = File(None),
     intencao: str | None = Form(None),
     enricher: QueryEnricher = Depends(get_enricher),
+    filtro_store: FiltroStore | None = Depends(get_filtro_store),
 ) -> EnrichResponse:
     texto_pdf: str | None = None
     pdf_extraido: bool | None = None
@@ -259,7 +269,27 @@ async def enrich(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return EnrichResponse(estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso)
+    estrutura, dispositivos_ia = await run_in_threadpool(_normas_em_dispositivos, estrutura, filtro_store)
+    return EnrichResponse(estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso, dispositivos_ia=dispositivos_ia)
+
+
+def _normas_em_dispositivos(
+    estrutura: EstruturaArgumentativa, store: FiltroStore | None
+) -> tuple[EstruturaArgumentativa, list[str]]:
+    """Normas que viram um dispositivo existente no banco passam de `normas` para `dispositivos`."""
+    if store is None or not estrutura.normas:
+        return estrutura, []
+    codigos = {n: codigo_de_texto(n) for n in estrutura.normas}
+    try:
+        existentes = store.existentes([c for c in codigos.values() if c])
+    except FiltroIndisponivel as exc:
+        logger.warning("Normas não convertidas em dispositivos: %s", exc)
+        return estrutura, []
+    achados = list(dict.fromkeys(c for c in codigos.values() if c in existentes))
+    if not achados:
+        return estrutura, []
+    normas = [n for n, c in codigos.items() if c not in existentes]
+    return estrutura.model_copy(update={"dispositivos": achados, "normas": normas}), achados
 
 
 # --------------------------------------------------------------------------- #
@@ -280,9 +310,41 @@ async def query(
     retriever: DocRetriever = Depends(get_doc_retriever),
     reranker: Reranker = Depends(get_reranker),
     provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
+    filtro_store: FiltroStore | None = Depends(get_filtro_store),
 ) -> list[ResultCard]:
+    ids: list[str] | None = None
+    if body.estrutura.dispositivos or body.estrutura.expressoes:
+        if filtro_store is None:
+            raise filtro_indisponivel()
+        try:
+            ids = await run_in_threadpool(filtro_store.elegiveis, body.estrutura.dispositivos, body.estrutura.expressoes)
+        except FiltroIndisponivel as exc:
+            raise filtro_indisponivel() from exc
+        if not ids:
+            return []
+    cards = await _buscar_cards(body, hybrid, retriever, reranker, ids)
+    if ids is not None:
+        cards = [c.model_copy(update={"faixa": "restrita"}) for c in cards]
+    return await run_in_threadpool(com_classificacao, cards, provimento_store)
+
+
+@app.post("/query/livre", response_model=list[ResultCard], dependencies=[Depends(get_current_user)])
+async def query_livre(
+    body: QueryRequest,
+    hybrid: HybridSearch = Depends(get_hybrid),
+    retriever: DocRetriever = Depends(get_doc_retriever),
+    reranker: Reranker = Depends(get_reranker),
+    provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
+) -> list[ResultCard]:
+    """Busca semântica livre, sem os dispositivos e expressões (que ficam só no texto do BM25).
+    Pedida sob demanda depois da /query restrita, por isso não gasta o limite diário."""
+    cards = await _buscar_cards(body, hybrid, retriever, reranker, None)
+    return await run_in_threadpool(com_classificacao, cards, provimento_store)
+
+
+async def _buscar_cards(body: QueryRequest, hybrid, retriever, reranker, ids: list[str] | None) -> list[ResultCard]:
     try:
-        cards = await run_in_threadpool(
+        return await run_in_threadpool(
             buscar,
             body.estrutura,
             hybrid=hybrid,
@@ -291,10 +353,10 @@ async def query(
             provimento=body.provimento,
             data_inicio=body.data_inicio,
             data_fim=body.data_fim,
+            documento_ids=ids,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return await run_in_threadpool(com_classificacao, cards, provimento_store)
 
 
 # --------------------------------------------------------------------------- #

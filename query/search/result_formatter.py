@@ -8,6 +8,7 @@ provimento e link (RF05/RF06/RF09).
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -44,6 +45,7 @@ class ResultCard(BaseModel):
     link_original: str | None
     score_rrf: float
     classificacao_provimento: ClassificacaoProvimentoView | None = None
+    faixa: Literal["restrita", "livre"] = "livre"
 
 
 class DocumentoDetalhe(DocumentoJuridico):
