@@ -60,8 +60,26 @@ describe("faixas de resultado", () => {
     sessao.resultados = [card("a", { faixa: "restrita" })];
     sessao.estrutura = restrita;
     render(<SearchResultsPage />);
-    expect(await screen.findByText(/42 decisões citam CLT art\. 59 e contêm 'banco de horas'/)).toBeInTheDocument();
+    expect(await screen.findByText(/42 decisões do acervo citam CLT art\. 59 e contêm 'banco de horas' · mostrando a mais relevante/)).toBeInTheDocument();
+    expect(screen.getByText("Filtro restrito")).toBeInTheDocument();
+    expect(screen.getByText(/Só entram decisões que citam todos os dispositivos/)).toBeInTheDocument();
     expect(screen.queryByText(/Busca só semântica/)).not.toBeInTheDocument();
+  });
+
+  it("sem contagem do acervo mostra o número de cards e o aviso, sem total antigo", async () => {
+    (contarFiltros as jest.Mock).mockRejectedValue(new Error("503"));
+    sessao.resultados = [card("a", { faixa: "restrita" }), card("b", { faixa: "restrita" })];
+    sessao.estrutura = restrita;
+    render(<SearchResultsPage />);
+    expect(await screen.findByText(/2 decisões cumprem o filtro/)).toBeInTheDocument();
+    expect(screen.getByText("contagem do acervo indisponível")).toBeInTheDocument();
+  });
+
+  it("total maior que os cards mostra quantas aparecem", async () => {
+    sessao.resultados = [card("a"), card("b"), card("c")];
+    sessao.estrutura = restrita;
+    render(<SearchResultsPage />);
+    expect(await screen.findByText(/42 decisões do acervo citam .* · mostrando as 3 mais relevantes/)).toBeInTheDocument();
   });
 
   it("faixa livre começa fechada e só chama queryLivre ao abrir", async () => {
@@ -91,7 +109,7 @@ describe("faixas de resultado", () => {
     sessao.resultados = [];
     sessao.estrutura = restrita;
     render(<SearchResultsPage />);
-    expect(await screen.findByText(/Nenhuma decisão do acervo \(≈70 mil acórdãos de 2025\) cita CLT art\. 59 e contém 'banco de horas'/)).toBeInTheDocument();
+    expect(await screen.findByText(/Nenhuma decisão do acervo \(≈70 mil acórdãos de 2025\) cita CLT art\. 59 e contém 'banco de horas'\. Abra a busca livre abaixo/)).toBeInTheDocument();
     expect(screen.getByText("Sem decisões no filtro restrito, a resposta não é gerada.")).toBeInTheDocument();
     expect(gerarResposta).not.toHaveBeenCalled();
   });

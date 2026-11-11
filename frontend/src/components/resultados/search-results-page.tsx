@@ -127,21 +127,24 @@ export function SearchResultsPage() {
   const [dateTo, setDateTo] = useState<string>("");
   const [citacao, setCitacao] = useState<string | null>(null); // chip da "Base citada"
   const [tribunal, setTribunal] = useState<string | null>(null);
-  const [contagem, setContagem] = useState<ContagemFiltros | null>(null);
+  const [recebida, setRecebida] = useState<{ chave: string; dados: ContagemFiltros | null } | null>(null);
   const restrito = estrutura !== null && temFiltroRestrito(estrutura);
   const chaveFiltro = JSON.stringify([estrutura?.dispositivos, estrutura?.expressoes]);
   useEffect(() => {
     if (!estrutura || !temFiltroRestrito(estrutura)) return;
     let vivo = true;
     contarFiltros(estrutura.dispositivos, estrutura.expressoes)
-      .then((c) => vivo && setContagem(c))
-      .catch(() => {}); // sem contagem, o cabeçalho usa o número de cards da faixa
+      .then((c) => vivo && setRecebida({ chave: chaveFiltro, dados: c }))
+      .catch(() => vivo && setRecebida({ chave: chaveFiltro, dados: null })); // cabeçalho cai para o número de cards
     return () => {
       vivo = false;
     };
     // `chaveFiltro` resume dispositivos + expressões
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chaveFiltro]);
+  // só vale a contagem do filtro atual (nunca a de um filtro anterior)
+  const contagem = recebida?.chave === chaveFiltro ? recebida.dados : null;
+  const contagemFalhou = recebida?.chave === chaveFiltro && recebida.dados === null;
 
   // Acesso direto à URL sem ter passado por Home/Revisão — não há busca em andamento.
   useEffect(() => {
@@ -202,11 +205,13 @@ export function SearchResultsPage() {
     return sortDir === "asc" ? ordered.reverse() : ordered;
   }, [results, sortBy, sortDir]);
 
-  const filteredResults = sortedResults
-    .filter((d) => filter === "all" || outcomeDe(d) === filter)
-    .filter((d) => inPeriod(d.data_julgamento))
-    .filter((d) => !citacao || idsCitacao.has(d.id))
-    .filter((d) => !tribunal || d.tribunal === tribunal);
+  const passaFiltros = (d: (typeof results)[number]) =>
+    (filter === "all" || outcomeDe(d) === filter) &&
+    inPeriod(d.data_julgamento) &&
+    (!citacao || idsCitacao.has(d.id)) &&
+    (!tribunal || d.tribunal === tribunal);
+
+  const filteredResults = sortedResults.filter(passaFiltros);
 
   const formatDateLong = (dateStr: string | null) => formatarData(dateStr, "long");
 
@@ -220,7 +225,6 @@ export function SearchResultsPage() {
     if (estrutura?.expressoes.length) partes.push(`${contem} ${estrutura.expressoes.map((e) => `'${e}'`).join(" e ")}`);
     return partes.join(" e ");
   };
-  const passaFiltros = (d: (typeof results)[number]) => (filter === "all" || outcomeDe(d) === filter) && inPeriod(d.data_julgamento);
 
   const { favorable: favorableCount, unfavorable: unfavorableCount, neutral: neutralCount } = contarDesfechos(results);
 
@@ -274,6 +278,17 @@ export function SearchResultsPage() {
           <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
         )}
 
+        {restrito && (
+          <div className="w-full max-w-[800px] mb-3">
+            <h2 className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
+              Filtro restrito
+            </h2>
+            <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
+              Só entram decisões que citam todos os dispositivos e contêm todas as expressões informados.
+            </p>
+          </div>
+        )}
+
         {/* Summary banner */}
         <div className="w-full max-w-[800px] bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:shadow-none px-6 py-4 mb-6 flex flex-col sm:flex-row flex-wrap sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -284,13 +299,25 @@ export function SearchResultsPage() {
               <h2 className="text-[#0F1117] dark:text-[#ECECEF]" style={{ fontSize: "16.7px", fontWeight: 600 }}>
                 {restrito
                   ? results.length === 0
-                    ? `Nenhuma decisão do acervo (≈70 mil acórdãos de 2025) ${exigencias(false)}.`
+                    ? `Nenhuma decisão do acervo (≈70 mil acórdãos de 2025) ${exigencias(false)}. Abra a busca livre abaixo para ver decisões parecidas.`
                     : (() => {
-                        const n = contagem?.total ?? filteredResults.length;
-                        return `${n} ${n === 1 ? "decisão" : "decisões"} ${exigencias(n !== 1)}`;
+                        if (!contagem) {
+                          const n = filteredResults.length;
+                          return `${n} ${n === 1 ? "decisão cumpre" : "decisões cumprem"} o filtro`;
+                        }
+                        const n = contagem.total;
+                        const mostra = results.length;
+                        return `${n} ${n === 1 ? "decisão do acervo" : "decisões do acervo"} ${exigencias(n !== 1)}${
+                          n > mostra ? ` · mostrando ${mostra === 1 ? "a mais relevante" : `as ${mostra} mais relevantes`}` : ""
+                        }`;
                       })()
                   : `${filteredResults.length} ${filteredResults.length === 1 ? "decisão encontrada" : "decisões encontradas"}`}
               </h2>
+              {restrito && contagemFalhou && (
+                <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
+                  contagem do acervo indisponível
+                </p>
+              )}
               {estrutura?.tese_central && (
                 <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
                   Alinhadas à tese: &ldquo;{truncate(estrutura.tese_central, 90)}&rdquo;
@@ -580,7 +607,7 @@ export function SearchResultsPage() {
         )}
 
         {estrutura && restrito && (
-          <FaixaLivre key={chaveFiltro} estrutura={estrutura} excluir={new Set(results.map((d) => d.id))} passa={passaFiltros} />
+          <FaixaLivre key={`${versionNumero}|${JSON.stringify(estrutura)}`} estrutura={estrutura} excluir={new Set(results.map((d) => d.id))} passa={passaFiltros} />
         )}
         {!restrito && (
           <p className="w-full max-w-[800px] mt-6 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
