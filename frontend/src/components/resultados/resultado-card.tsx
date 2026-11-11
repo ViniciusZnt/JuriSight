@@ -27,6 +27,12 @@ interface Props {
 }
 
 /** Card de decisão da tela de resultados, igual nas duas faixas. */
+/** "Achada pela semântica e pelos termos" — por onde a decisão entrou, antes da fusão. */
+function origemDoCard(canais: ("semantica" | "termos")[]): string {
+  const nomes = { semantica: "pela semântica", termos: "pelos termos" };
+  return `Achada ${canais.map((c) => nomes[c]).join(" e ")}`;
+}
+
 export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, idPrefix = "decisao" }: Props) {
   const { isSaved, toggle } = useSaved();
   const [expandida, setExpandida] = useState(false);
@@ -93,6 +99,14 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
                   <span className="font-mono">{decision.numero_processo}</span>
                 </MetaItem>
               </div>
+              {decision.canais && decision.canais.length > 0 && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "12.6px" }}>
+                  {decision.canais.map((c) => (
+                    <span key={c} className={`w-2 h-2 rounded-sm ${c === "semantica" ? "bg-[#6E8FB5]" : "bg-[#C47A2D]"}`} />
+                  ))}
+                  {origemDoCard(decision.canais)}
+                </p>
+              )}
             </div>
 
             {/* Provimento (Jev) */}

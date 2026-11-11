@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
+import type { EstruturaArgumentativa, ExpressaoSugerida, ResultCard } from "@/lib/api";
 import type { ConversationVersion } from "@/lib/conversations";
 
 interface SearchSessionState {
@@ -19,6 +19,8 @@ interface SearchSessionState {
   versionNumero: number | null;
   /** Códigos de dispositivos sugeridos pela IA no /enrich (para o selo na Revisão). */
   dispositivosIa: string[];
+  /** Expressões sugeridas pela IA no /enrich: só viram filtro se o advogado clicar. */
+  expressoesSugeridas: ExpressaoSugerida[];
 }
 
 interface EnrichResultInput {
@@ -28,6 +30,7 @@ interface EnrichResultInput {
   pdfExtraido: boolean | null;
   aviso: string | null;
   dispositivosIa?: string[];
+  expressoesSugeridas?: ExpressaoSugerida[];
 }
 
 interface SearchSessionCtx extends SearchSessionState {
@@ -50,6 +53,7 @@ const initialState: SearchSessionState = {
   resultados: null,
   versionNumero: null,
   dispositivosIa: [],
+  expressoesSugeridas: [],
 };
 
 const Ctx = createContext<SearchSessionCtx | null>(null);
@@ -70,6 +74,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       aviso: data.aviso,
       resultados: null, // nova consulta invalida os resultados anteriores
       dispositivosIa: data.dispositivosIa ?? [],
+      expressoesSugeridas: data.expressoesSugeridas ?? [],
       versionNumero: null, // ainda não existe versão — só depois do 1º /query bem-sucedido
     }));
   }, []);
@@ -89,6 +94,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       resultados: version.resultados,
       versionNumero: version.numero,
       dispositivosIa: [],
+      expressoesSugeridas: [],
     });
   }, []);
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
@@ -46,6 +46,8 @@ class ResultCard(BaseModel):
     score_rrf: float
     classificacao_provimento: ClassificacaoProvimentoView | None = None
     faixa: Literal["restrita", "livre"] = "livre"
+    # por onde a decisão foi achada antes da fusão; vazio em cards antigos (conversas salvas)
+    canais: list[Literal["semantica", "termos"]] = Field(default_factory=list)
 
 
 class DocumentoDetalhe(DocumentoJuridico):

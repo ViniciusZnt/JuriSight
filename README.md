@@ -548,7 +548,7 @@ Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas
 uv run python -m query.filtros.preparar
 
 # produção
-docker compose -f docker-compose.prod.yml exec api python -m query.filtros.preparar
+docker compose -f docker-compose.prod.yml exec api uv run --no-sync python -m query.filtros.preparar
 ```
 
 - **Tempo:** na máquina local, 2m10 para as 69 mil decisões quando o índice de texto é feito do zero;

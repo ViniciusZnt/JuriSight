@@ -166,3 +166,14 @@ def test_hybrid_sem_ids_nao_passa_kwarg_ao_bm25():
 
     assert bm25.kwargs == [{}]
     assert all(c["where"] is None for c in chroma.calls)
+
+
+def test_search_marca_por_qual_canal_cada_documento_veio():
+    chroma = _FakeChroma(hits_completo=[_hit("a")], hits_ementa=[_hit("b")])
+    bm25 = _FakeBM25(hits=[("b:0", 2.0), ("c:1", 1.0)])
+    hybrid = HybridSearch(_FakeEmbedder(), chroma, bm25)
+    canais: dict[str, list[str]] = {}
+
+    hybrid.search("tese", canais=canais)
+
+    assert canais == {"a": ["semantica"], "b": ["semantica", "termos"], "c": ["termos"]}

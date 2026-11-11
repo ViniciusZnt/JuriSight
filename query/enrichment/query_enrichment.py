@@ -14,8 +14,11 @@ com default) é a segunda camada de defesa disso.
 from __future__ import annotations
 
 import os
+from typing import NamedTuple
 
 import ollama
+from pydantic import Field
+from pydantic.json_schema import SkipJsonSchema
 
 from query.enrichment.schema import EstruturaArgumentativa
 
@@ -40,7 +43,8 @@ _EXEMPLO_JSON = (
     '"empresa_ciente": true, '
     '"setor": "metalurgia", '
     '"cargo": "operador de prensa", '
-    '"tese_central": "A empresa tinha ciência do risco e não forneceu proteção adequada."}'
+    '"tese_central": "A empresa tinha ciência do risco e não forneceu proteção adequada.", '
+    '"expressoes_chave": ["adicional de insalubridade", "equipamento de proteção individual"]}'
 )
 
 _SYSTEM_PROMPT = f"""Você extrai a estrutura argumentativa de um caso trabalhista \
@@ -51,11 +55,17 @@ Responda SEMPRE em JSON válido, com exatamente estes campos:
 - pedido_principal (string): o que se pede na ação.
 - agente_nocivo (lista de strings): agentes de risco citados (ex.: substâncias, ruído).
 - violacoes (lista de strings): condutas omissivas ou comissivas da empresa.
-- normas (lista de strings): normas jurídicas citadas (ex.: "NR-15", "CLT art. 192").
+- normas (lista de strings): normas jurídicas citadas no texto, sempre com a lei ou o \
+tribunal (ex.: "NR-15", "CLT art. 192", "ADCT art. 10, II, b", "Súmula 85 do TST"). \
+Só as que aparecem no texto.
 - empresa_ciente (true, false ou null): há evidência de que a empresa tinha ciência do risco?
 - setor (string ou null): ramo de atividade da empresa.
 - cargo (string ou null): cargo do trabalhador.
 - tese_central (string): uma frase que resume o argumento principal do caso.
+- expressoes_chave (lista de strings): até 3 expressões jurídicas curtas (2 a 4 palavras) \
+que nomeiam o tema do caso como os tribunais escrevem nas ementas (ex.: "dano moral \
+coletivo", "estabilidade da gestante", "adicional de insalubridade"). Nada de frases longas \
+nem fatos do caso.
 
 REGRAS IMPORTANTES:
 - NUNCA invente informação que não esteja no texto.
@@ -93,6 +103,20 @@ def _montar_conteudo(texto_caso: str | None, intencao: str | None) -> str:
     return "\n\n".join(partes)
 
 
+class _SaidaLLM(EstruturaArgumentativa):
+    """O que o LLM responde: a estrutura SEM os campos do filtro restrito (dispositivos e
+    expressões só entram por escolha do advogado), mais as expressões que ele sugere."""
+
+    dispositivos: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
+    expressoes: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
+    expressoes_chave: list[str] = Field(default_factory=list)
+
+
+class Extracao(NamedTuple):
+    estrutura: EstruturaArgumentativa
+    expressoes_sugeridas: list[str]  # ainda não filtram: o advogado escolhe na Revisão
+
+
 class QueryEnricher:
     """Cliente de enriquecimento de query sobre o Ollama (Llama 3.2 3B)."""
 
@@ -106,11 +130,16 @@ class QueryEnricher:
         self._client = client or ollama.Client(host=OLLAMA_HOST)
 
     def extract_estrutura(self, texto_caso: str | None, intencao: str | None = None) -> EstruturaArgumentativa:
-        """Extrai a EstruturaArgumentativa via LLM (RF02).
+        """Extrai a EstruturaArgumentativa via LLM (RF02), sem as expressões sugeridas."""
+        return self.extrair(texto_caso, intencao).estrutura
+
+    def extrair(self, texto_caso: str | None, intencao: str | None = None) -> Extracao:
+        """Extrai a EstruturaArgumentativa via LLM (RF02) e as expressões que ele sugere.
 
         Input:  texto_caso — texto do PDF (já resumido, se longo); intencao —
                 intenção argumentativa digitada.
-        Returns: EstruturaArgumentativa validada.
+        Returns: Extracao — a estrutura validada (dispositivos/expressões sempre vazios) e
+                 as expressões sugeridas, sem repetidas nem vazias.
         Raises: ValueError se não houver texto/intenção (propagado de _montar_conteudo).
         """
         conteudo = _montar_conteudo(texto_caso, intencao)
@@ -120,7 +149,7 @@ class QueryEnricher:
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": conteudo},
             ],
-            format=EstruturaArgumentativa.model_json_schema(),
+            format=_SaidaLLM.model_json_schema(),
             # num_predict trava o teto de tokens gerados — em CPU o decode é o
             # gargalo, não o tamanho do prompt de entrada (mesmo raciocínio de
             # resumir_bloco/condensar acima). O schema já é pequeno (uma
@@ -128,7 +157,10 @@ class QueryEnricher:
             # arriscar truncar um JSON válido no meio.
             options={"temperature": 0, "num_predict": 600},
         )
-        return EstruturaArgumentativa.model_validate_json(resp.message.content)
+        saida = _SaidaLLM.model_validate_json(resp.message.content)
+        sugeridas = list(dict.fromkeys(e.strip() for e in saida.expressoes_chave if e.strip()))
+        estrutura = EstruturaArgumentativa(**saida.model_dump(exclude={"expressoes_chave"}))
+        return Extracao(estrutura, sugeridas)
 
     def resumir_bloco(self, texto: str) -> str:
         """Resume um bloco de texto do PDF (usado na sumarização hierárquica — FA04).

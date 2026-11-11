@@ -163,3 +163,27 @@ def test_buscar_com_lista_vazia_nao_busca():
 
     assert _buscar_com(hybrid, {"a": _doc(id_documento="a")}, documento_ids=[]) == []
     assert hybrid.calls == []
+
+
+def test_buscar_marca_canais_nos_cards_quando_pedido():
+    class _HybridComCanais(_FakeHybrid):
+        def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None, documento_ids=None, canais=None):
+            canais.update({"a0": ["semantica", "termos"], "a1": ["termos"]})
+            return super().search(query, n_results)
+
+    docs = {i: _doc(id_documento=i) for i in ("a0", "a1")}
+    cards = buscar(
+        EstruturaArgumentativa(tese_central="t"),
+        hybrid=_HybridComCanais([("a0", 1.0), ("a1", 0.5)]),
+        retriever=_FakeDocRetriever(docs),
+        reranker=_FakeReranker(),
+        marcar_canais=True,
+    )
+    assert {c.id: c.canais for c in cards} == {"a0": ["semantica", "termos"], "a1": ["termos"]}
+
+
+def test_buscar_sem_marcar_canais_nao_passa_o_kwarg():
+    docs = {"a0": _doc(id_documento="a0")}
+    cards = buscar(EstruturaArgumentativa(tese_central="t"), hybrid=_FakeHybrid([("a0", 1.0)]),
+                   retriever=_FakeDocRetriever(docs), reranker=_FakeReranker())
+    assert cards[0].canais == []

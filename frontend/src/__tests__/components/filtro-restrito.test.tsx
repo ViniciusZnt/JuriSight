@@ -12,7 +12,7 @@ jest.mock("@/lib/api", () => ({
 const sugerir = sugerirDispositivos as jest.Mock;
 const contar = contarFiltros as jest.Mock;
 
-function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[], onBuscar = (() => {}) as (e: string[]) => void }) {
+function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[], sugeridas = [] as { texto: string; total: number }[], onBuscar = (() => {}) as (e: string[]) => void }) {
   const [d, setD] = useState(disp);
   const [e, setE] = useState(exp);
   return (
@@ -21,6 +21,7 @@ function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as strin
         dispositivos={d}
         expressoes={e}
         dispositivosIa={ia}
+        expressoesSugeridas={sugeridas}
         onChange={(p) => {
           if (p.dispositivos) setD(p.dispositivos);
           if (p.expressoes) setE(p.expressoes);
@@ -49,7 +50,7 @@ describe("FiltroRestrito", () => {
 
   it("texto sem escolher da lista não vira chip", async () => {
     const onChange = jest.fn();
-    render(<FiltroRestrito dispositivos={[]} expressoes={[]} dispositivosIa={[]} onChange={onChange} />);
+    render(<FiltroRestrito dispositivos={[]} expressoes={[]} dispositivosIa={[]} expressoesSugeridas={[]} onChange={onChange} />);
     await userEvent.type(screen.getByPlaceholderText(/buscar dispositivo/i), "clt 59{Enter}");
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -98,6 +99,16 @@ describe("FiltroRestrito", () => {
   it("contagem zero mostra o aviso de faixa vazia", async () => {
     render(<Harness exp={["xyz"]} />);
     expect(await screen.findByText(/Nenhuma decisão do acervo cumpre todos os filtros/)).toBeInTheDocument();
+  });
+
+  it("expressão sugerida pela IA só vira filtro depois do clique", async () => {
+    render(<Harness sugeridas={[{ texto: "dano moral coletivo", total: 137 }]} />);
+    expect(screen.queryByRole("button", { name: "Remover dano moral coletivo" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "+ dano moral coletivo · 137 decisões" }));
+
+    expect(screen.getByRole("button", { name: "Remover dano moral coletivo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ dano moral coletivo · 137 decisões" })).not.toBeInTheDocument();
   });
 
   it("erro nas sugestões avisa em vez de não abrir a lista", async () => {

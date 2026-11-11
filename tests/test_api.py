@@ -27,9 +27,9 @@ from query.api.auth_routes import get_usuario_store
 from query.api.filtros_routes import get_filtro_store
 from query.api.uso_diario import LimiteDiarioExcedido
 from query.enrichment.pdf_extractor import PDFSemTextoError
-from query.enrichment.query_enrichment import _montar_conteudo
+from query.enrichment.query_enrichment import Extracao, _montar_conteudo
 from query.enrichment.schema import EstruturaArgumentativa
-from query.filtros.store import FiltroIndisponivel
+from query.filtros.store import ContagemFiltros, FiltroIndisponivel
 from query.search.result_formatter import ResultCard
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
@@ -48,12 +48,14 @@ class _FakeHybrid:
         self._resultados = resultados
         self.calls: list[dict] = []
 
-    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None, documento_ids=None):
+    def search(self, query, n_results, where=None, *, bm25_query=None, provimento=None, documento_ids=None, canais=None):
         self.calls.append(
             {"query": query, "n_results": n_results, "bm25_query": bm25_query, "provimento": provimento,
              "documento_ids": documento_ids}
         )
         achados = [r for r in self._resultados if documento_ids is None or r[0] in documento_ids]
+        if canais is not None:
+            canais.update({doc_id: ["semantica"] for doc_id, _ in achados})
         return achados[:n_results]
 
 
@@ -76,8 +78,9 @@ class _FakeDocRetriever:
 
 
 class _FakeEnricher:
-    def __init__(self, estrutura: EstruturaArgumentativa | None = None):
+    def __init__(self, estrutura: EstruturaArgumentativa | None = None, sugeridas: list[str] | None = None):
         self.estrutura = estrutura or EstruturaArgumentativa(tese_central="tese fake")
+        self.sugeridas = sugeridas or []
         self.calls: list[tuple] = []
 
     def resumir_bloco(self, texto: str) -> str:
@@ -86,10 +89,10 @@ class _FakeEnricher:
     def condensar(self, resumos: list[str]) -> str:
         return " ".join(resumos)
 
-    def extract_estrutura(self, texto_caso, intencao=None):
+    def extrair(self, texto_caso, intencao=None):
         self.calls.append((texto_caso, intencao))
         _montar_conteudo(texto_caso, intencao)  # levanta ValueError se ambos vazios
-        return self.estrutura
+        return Extracao(self.estrutura, self.sugeridas)
 
 
 def _doc(**kwargs) -> DocumentoJuridico:
@@ -336,6 +339,28 @@ def test_query_fim_a_fim_ordena_e_formata(client):
     body = resp.json()
     # a ordem final é a do reranker (o fake mantém a ordem de entrada).
     assert [card["id"] for card in body] == ["a-id", "b-id"]
+    assert body[0]["canais"] == ["semantica"]
+
+
+def test_query_explicacao_devolve_texto_semantico_e_termos(client):
+    resp = client.post("/query/explicacao", json={"estrutura": {
+        "tese_central": "A gestante tem estabilidade.", "pedido_principal": "reintegração",
+        "dispositivos": ["b_ii_art_10_adct"], "expressoes": ["estabilidade da gestante"]}})
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "semantica": "A gestante tem estabilidade.",
+        "termos": ["reintegração", "ADCT art. 10, II, b", "estabilidade da gestante"],
+    }
+
+
+def test_query_explicacao_estrutura_vazia_422(client):
+    assert client.post("/query/explicacao", json={"estrutura": {}}).status_code == 422
+
+
+def test_query_explicacao_sem_sessao_401(client):
+    app.dependency_overrides.pop(get_current_user, None)
+    assert client.post("/query/explicacao", json={"estrutura": {"tese_central": "x"}}).status_code == 401
 
 
 def test_query_estrutura_vazia_422(client):
@@ -510,6 +535,11 @@ class _FakeFiltroStore:
         self._check()
         return {c for c in codigos if c in self._existentes}
 
+    def contar(self, dispositivos, expressoes):
+        self._check()
+        totais = {"dano moral coletivo": 137, "ação civil pública": 0}
+        return ContagemFiltros(total=0, dispositivos=[], expressoes=[(e, totais.get(e, 5)) for e in expressoes])
+
 
 class _UsoContador:
     def __init__(self):
@@ -642,6 +672,26 @@ def test_enrich_converte_normas_existentes_em_dispositivos(client):
     assert body["estrutura"]["dispositivos"] == ["art_192_clt"]
     assert body["dispositivos_ia"] == ["art_192_clt"]
     assert body["estrutura"]["normas"] == ["NR-15"]
+
+
+def test_enrich_sugere_so_expressoes_que_existem_no_acervo(client):
+    est = EstruturaArgumentativa(tese_central="t")
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(est, ["dano moral coletivo", "ação civil pública"])
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore()
+
+    body = client.post("/enrich", data={"intencao": "x"}).json()
+
+    assert body["expressoes_sugeridas"] == [{"texto": "dano moral coletivo", "total": 137}]
+    assert body["estrutura"]["expressoes"] == []  # sugestão não filtra até o advogado escolher
+
+
+def test_enrich_sem_store_nao_sugere_expressoes(client):
+    app.dependency_overrides[get_enricher] = lambda: _FakeEnricher(sugeridas=["dano moral coletivo"])
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(indisponivel=True)
+
+    body = client.post("/enrich", data={"intencao": "x"}).json()
+
+    assert body["expressoes_sugeridas"] == []
 
 
 def test_enrich_segue_sem_converter_quando_store_falha(client):

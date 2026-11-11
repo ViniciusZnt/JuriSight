@@ -8,7 +8,7 @@ import { Fa02Alert } from "@/components/home/fa02-alert";
 import { Fa05Processing } from "@/components/home/fa05-processing";
 import { useConversations, type ConversationSnapshot } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
-import { enrich, ApiError } from "@/lib/api";
+import { enrich, ApiError, type ExpressaoSugerida } from "@/lib/api";
 
 // Proxy simples para "documento extenso" (RFC FA05/RNF05): acima de 8MB, mais provável ser uma
 // petição longa com muitas páginas — mostra o modal de processamento enquanto aguarda o /enrich
@@ -43,8 +43,10 @@ interface Fa02State {
   query: string;
   snapshot: ConversationSnapshot;
   /** Fora do snapshot (que vira conversa salva): sugestões da IA só valem nesta sessão. */
-  dispositivosIa?: string[];
+  ia?: SugestoesIa;
 }
+
+type SugestoesIa = { dispositivosIa?: string[]; expressoesSugeridas?: ExpressaoSugerida[] };
 
 /** Home: entrada de consulta (RFC Figura 2). Enviar chama POST /enrich (RF02) — a IA extrai a
  *  EstruturaArgumentativa do PDF e/ou da intenção digitada — e segue para a revisão. Um PDF sem
@@ -65,7 +67,7 @@ export function HomePage() {
   // usuário chegar na Revisão. `snapshot`, quando passado, corrige a sessão antes de navegar
   // (caso da FA02 "continuar sem o PDF" — setEnrichResult já rodou com hasFile=true, da
   // tentativa de upload, e precisa ser corrigido pra hasFile=false).
-  const goToRevisao = async (query: string, hasFile: boolean, snapshot?: ConversationSnapshot, dispositivosIa?: string[]) => {
+  const goToRevisao = async (query: string, hasFile: boolean, snapshot?: ConversationSnapshot, ia?: SugestoesIa) => {
     if (snapshot) {
       setEnrichResult({
         estrutura: snapshot.estrutura,
@@ -73,7 +75,7 @@ export function HomePage() {
         fileName: snapshot.fileName,
         pdfExtraido: snapshot.pdfExtraido,
         aviso: snapshot.aviso,
-        dispositivosIa,
+        ...ia,
       });
     }
     await create(query || "Nova pesquisa");
@@ -100,6 +102,7 @@ export function HomePage() {
         pdfExtraido: res.pdf_extraido,
         aviso: res.aviso,
         dispositivosIa: res.dispositivos_ia,
+        expressoesSugeridas: res.expressoes_sugeridas,
       });
       if (res.pdf_extraido === false) {
         // FA02: o backend já seguiu como FA01 (a estrutura acima veio só da intenção digitada,
@@ -108,7 +111,7 @@ export function HomePage() {
           fileName: fileName ?? "arquivo enviado",
           message: res.aviso ?? "Não foi possível extrair texto do PDF enviado.",
           query,
-          dispositivosIa: res.dispositivos_ia,
+          ia: { dispositivosIa: res.dispositivos_ia, expressoesSugeridas: res.expressoes_sugeridas },
           snapshot: {
             estrutura: res.estrutura,
             hasFile,
@@ -216,11 +219,11 @@ export function HomePage() {
                 searchInputRef.current?.clearAndReopenFile();
               }}
               onContinueWithoutFile={() => {
-                const { query, snapshot, dispositivosIa } = fa02;
+                const { query, snapshot, ia } = fa02;
                 setFa02(null);
                 // A estrutura já veio só da intenção (RN05/FA01) — o snapshot reflete isso,
                 // mesmo tendo havido uma tentativa de upload.
-                void goToRevisao(query, false, { ...snapshot, hasFile: false, fileName: null }, dispositivosIa);
+                void goToRevisao(query, false, { ...snapshot, hasFile: false, fileName: null }, ia);
               }}
               onDismiss={() => setFa02(null)}
             />

@@ -16,14 +16,15 @@ from query.filtros.dispositivos import rotulo
 from query.enrichment.schema import EstruturaArgumentativa
 
 
-def build_bm25_query(estrutura: EstruturaArgumentativa) -> str:
-    """Monta a string lexical para o BM25 a partir dos termos exatos do caso.
+def termos_bm25(estrutura: EstruturaArgumentativa) -> list[str]:
+    """Os termos exatos do caso que vão para o BM25, na ordem, sem vazios.
 
     Exclui tese_central (frase natural, não agrega termo exato) e setor/cargo
-    (baixo valor discriminativo para achar jurisprudência alinhada).
+    (baixo valor discriminativo para achar jurisprudência alinhada). A tela de
+    resultados mostra esta lista em "Como esta busca foi feita".
 
     Input:  estrutura — EstruturaArgumentativa revisada pelo usuário.
-    Returns: string com pedido_principal + agente_nocivo + violacoes + normas.
+    Returns: pedido_principal, agentes, violações, normas, rótulos dos dispositivos e expressões.
     """
     termos = [
         estrutura.pedido_principal,
@@ -33,7 +34,12 @@ def build_bm25_query(estrutura: EstruturaArgumentativa) -> str:
         *(rotulo(c) for c in estrutura.dispositivos),
         *estrutura.expressoes,
     ]
-    return " ".join(t for t in termos if t and t.strip())
+    return [t.strip() for t in termos if t and t.strip()]
+
+
+def build_bm25_query(estrutura: EstruturaArgumentativa) -> str:
+    """Monta a string lexical para o BM25: os termos de `termos_bm25` separados por espaço."""
+    return " ".join(termos_bm25(estrutura))
 
 
 def build_frase_tese(estrutura: EstruturaArgumentativa) -> str:
