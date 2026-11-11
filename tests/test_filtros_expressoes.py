@@ -7,11 +7,21 @@ def test_variantes():
     assert variantes("moral") == ["morais", "moral"]
     assert variantes("morais") == ["morais", "moral"]
     assert variantes("dano") == ["dano", "danos"]
-    assert variantes("indenizacao") == ["indenizacao", "indenizacoes"]
-    assert variantes("indenizacoes") == ["indenizacao", "indenizacoes"]
+    assert variantes("indenizacao") == ["indenizacao", "indenizacaos", "indenizacoes"]
+    assert variantes("indenizacoes") == ["indenizacao", "indenizacaos", "indenizacoes"]
     assert variantes("trabalhadores") == ["trabalhador", "trabalhadores"]
     assert variantes("coletivos") == ["coletivo", "coletivos"]
     assert variantes("de") == ["de"]
+
+def test_variantes_singular_ou_plural_por_regra_especifica():
+    assert "orgaos" in variantes("orgao")
+    assert "cidadaos" in variantes("cidadao")
+    assert "lei" in variantes("leis")
+    assert "papel" in variantes("papeis")
+    assert "orgao" in variantes("orgaos")
+
+def test_variantes_token_numerico_sem_variante():
+    assert variantes("2020") == ["2020"]
 
 def test_tsquery_frase_com_plural():
     assert tsquery_da_expressao("Dano Moral Coletivo") == "(dano | danos) <-> (morais | moral) <-> (coletivo | coletivos)"
