@@ -70,6 +70,8 @@ export interface EnrichResponse {
   dispositivos_ia?: string[];
   /** Expressões que a IA sugere e existem no acervo; só filtram se o advogado escolher. */
   expressoes_sugeridas?: ExpressaoSugerida[];
+  /** Dispositivos que a IA relaciona ao tema (não citados no texto), já conferidos no acervo; só sob clique. */
+  dispositivos_sugeridos?: SugestaoDispositivo[];
 }
 
 export interface ExpressaoSugerida {

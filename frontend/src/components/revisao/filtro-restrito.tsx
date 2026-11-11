@@ -28,11 +28,32 @@ function Chip({ children, onRemove, onEdit, label }: { children: React.ReactNode
 
 /** Filtro restrito da Revisão: dispositivos legais (autocompletar no acervo) e expressões
  *  obrigatórias, com a contagem de decisões que cumprem cada um e todos juntos. */
+/** Sugestões da IA (já conferidas no acervo): botões "+ … · N decisões"; viram filtro só no clique. */
+function SugestoesDaIa({ itens, onEscolher }: { itens: { rotulo: string; total: number }[]; onEscolher: (i: number) => void }) {
+  if (!itens.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+      <span className={mutedCls} style={{ fontSize: "12.6px" }}>Sugestões da IA:</span>
+      {itens.map((s, i) => (
+        <button
+          key={s.rotulo}
+          onClick={() => onEscolher(i)}
+          className="px-2.5 py-1 rounded-lg border border-dashed border-[#BDE0CF] dark:border-[#1E4A34] text-[#1A5C3A] dark:text-[#6FCB9A] hover:bg-[#EDF7F2] dark:hover:bg-[#122A1E] transition-colors"
+          style={{ fontSize: "13px" }}
+        >
+          {`+ ${s.rotulo} · ${s.total} decisões`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function FiltroRestrito({
   dispositivos,
   expressoes,
   dispositivosIa,
   expressoesSugeridas = [],
+  dispositivosSugeridos = [],
   onChange,
 }: {
   dispositivos: string[];
@@ -40,6 +61,8 @@ export function FiltroRestrito({
   dispositivosIa: string[];
   /** Sugeridas pela IA (e já conferidas no acervo): só viram filtro com o clique do advogado. */
   expressoesSugeridas?: ExpressaoSugerida[];
+  /** Dispositivos que a IA relaciona ao tema, também só sob clique. */
+  dispositivosSugeridos?: SugestaoDispositivo[];
   onChange: (patch: { dispositivos?: string[]; expressoes?: string[] }) => void;
 }) {
   const [busca, setBusca] = useState("");
@@ -108,6 +131,7 @@ export function FiltroRestrito({
   };
 
   const sugeridasRestantes = expressoesSugeridas.filter((s) => !expressoes.includes(s.texto));
+  const dispositivosRestantes = dispositivosSugeridos.filter((d) => !dispositivos.includes(d.codigo));
 
   const addExpr = () => {
     const t = expr.trim();
@@ -185,6 +209,7 @@ export function FiltroRestrito({
             {`Nenhum dispositivo do acervo para “${q}”. Normas fora da lista (ex.: NRs) vão em Outras normas ou em Expressões obrigatórias.`}
           </p>
         )}
+        <SugestoesDaIa itens={dispositivosRestantes} onEscolher={(i) => escolher(dispositivosRestantes[i])} />
       </div>
 
       <div className="mb-3">
@@ -220,21 +245,10 @@ export function FiltroRestrito({
           className={inputCls}
           style={{ fontSize: "14px" }}
         />
-        {sugeridasRestantes.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            <span className={mutedCls} style={{ fontSize: "12.6px" }}>Sugestões da IA:</span>
-            {sugeridasRestantes.map((s) => (
-              <button
-                key={s.texto}
-                onClick={() => onChange({ expressoes: [...expressoes, s.texto] })}
-                className="px-2.5 py-1 rounded-lg border border-dashed border-[#BDE0CF] dark:border-[#1E4A34] text-[#1A5C3A] dark:text-[#6FCB9A] hover:bg-[#EDF7F2] dark:hover:bg-[#122A1E] transition-colors"
-                style={{ fontSize: "13px" }}
-              >
-                {`+ ${s.texto} · ${s.total} decisões`}
-              </button>
-            ))}
-          </div>
-        )}
+        <SugestoesDaIa
+          itens={sugeridasRestantes.map((s) => ({ rotulo: s.texto, total: s.total }))}
+          onEscolher={(i) => onChange({ expressoes: [...expressoes, sugeridasRestantes[i].texto] })}
+        />
       </div>
 
       {indisponivel && (

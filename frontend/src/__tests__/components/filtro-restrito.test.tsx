@@ -12,7 +12,7 @@ jest.mock("@/lib/api", () => ({
 const sugerir = sugerirDispositivos as jest.Mock;
 const contar = contarFiltros as jest.Mock;
 
-function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[], sugeridas = [] as { texto: string; total: number }[], onBuscar = (() => {}) as (e: string[]) => void }) {
+function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[], sugeridas = [] as { texto: string; total: number }[], dispSugeridos = [] as { codigo: string; rotulo: string; total: number }[], onBuscar = (() => {}) as (e: string[]) => void }) {
   const [d, setD] = useState(disp);
   const [e, setE] = useState(exp);
   return (
@@ -22,6 +22,7 @@ function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as strin
         expressoes={e}
         dispositivosIa={ia}
         expressoesSugeridas={sugeridas}
+        dispositivosSugeridos={dispSugeridos}
         onChange={(p) => {
           if (p.dispositivos) setD(p.dispositivos);
           if (p.expressoes) setE(p.expressoes);
@@ -109,6 +110,17 @@ describe("FiltroRestrito", () => {
 
     expect(screen.getByRole("button", { name: "Remover dano moral coletivo" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ dano moral coletivo · 137 decisões" })).not.toBeInTheDocument();
+  });
+
+  it("dispositivo sugerido pela IA só vira filtro depois do clique, com o rótulo", async () => {
+    contar.mockRejectedValue(new ApiError("x", 503)); // o rótulo vem da sugestão, não da contagem
+    render(<Harness dispSugeridos={[{ codigo: "b_ii_art_10_adct", rotulo: "ADCT art. 10, II, b", total: 163 }]} />);
+    expect(screen.queryByRole("button", { name: "Remover ADCT art. 10, II, b" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "+ ADCT art. 10, II, b · 163 decisões" }));
+
+    expect(screen.getByRole("button", { name: "Remover ADCT art. 10, II, b" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ ADCT art. 10, II, b · 163 decisões" })).not.toBeInTheDocument();
   });
 
   it("erro nas sugestões avisa em vez de não abrir a lista", async () => {

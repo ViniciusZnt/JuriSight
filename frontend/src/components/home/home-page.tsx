@@ -8,7 +8,7 @@ import { Fa02Alert } from "@/components/home/fa02-alert";
 import { Fa05Processing } from "@/components/home/fa05-processing";
 import { useConversations, type ConversationSnapshot } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
-import { enrich, ApiError, type ExpressaoSugerida } from "@/lib/api";
+import { enrich, ApiError, type ExpressaoSugerida, type SugestaoDispositivo } from "@/lib/api";
 
 // Proxy simples para "documento extenso" (RFC FA05/RNF05): acima de 8MB, mais provável ser uma
 // petição longa com muitas páginas — mostra o modal de processamento enquanto aguarda o /enrich
@@ -46,7 +46,7 @@ interface Fa02State {
   ia?: SugestoesIa;
 }
 
-type SugestoesIa = { dispositivosIa?: string[]; expressoesSugeridas?: ExpressaoSugerida[] };
+type SugestoesIa = { dispositivosIa?: string[]; expressoesSugeridas?: ExpressaoSugerida[]; dispositivosSugeridos?: SugestaoDispositivo[] };
 
 /** Home: entrada de consulta (RFC Figura 2). Enviar chama POST /enrich (RF02) — a IA extrai a
  *  EstruturaArgumentativa do PDF e/ou da intenção digitada — e segue para a revisão. Um PDF sem
@@ -103,6 +103,7 @@ export function HomePage() {
         aviso: res.aviso,
         dispositivosIa: res.dispositivos_ia,
         expressoesSugeridas: res.expressoes_sugeridas,
+        dispositivosSugeridos: res.dispositivos_sugeridos,
       });
       if (res.pdf_extraido === false) {
         // FA02: o backend já seguiu como FA01 (a estrutura acima veio só da intenção digitada,
@@ -111,7 +112,7 @@ export function HomePage() {
           fileName: fileName ?? "arquivo enviado",
           message: res.aviso ?? "Não foi possível extrair texto do PDF enviado.",
           query,
-          ia: { dispositivosIa: res.dispositivos_ia, expressoesSugeridas: res.expressoes_sugeridas },
+          ia: { dispositivosIa: res.dispositivos_ia, expressoesSugeridas: res.expressoes_sugeridas, dispositivosSugeridos: res.dispositivos_sugeridos },
           snapshot: {
             estrutura: res.estrutura,
             hasFile,

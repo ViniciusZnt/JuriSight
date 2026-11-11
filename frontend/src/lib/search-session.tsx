@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import type { EstruturaArgumentativa, ExpressaoSugerida, ResultCard } from "@/lib/api";
+import type { EstruturaArgumentativa, ExpressaoSugerida, ResultCard, SugestaoDispositivo } from "@/lib/api";
 import type { ConversationVersion } from "@/lib/conversations";
 
 interface SearchSessionState {
@@ -21,6 +21,8 @@ interface SearchSessionState {
   dispositivosIa: string[];
   /** Expressões sugeridas pela IA no /enrich: só viram filtro se o advogado clicar. */
   expressoesSugeridas: ExpressaoSugerida[];
+  /** Dispositivos que a IA relaciona ao tema: também só viram filtro com o clique. */
+  dispositivosSugeridos: SugestaoDispositivo[];
 }
 
 interface EnrichResultInput {
@@ -31,6 +33,7 @@ interface EnrichResultInput {
   aviso: string | null;
   dispositivosIa?: string[];
   expressoesSugeridas?: ExpressaoSugerida[];
+  dispositivosSugeridos?: SugestaoDispositivo[];
 }
 
 interface SearchSessionCtx extends SearchSessionState {
@@ -54,6 +57,7 @@ const initialState: SearchSessionState = {
   versionNumero: null,
   dispositivosIa: [],
   expressoesSugeridas: [],
+  dispositivosSugeridos: [],
 };
 
 const Ctx = createContext<SearchSessionCtx | null>(null);
@@ -75,6 +79,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       resultados: null, // nova consulta invalida os resultados anteriores
       dispositivosIa: data.dispositivosIa ?? [],
       expressoesSugeridas: data.expressoesSugeridas ?? [],
+      dispositivosSugeridos: data.dispositivosSugeridos ?? [],
       versionNumero: null, // ainda não existe versão — só depois do 1º /query bem-sucedido
     }));
   }, []);
@@ -95,6 +100,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       versionNumero: version.numero,
       dispositivosIa: [],
       expressoesSugeridas: [],
+      dispositivosSugeridos: [],
     });
   }, []);
 
