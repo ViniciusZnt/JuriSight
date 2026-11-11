@@ -74,4 +74,36 @@ describe("FiltroRestrito", () => {
     render(<Harness exp={["xyz"]} />);
     await waitFor(() => expect(screen.getByText("Filtro restrito indisponível no momento")).toBeInTheDocument());
   });
+
+  it("lápis da expressão devolve o texto ao campo e remove o chip", async () => {
+    render(<Harness exp={["hora extra"]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Editar hora extra" }));
+    const input = screen.getByLabelText("Nova expressão obrigatória");
+    expect(input).toHaveValue("hora extra");
+    expect(input).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Editar hora extra" })).not.toBeInTheDocument();
+  });
+
+  it("lápis do dispositivo leva o rótulo à busca e remove o chip", async () => {
+    sugerir.mockResolvedValue([{ codigo: "CLT:59", rotulo: "CLT art. 59", total: 1 }]);
+    render(<Harness />);
+    await userEvent.type(screen.getByLabelText("Buscar dispositivo legal"), "clt");
+    await userEvent.click(await screen.findByText("CLT art. 59 · 1 decisões"));
+    await userEvent.click(screen.getByRole("button", { name: "Editar CLT art. 59" }));
+    const busca = screen.getByLabelText("Buscar dispositivo legal");
+    expect(busca).toHaveValue("CLT art. 59");
+    expect(busca).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "Remover CLT art. 59" })).not.toBeInTheDocument();
+  });
+
+  it("chip escolhido mostra o rótulo mesmo se a contagem falhar", async () => {
+    sugerir.mockResolvedValue([{ codigo: "CLT:59", rotulo: "CLT art. 59", total: 1 }]);
+    contar.mockRejectedValue(new ApiError("x", 503));
+    render(<Harness />);
+    await userEvent.type(screen.getByLabelText("Buscar dispositivo legal"), "clt");
+    await userEvent.click(await screen.findByText("CLT art. 59 · 1 decisões"));
+    expect(await screen.findByText("Filtro restrito indisponível no momento")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remover CLT art. 59" })).toBeInTheDocument();
+    expect(screen.queryByText("CLT:59")).not.toBeInTheDocument();
+  });
 });

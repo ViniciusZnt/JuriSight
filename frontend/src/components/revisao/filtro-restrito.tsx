@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Pencil, X } from "lucide-react";
 import { contarFiltros, sugerirDispositivos, type ContagemFiltros, type SugestaoDispositivo } from "@/lib/api";
 
 const DEBOUNCE_MS = 250;
@@ -12,10 +12,13 @@ const inputCls =
   "w-full rounded-lg border border-[#E4E4EC] dark:border-[#26262C] bg-[#FAFAFA] dark:bg-[#1C1C21] px-3 py-2 outline-none text-[#1A1A2A] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC]";
 const mutedCls = "text-[#AEAEBF] dark:text-[#6E6E7C]";
 
-function Chip({ children, onRemove, label }: { children: React.ReactNode; onRemove: () => void; label: string }) {
+function Chip({ children, onRemove, onEdit, label }: { children: React.ReactNode; onRemove: () => void; onEdit: () => void; label: string }) {
   return (
     <div className={chipCls} style={{ fontSize: "13.8px", fontWeight: 500 }}>
       {children}
+      <button onClick={onEdit} aria-label={`Editar ${label}`} className="opacity-50 hover:opacity-100">
+        <Pencil style={{ width: "10px", height: "10px" }} strokeWidth={2} />
+      </button>
       <button onClick={onRemove} aria-label={`Remover ${label}`} className="opacity-50 hover:opacity-100">
         <X style={{ width: "10px", height: "10px" }} strokeWidth={2.5} />
       </button>
@@ -41,6 +44,9 @@ export function FiltroRestrito({
   const [expr, setExpr] = useState("");
   const [contagem, setContagem] = useState<ContagemFiltros | null>(null);
   const [indisponivel, setIndisponivel] = useState(false);
+  const [rotulos, setRotulos] = useState<Record<string, string>>({});
+  const buscaRef = useRef<HTMLInputElement>(null);
+  const exprRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!busca.trim()) {
@@ -85,10 +91,12 @@ export function FiltroRestrito({
     };
   }, [dispositivos, expressoes]);
 
-  const rotulo = (codigo: string) => contagem?.dispositivos.find((d) => d.codigo === codigo)?.rotulo ?? codigo;
+  const rotulo = (codigo: string) => rotulos[codigo] ?? contagem?.dispositivos.find((d) => d.codigo === codigo)?.rotulo ?? codigo;
   const totalExpr = (texto: string) => contagem?.expressoes.find((e) => e.texto === texto)?.total;
 
-  const escolher = (codigo: string) => {
+  const escolher = (o: SugestaoDispositivo) => {
+    const codigo = o.codigo;
+    setRotulos((r) => ({ ...r, [codigo]: o.rotulo }));
     if (!dispositivos.includes(codigo)) onChange({ dispositivos: [...dispositivos, codigo] });
     setBusca("");
     setOpcoes([]);
@@ -115,7 +123,16 @@ export function FiltroRestrito({
         </div>
         <div className="flex flex-wrap gap-1.5 mb-2">
           {dispositivos.map((c) => (
-            <Chip key={c} label={rotulo(c)} onRemove={() => onChange({ dispositivos: dispositivos.filter((x) => x !== c) })}>
+            <Chip
+              key={c}
+              label={rotulo(c)}
+              onRemove={() => onChange({ dispositivos: dispositivos.filter((x) => x !== c) })}
+              onEdit={() => {
+                onChange({ dispositivos: dispositivos.filter((x) => x !== c) });
+                setBusca(rotulo(c));
+                buscaRef.current?.focus();
+              }}
+            >
               <span>{rotulo(c)}</span>
               {dispositivosIa.includes(c) && (
                 <span className="rounded px-1.5 bg-[#EDF7F2] dark:bg-[#122A1E] text-[#1A5C3A] dark:text-[#6FCB9A]" style={{ fontSize: "11px" }}>
@@ -127,6 +144,8 @@ export function FiltroRestrito({
         </div>
         <div className="relative">
           <input
+            ref={buscaRef}
+            aria-label="Buscar dispositivo legal"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Buscar dispositivo (ex: CLT 59, Súmula 85)…"
@@ -138,7 +157,7 @@ export function FiltroRestrito({
               {opcoes.map((o) => (
                 <li key={o.codigo}>
                   <button
-                    onClick={() => escolher(o.codigo)}
+                    onClick={() => escolher(o)}
                     className="w-full text-left px-3 py-2 text-[#1A1A2A] dark:text-[#ECECEF] hover:bg-[#EEF3FB] dark:hover:bg-[#1A2A3C]"
                     style={{ fontSize: "13.8px" }}
                   >
@@ -157,13 +176,24 @@ export function FiltroRestrito({
         </div>
         <div className="flex flex-wrap gap-1.5 mb-2">
           {expressoes.map((t) => (
-            <Chip key={t} label={t} onRemove={() => onChange({ expressoes: expressoes.filter((x) => x !== t) })}>
+            <Chip
+              key={t}
+              label={t}
+              onRemove={() => onChange({ expressoes: expressoes.filter((x) => x !== t) })}
+              onEdit={() => {
+                onChange({ expressoes: expressoes.filter((x) => x !== t) });
+                setExpr(t);
+                exprRef.current?.focus();
+              }}
+            >
               <span>{t}</span>
               {totalExpr(t) !== undefined && <span className={mutedCls}>{`· ${totalExpr(t)} decisões`}</span>}
             </Chip>
           ))}
         </div>
         <input
+          ref={exprRef}
+          aria-label="Nova expressão obrigatória"
           value={expr}
           onChange={(e) => setExpr(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && addExpr()}
