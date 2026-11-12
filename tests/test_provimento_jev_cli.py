@@ -394,3 +394,35 @@ def test_correcoes_grava_csv(tmp_path, capsys):
     assert cli.main(["correcoes", "--csv", str(p)], store=_Fake()) == 0
     assert len(p.read_text(encoding="utf-8").strip().splitlines()) == 3
     assert "favorece: 1 de 2" in capsys.readouterr().out
+
+
+# --- funções chamáveis (sem prompt, sem print) ---
+
+def test_funcao_classificar_respeita_limite_e_estima_tokens(capsys):
+    from scraper.provimento_jev import TOKENS_POR_ACORDAO
+
+    store = _FakeStore([_item(1), _item(2), _item(3)])
+    r = cli.classificar(store, _FakeClassificador(), limite=2)
+    assert r["tentados"] == 2 and r["ok"] == 2 and r["falhas"] == 0
+    assert r["pendentes"] == 2 and r["modelo"] == "jev-teste"
+    assert r["estimativa_tokens"] == 2 * TOKENS_POR_ACORDAO
+    assert capsys.readouterr().out == ""
+
+
+def test_funcao_aplicar_sem_confirmar_nao_escreve():
+    store = _StoreAplicar([_la(1, "provido", "NEGADO"), _la(2, "provido", "NEGADO", 0.5)])
+    r = cli.aplicar(store, 0.8, confirmar=False)
+    assert store.chamadas == []
+    assert r["transicoes"] == {"NEGADO → APROVADO": 1}
+    assert r["abaixo_limite"] == 1 and r["aplicadas"] == 0
+
+
+def test_funcao_aplicar_confirmar_escreve():
+    store = _StoreAplicar([_la(1, "provido", "NEGADO")])
+    r = cli.aplicar(store, 0.8, confirmar=True)
+    assert store.chamadas == [[("doc-1", "APROVADO")]] and r["aplicadas"] == 1
+
+
+def test_funcao_sincronizar_devolve_docs(tmp_path):
+    r = cli.sincronizar(_StoreSync(), _qdrant_memoria(), indice_bm25=_indice(tmp_path))
+    assert r["docs"] == 2 and r["tempo_s"] >= 0
