@@ -599,6 +599,34 @@ docker compose -f docker-compose.prod.yml exec api uv run --no-sync python -m qu
 
 ---
 
+## Pipeline de dados (Dagster)
+
+Em produção a coleta, a indexação e o preparo dos filtros rodam pelo Dagster, no serviço `dagster` do
+`docker-compose.prod.yml` (a cópia local→VPS do deploy é só histórica). A UI não é pública: fica em
+`127.0.0.1:3000` da VPS e se abre por túnel SSH.
+
+```bash
+ssh -L 3001:localhost:3000 deploy@IP   # depois abra http://localhost:3001
+```
+
+| Job | O que faz |
+|-----|-----------|
+| `full` | `acervo` (coleta) → `indices` (Qdrant + BM25, sem reset) → `filtros` (preparo do filtro restrito) |
+| `coleta` | só `acervo` |
+| `indexacao` | só `indices` |
+| `so_filtros` | só `filtros` |
+| `jev` | classificar → aplicar → sincronizar o provimento com o Jev |
+
+- **Datas da coleta:** na config do `acervo` (`data_inicio`, `data_fim`, em `AAAA-MM-DD`; `colecao`, padrão
+  `acordaos`). Em branco, a coleta continua do banco.
+- **Jev:** `limite` é o máximo de acórdãos classificados por run (padrão 500; `0` = sem limite). Custo
+  aproximado de 1.600 tokens por acórdão. O `jev` só grava em `documentos.provimento` acima de `confianca_min`
+  (0,8) e sincroniza Qdrant e BM25.
+- **Depois do `full`:** `docker compose -f docker-compose.prod.yml restart api` (recarrega o BM25).
+- **Fila:** um run por vez (`pipeline/dagster.yaml`); runs disparados durante outro ficam na fila.
+
+---
+
 ## Stack
 
 | Tecnologia         | Função                                      |
