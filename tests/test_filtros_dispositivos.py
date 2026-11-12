@@ -1,5 +1,5 @@
 import pytest
-from query.filtros.dispositivos import niveis, eh_dispositivo, rotulo, codigo_de_texto, tokens_da_busca
+from query.filtros.dispositivos import niveis, eh_dispositivo, rotulo, codigo_de_texto, tokens_da_busca, codigos_do_texto
 
 @pytest.mark.parametrize("codigo,esperado", [
     ("b_ii_art_10_adct", ["b_ii_art_10_adct", "ii_art_10_adct", "art_10_adct"]),
@@ -55,7 +55,7 @@ def test_rotulo(codigo, esperado):
     ("Lei 8.078/90, art. 28, § 5º", "prgf_5_art_28_lei_8078_90"),
     ("CC art. 186", "art_186_ccb"),
     ("art. 186", None),        # sem lei: não converte (spec: conversão conservadora)
-    ("NR-15", None),
+    ("NR-15", "nr_15"),
     ("Súmula 85, item VI, do TST", "vi_sumula_85_tst"),
     ("CLT art. 192 e art. 193", None),
     ("art. 5 7 CLT", None),
@@ -113,3 +113,38 @@ def test_tokens_da_busca(texto, esperado):
 def test_citada_em(norma, texto, esperado):
     from query.filtros.dispositivos import citada_em
     assert citada_em(norma, texto) is esperado
+
+
+@pytest.mark.parametrize("texto,esperado", [
+    ("nos termos da NR-15, anexo 1", {"nr_15"}),
+    ("conforme NR 16 e a Norma Regulamentadora nº 17", {"nr_16", "nr_17"}),
+    ("NR 06 do MTE", {"nr_6"}),
+    ("Tema 1046 da repercussão geral", {"tema_1046"}),
+    ("tema nº 725 do STF", {"tema_725"}),
+    ("o tema central do recurso", set()),
+    ("Súmula Vinculante 4", {"sv_4"}), ("Súmula Vinculante nº 40", {"sv_40"}), ("SV 13", {"sv_13"}),
+    ("Súmula 4 do STF e Súmula 85 do TST", set()),
+    ("CNR 15 e NRA-2", set()),  # NR dentro de outra sigla
+    ("Nr 0001639-12.2023.5.04.0001", set()), ("NR 0", set()), ("NR 95", set()), ("NR-38", {"nr_38"}),
+    ("Temas 1046 e 725", {"tema_1046", "tema_725"}),
+    ("Temas 1046, 725 e 1232", {"tema_1046", "tema_725", "tema_1232"}),
+    ("NRs 15 e 16", {"nr_15", "nr_16"}),
+    ("Súmulas Vinculantes 4 e 13", {"sv_4", "sv_13"}),
+    ("tema e NR 15", {"nr_15"}),
+    ("Tema 1046 e 2 testemunhas", {"tema_1046"}), ("Tema nº 725 e 1 hora", {"tema_725"}),
+    ("Súmula vinculante 4, 2 partes", {"sv_4"}), ("NR 15, 3 anos", {"nr_15"}), ("NR 15 e 16 horas", {"nr_15"}),
+])
+def test_codigos_do_texto(texto, esperado):
+    assert codigos_do_texto(texto) == esperado
+
+
+def test_rotulo_dos_codigos_novos():
+    assert rotulo("nr_15") == "NR-15" and rotulo("tema_1046") == "Tema 1046" and rotulo("sv_4") == "Súmula Vinculante 4"
+
+
+def test_conversao_e_busca_dos_codigos_novos():
+    assert codigo_de_texto("NR-15") == "nr_15" and codigo_de_texto("Tema 1046") == "tema_1046" and codigo_de_texto("Súmula Vinculante 4") == "sv_4"
+    assert codigo_de_texto("Súmula 4 do STF") != "sv_4"
+    assert tokens_da_busca("nr 15") == ["nr", "15"]
+    assert tokens_da_busca("súmula vinculante 4") == ["sv", "4"] and tokens_da_busca("vinculante 4") == ["sv", "4"]
+    assert niveis("nr_15") == ["nr_15"] and eh_dispositivo("tema_1046")

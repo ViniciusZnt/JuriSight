@@ -22,8 +22,11 @@ class _Store:
     def sugerir(self, texto, limite=10):
         return [SugestaoDispositivo("art_192_clt", "CLT art. 192", 42)]
 
-    def contar(self, dispositivos, expressoes):
-        self.contagens.append((dispositivos, expressoes))
+    def tribunais(self):
+        return [("TRT4", 4634), ("TRT2", 13073)]
+
+    def contar(self, dispositivos, expressoes, tribunais=(), fase=None):
+        self.contagens.append((dispositivos, expressoes, list(tribunais), fase))
         return ContagemFiltros(7, [SugestaoDispositivo("art_192_clt", "CLT art. 192", 42)], [(e, 3) for e in expressoes])
 
 
@@ -88,3 +91,34 @@ def test_filtros_contagem_acima_do_limite_422(client, body):
 def test_filtros_sugestoes_texto_longo_422(client):
     app.dependency_overrides[get_filtro_store] = lambda: _Store()
     assert client.get("/filtros/dispositivos", params={"q": "x" * 201}).status_code == 422
+
+
+def test_filtros_tribunais(client):
+    app.dependency_overrides[get_filtro_store] = lambda: _Store()
+    resp = client.get("/filtros/tribunais")
+    assert resp.status_code == 200
+    assert resp.json() == [{"tribunal": "TRT4", "rotulo": "TRT-4", "total": 4634},
+                           {"tribunal": "TRT2", "rotulo": "TRT-2", "total": 13073}]
+
+
+def test_filtros_tribunais_sem_sessao_401(client):
+    app.dependency_overrides.pop(get_current_user)
+    assert client.get("/filtros/tribunais").status_code == 401
+
+
+def test_filtros_tribunais_sem_store_503(client):
+    app.dependency_overrides[get_filtro_store] = lambda: None
+    assert client.get("/filtros/tribunais").status_code == 503
+
+
+def test_contagem_repassa_tribunais_e_fase(client):
+    store = _Store()
+    app.dependency_overrides[get_filtro_store] = lambda: store
+    resp = client.post("/filtros/contagem", json={"tribunais": ["TRT4"], "fase": "execucao"})
+    assert resp.status_code == 200
+    assert store.contagens == [([], [], ["TRT4"], "execucao")]
+
+
+def test_contagem_mais_de_25_tribunais_422(client):
+    app.dependency_overrides[get_filtro_store] = lambda: _Store()
+    assert client.post("/filtros/contagem", json={"tribunais": [f"TRT{i}" for i in range(26)]}).status_code == 422

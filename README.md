@@ -534,12 +534,30 @@ uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--con
 
 ## Filtro restrito
 
-Além do texto livre, a busca aceita **dispositivos** (ex.: `art_791_clt`, `b_ii_art_10_adct`, escolhidos
-com autocompletar) e **expressões obrigatórias** (ex.: "dano moral coletivo", singular ou plural, sem
-depender de acento ou quebra de linha). Com algum deles, o `/query` devolve só decisões que cumprem
-**todos** os dispositivos e expressões (faixa "restrita"); a busca livre, sem esses filtros, vem sob
-demanda em `/query/livre` (faixa "livre"). `/filtros/*` dá o autocompletar e as contagens. `/filtros/*` e
-`/query/livre` exigem login; só o `/query` conta no limite diário.
+Além do texto livre, a busca aceita filtros que restringem o resultado. Entre tipos de filtro vale **"E"**;
+só tribunal e fase também já tornam a busca restrita:
+
+- **Tribunal:** um ou mais (ex.: "TRT-4", gravado como `TRT4`); entre os escolhidos vale **"OU"**.
+- **Fase do processo:** uma só, deduzida da classe processual: **Conhecimento** (ROT, RORSum, RO, RemNecRO,
+  RemNecTrab, AIRO), **Execução** (AP, AIAP) ou **Outras** (todo o resto, inclusive classe vazia).
+- **Normas e dispositivos:** um campo só, com autocompletar. O que se escolhe da lista vira filtro
+  (dispositivos como `art_791_clt`, `b_ii_art_10_adct`, e também NR, Tema e Súmula Vinculante). O texto
+  digitado e confirmado com Enter, sem ser escolhido da lista, vira norma "só busca livre": orienta a busca
+  mas **não filtra**.
+- **Expressões obrigatórias:** campo separado; cada expressão (ex.: "dano moral coletivo", singular ou
+  plural, sem depender de acento ou quebra de linha) é filtro.
+
+Com algum filtro, o `/query` devolve só decisões que cumprem **todos** eles (faixa "restrita"); a busca
+livre, sem esses filtros, vem sob demanda em `/query/livre` (faixa "livre"). `/filtros/*` dá o autocompletar
+e as contagens. `/filtros/*` e `/query/livre` exigem login; só o `/query` conta no limite diário.
+
+**NR, Tema e Súmula Vinculante** são extraídos do texto (ementa e fundamentação) pelo preparo, com os
+códigos `nr_<n>` ("NR-15"), `tema_<n>` ("Tema 1046") e `sv_<n>` ("Súmula Vinculante 4"); Súmula Vinculante
+só quando o texto diz "vinculante" ou "SV" colado ao número. Listas ("Temas 1046 e 725", "NRs 15 e 16")
+só são lidas depois da palavra no plural. No acervo local: 33 NRs distintas (só NR 1 a 38) em 6.713 pares
+decisão-NR (NR-15: 3.378 decisões), 411 temas em 14.115 pares (Tema 1046: 1.866) e 17 súmulas vinculantes
+em 1.090 pares (SV 4: 312). O número do Tema não está ligado a um tribunal (ex.: "Tema 2" no acervo é o
+IRDR do TST), como a especificação aceitou.
 
 Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas antes do primeiro uso (rode de novo quando entrarem decisões novas):
 
@@ -552,12 +570,14 @@ docker compose -f docker-compose.prod.yml exec api uv run --no-sync python -m qu
 ```
 
 - **Tempo:** na máquina local, 2m10 para as 69 mil decisões quando o índice de texto é feito do zero;
-  rodando de novo, ~8 s (o índice de texto só acrescenta as decisões novas).
+  rodando de novo, ~35 s (o passo dos dispositivos, que agora também extrai NR, Tema e Súmula Vinculante, é refeito
+  do zero; o índice de texto só acrescenta as decisões novas). **Depois do deploy, rode o preparo na VPS**: sem
+  isso NR, Tema e Súmula Vinculante não aparecem no autocompletar.
 - **Disco:** `documento_tsv` ocupa ~550 MB (dos quais 71 MB do índice GIN),
   `documento_dispositivo` ~96 MB e `dispositivo` ~1,5 MB, medidos com `pg_total_relation_size`.
   Confira o `df -h` antes de rodar na VPS.
 - **Na VPS, rode fora do horário de uso:** o preparo refaz os dispositivos com `TRUNCATE`, e o
-  autocompletar, as contagens e a busca com filtro esperam até ele terminar (~8 s local; ~2 min quando
+  autocompletar, as contagens e a busca com filtro esperam até ele terminar (~35 s local; ~2 min quando
   o índice de texto é refeito do zero).
 - **Latência:** a busca restrita usa o mesmo pool de 30 candidatos da busca normal, então fica
   praticamente no mesmo tempo. Medido a quente, só o `buscar` (3 execuções): sem filtro 2,8 a 2,9 s;

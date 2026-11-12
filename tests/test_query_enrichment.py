@@ -156,3 +156,15 @@ def test_extrair_separa_dispositivos_sugeridos():
     extracao = enricher.extrair("texto", None)
     assert extracao.dispositivos_sugeridos == ["CLT art. 62, I", "CLT art. 74"]
     assert extracao.estrutura.dispositivos == [] and extracao.estrutura.normas == []
+
+
+def test_ia_nao_preenche_tribunal_nem_fase():
+    """tribunais/fase só vêm do advogado: fora do schema do LLM e descartados se ele os devolver."""
+    enricher, fake = _enricher([
+        '{"pedido_principal": "indenização", "tese_central": "Houve dano.", '
+        '"tribunais": ["TRT2"], "fase": "conhecimento"}'
+    ])
+    extracao = enricher.extrair("texto", None)
+    propriedades = fake.calls[0]["format"]["properties"]
+    assert "tribunais" not in propriedades and "fase" not in propriedades
+    assert extracao.estrutura.tribunais == [] and extracao.estrutura.fase is None

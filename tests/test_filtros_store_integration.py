@@ -107,3 +107,43 @@ def test_sem_filtro_valido_da_zero(store):
 
 def test_existentes(store):
     assert store.existentes(["art_15_clt", "art_99999_clt"]) == {"art_15_clt"}
+
+
+def test_tribunal_e_fase_filtram_pelo_acervo(store):
+    ids = store.elegiveis([], [], ["TRT4"], "conhecimento")
+    assert ids
+    with psycopg.connect(DATABASE_URL) as conn:
+        linhas = conn.execute("SELECT tribunal, sigla_classe FROM documentos WHERE id::text = ANY(%s)", [ids]).fetchall()
+    assert {t for t, _ in linhas} == {"TRT4"}
+    assert {c for _, c in linhas} <= {"ROT", "RORSum", "RO", "RemNecRO", "RemNecTrab", "AIRO"}
+
+
+def test_contar_so_com_tribunal(store):
+    with psycopg.connect(DATABASE_URL) as conn:
+        esperado = conn.execute("SELECT count(*) FROM documentos WHERE tribunal='TRT4'").fetchone()[0]
+    assert store.contar([], [], ["TRT4"], None).total == esperado > 0
+
+
+def test_tribunal_inexistente_nao_acha_nada(store):
+    assert store.elegiveis(["art_10_adct"], [], ["TRT99"], None) == []
+
+
+def test_tribunais_com_total(store):
+    lista = dict(store.tribunais())
+    assert lista["TRT2"] == 13073
+    nomes = [t for t, _ in store.tribunais()]
+    assert nomes.index("TRT2") < nomes.index("TRT10") < nomes.index("TRT24")
+
+
+def test_nr_tema_e_sv_filtraveis(store):
+    nr = store.sugerir("nr 15")[0]
+    assert nr.codigo == "nr_15" and 2500 <= nr.total <= 3500
+    assert "tema_1046" in [s.codigo for s in store.sugerir("tema 1046")]
+    ids = store.elegiveis(["nr_15"], ["adicional de insalubridade"])
+    assert ids
+    with psycopg.connect(DATABASE_URL) as conn:
+        ruins = conn.execute(
+            r"""SELECT count(*) FROM documentos WHERE id = ANY(%s::uuid[]) AND NOT
+                (coalesce(ementa,'') || ' ' || coalesce(fundamentacao,'') ~* '(?<![a-z])(nrs?|normas?\s+regulamentadoras?)[\s-]*(n[º°.]?\s*)?([0-9.]+\s*(,|e)\s*)*0*15(?![0-9])')""",
+            (ids,)).fetchone()[0]
+    assert ruins == 0

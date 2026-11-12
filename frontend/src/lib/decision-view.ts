@@ -1,4 +1,4 @@
-import type { EstruturaArgumentativa, ResultCard, TipoDocumento } from "@/lib/api";
+import { rotuloTribunal, type EstruturaArgumentativa, type ResultCard, type TipoDocumento } from "@/lib/api";
 
 const GENERICO = /^(ementa|direito (processual )?do trabalho( e processual do trabalho)?|recurso ordin[áa]rio( trabalhista)?)$/i;
 
@@ -212,7 +212,7 @@ const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, 
 /** Órgão no padrão de citação: "1ª Turma do TRT-4" (turma por extenso, com zero à esquerda ou em
  *  maiúsculas vira "4ª Turma"; câmaras e seções seguem o mesmo jeito; sem turma, só o tribunal). */
 export function orgaoDe(d: Pick<ResultCard, "tribunal" | "turma">): string {
-  const tribunal = d.tribunal.replace(/^([A-Z]+)(\d+)$/, "$1-$2");
+  const tribunal = rotuloTribunal(d.tribunal);
   const bruto = d.turma.trim();
   if (!bruto) return tribunal;
   const palavras = bruto.split(/\s+/);

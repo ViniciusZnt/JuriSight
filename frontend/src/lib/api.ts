@@ -44,7 +44,16 @@ export interface EstruturaArgumentativa {
   /** Filtro restrito: códigos de dispositivos legais e expressões que a decisão TEM de ter. */
   dispositivos: string[];
   expressoes: string[];
+  /** Tribunais (valor do acervo, ex. "TRT4"): vale qualquer um deles. Vazio = todos. */
+  tribunais: string[];
+  /** Fase do processo pela classe: uma só; null = todas. */
+  fase: Fase | null;
 }
+
+export type Fase = "conhecimento" | "execucao" | "outras";
+export const ROTULO_FASE: Record<Fase, string> = { conhecimento: "Conhecimento", execucao: "Execução", outras: "Outras" };
+/** "TRT4" vira "TRT-4", "TRF3" vira "TRF-3" (o valor gravado é o do acervo); "TST" fica. */
+export const rotuloTribunal = (t: string) => t.replace(/^([A-Z]+)(\d+)$/, "$1-$2");
 
 export function emptyEstrutura(): EstruturaArgumentativa {
   return {
@@ -58,6 +67,8 @@ export function emptyEstrutura(): EstruturaArgumentativa {
     tese_central: "",
     dispositivos: [],
     expressoes: [],
+    tribunais: [],
+    fase: null,
   };
 }
 
@@ -236,7 +247,7 @@ export interface ContagemFiltros {
 }
 
 export function temFiltroRestrito(e: EstruturaArgumentativa): boolean {
-  return e.dispositivos.length > 0 || e.expressoes.length > 0;
+  return e.dispositivos.length > 0 || e.expressoes.length > 0 || e.tribunais.length > 0 || e.fase !== null;
 }
 
 /** GET /filtros/dispositivos — autocompletar de dispositivos legais do acervo indexado. */
@@ -244,12 +255,17 @@ export async function sugerirDispositivos(q: string): Promise<SugestaoDispositiv
   return request<SugestaoDispositivo[]>(`/filtros/dispositivos?q=${encodeURIComponent(q)}`);
 }
 
+/** GET /filtros/tribunais — os tribunais do acervo com o total de decisões de cada um. */
+export async function listarTribunais(): Promise<{ tribunal: string; rotulo: string; total: number }[]> {
+  return request<{ tribunal: string; rotulo: string; total: number }[]>("/filtros/tribunais");
+}
+
 /** POST /filtros/contagem — quantas decisões cumprem cada filtro e todos juntos (503 = índice não preparado). */
-export async function contarFiltros(dispositivos: string[], expressoes: string[]): Promise<ContagemFiltros> {
+export async function contarFiltros(f: { dispositivos: string[]; expressoes: string[]; tribunais: string[]; fase: Fase | null }): Promise<ContagemFiltros> {
   return request<ContagemFiltros>("/filtros/contagem", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dispositivos, expressoes }),
+    body: JSON.stringify(f),
   });
 }
 

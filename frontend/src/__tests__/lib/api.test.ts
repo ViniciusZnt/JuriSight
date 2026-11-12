@@ -16,6 +16,8 @@ import {
   gerarResposta,
   emptyEstrutura,
   temFiltroRestrito,
+  contarFiltros,
+  rotuloTribunal,
   type EstruturaArgumentativa,
 } from "@/lib/api";
 
@@ -38,6 +40,8 @@ const estrutura: EstruturaArgumentativa = {
   tese_central: "tese",
   dispositivos: [],
   expressoes: [],
+  tribunais: [],
+  fase: null,
 };
 
 afterEach(() => {
@@ -252,11 +256,31 @@ describe("filtro restrito", () => {
     const e = emptyEstrutura();
     expect(e.dispositivos).toEqual([]);
     expect(e.expressoes).toEqual([]);
+    expect(e.tribunais).toEqual([]);
+    expect(e.fase).toBeNull();
   });
 
   it("temFiltroRestrito é verdadeiro só com dispositivos ou expressões", () => {
     expect(temFiltroRestrito(emptyEstrutura())).toBe(false);
     expect(temFiltroRestrito({ ...emptyEstrutura(), dispositivos: ["CLT:59"] })).toBe(true);
     expect(temFiltroRestrito({ ...emptyEstrutura(), expressoes: ["hora extra"] })).toBe(true);
+    expect(temFiltroRestrito({ ...emptyEstrutura(), fase: "execucao" })).toBe(true);
+    expect(temFiltroRestrito({ ...emptyEstrutura(), tribunais: ["TRT4"] })).toBe(true);
+  });
+});
+
+describe("contarFiltros", () => {
+  it("envia dispositivos, expressões, tribunais e fase", async () => {
+    mockFetchOnce(200, { total: 1, dispositivos: [], expressoes: [] });
+    await contarFiltros({ dispositivos: [], expressoes: [], tribunais: ["TRT4"], fase: "execucao" });
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls.at(-1)[1].body)).toEqual({ dispositivos: [], expressoes: [], tribunais: ["TRT4"], fase: "execucao" });
+  });
+});
+
+describe("rotuloTribunal", () => {
+  it("separa sigla e número, e deixa o resto", () => {
+    expect(rotuloTribunal("TRT4")).toBe("TRT-4");
+    expect(rotuloTribunal("TRF3")).toBe("TRF-3");
+    expect(rotuloTribunal("TST")).toBe("TST");
   });
 });

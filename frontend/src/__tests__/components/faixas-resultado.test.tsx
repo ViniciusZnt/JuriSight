@@ -79,9 +79,21 @@ describe("faixas de resultado", () => {
     sessao.resultados = [card("a")];
     sessao.estrutura = emptyEstrutura();
     render(<SearchResultsPage />);
-    expect(screen.getByText(/Busca só semântica\. Para restringir, informe dispositivos ou expressões na Revisão de Contexto\./)).toBeInTheDocument();
+    expect(screen.getByText(/Busca só semântica\. Para restringir, informe normas, expressões, tribunal ou fase na Revisão de Contexto\./)).toBeInTheDocument();
     expect(screen.queryByText("Busca livre (semântica)")).not.toBeInTheDocument();
     expect(contarFiltros).not.toHaveBeenCalled();
+  });
+
+  it("tribunal e fase aparecem no resumo e no parecer", async () => {
+    sessao.resultados = [card("a", { faixa: "restrita" })];
+    sessao.estrutura = { ...emptyEstrutura(), tribunais: ["TRT4"], fase: "execucao" };
+    render(<SearchResultsPage />);
+    const resumo = await screen.findByRole("region", { name: "Resumo das decisões" });
+    expect(within(resumo).getByText("TRT-4")).toBeInTheDocument();
+    expect(within(resumo).getByText("execução")).toBeInTheDocument();
+    expect(screen.getAllByText("TRT-4").length).toBeGreaterThan(1);
+    expect(screen.getByText("Execução")).toBeInTheDocument();
+    expect(contarFiltros).toHaveBeenCalledWith(expect.objectContaining({ tribunais: ["TRT4"], fase: "execucao" }));
   });
 
   it("com filtro mostra a contagem no cabeçalho da faixa restrita", async () => {

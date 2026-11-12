@@ -14,7 +14,7 @@ com default) é a segunda camada de defesa disso.
 from __future__ import annotations
 
 import os
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import ollama
 from pydantic import Field
@@ -114,6 +114,8 @@ class _SaidaLLM(EstruturaArgumentativa):
 
     dispositivos: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
     expressoes: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
+    tribunais: SkipJsonSchema[list[str]] = Field(default_factory=list, exclude=True)
+    fase: SkipJsonSchema[Literal["conhecimento", "execucao", "outras"] | None] = Field(default=None, exclude=True)
     expressoes_chave: list[str] = Field(default_factory=list)
     dispositivos_relacionados: list[str] = Field(default_factory=list)
 

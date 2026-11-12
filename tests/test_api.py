@@ -529,9 +529,9 @@ class _FakeFiltroStore:
         if self._indisponivel:
             raise FiltroIndisponivel("sem preparo")
 
-    def elegiveis(self, dispositivos, expressoes):
+    def elegiveis(self, dispositivos, expressoes, tribunais=(), fase=None):
         self._check()
-        self.calls.append(("elegiveis", dispositivos, expressoes))
+        self.calls.append(("elegiveis", dispositivos, expressoes) + ((list(tribunais), fase) if tribunais or fase else ()))
         return self._elegiveis
 
     def existentes(self, codigos):
@@ -580,6 +580,34 @@ def test_query_com_filtro_passa_elegiveis_e_marca_restrita(client, monkeypatch):
     assert vistos["documento_ids"] == ["a-id"]
     assert [(c["id"], c["faixa"]) for c in resp.json()] == [("a-id", "restrita")]
     assert store.calls == [("elegiveis", ["art_192_clt"], [])]
+
+
+def test_query_so_com_tribunal_chama_elegiveis_e_marca_restrita(client):
+    _busca_fake()
+    store = _FakeFiltroStore(elegiveis=["a-id"])
+    app.dependency_overrides[get_filtro_store] = lambda: store
+
+    resp = client.post("/query", json={"estrutura": {"tese_central": "x", "tribunais": ["TRT4"]}})
+
+    assert resp.status_code == 200
+    assert [(c["id"], c["faixa"]) for c in resp.json()] == [("a-id", "restrita")]
+    assert store.calls == [("elegiveis", [], [], ["TRT4"], None)]
+
+
+def test_estrutura_antiga_sem_tribunais_e_fase_valida_e_chave_nao_muda():
+    from query.enrichment.schema import EstruturaArgumentativa
+    from query.search.resposta import chave_da_resposta
+    e = EstruturaArgumentativa.model_validate({"tese_central": "x"})
+    assert e.tribunais == [] and e.fase is None
+    assert chave_da_resposta(e, ["a"]) == chave_da_resposta(EstruturaArgumentativa(tese_central="x", tribunais=[], fase=None), ["a"])
+    assert "tribunais" not in e.model_dump(mode="json", exclude_defaults=True)
+
+
+def test_query_mais_de_25_tribunais_422(client):
+    _busca_fake()
+    app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore()
+    resp = client.post("/query", json={"estrutura": {"tese_central": "x", "tribunais": [f"TRT{i}" for i in range(26)]}})
+    assert resp.status_code == 422
 
 
 def test_query_com_filtro_nunca_marca_restrita_card_fora_dos_elegiveis(client, monkeypatch):

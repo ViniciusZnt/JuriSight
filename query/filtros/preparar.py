@@ -10,7 +10,7 @@ import os
 
 import psycopg
 
-from query.filtros.dispositivos import niveis
+from query.filtros.dispositivos import codigos_do_texto, niveis
 
 _FUNCAO = """
 CREATE OR REPLACE FUNCTION public.jurisight_unaccent(text) RETURNS text
@@ -67,6 +67,12 @@ def preparar(database_url: str) -> None:
                             "WHERE referencia_legislativa IS NOT NULL")
             for doc_id, refs in leitura:
                 pares.update((doc_id, n) for r in refs for n in niveis(r))
+        # NR, Tema e súmula vinculante não vêm codificados: saem do texto (cursor no servidor, sem
+        # carregar todos os textos de uma vez).
+        with conn.cursor(name="textos") as leitura:
+            leitura.execute("SELECT id, coalesce(ementa,'') || ' ' || coalesce(fundamentacao,'') FROM public.documentos")
+            for doc_id, texto in leitura:
+                pares.update((doc_id, c) for c in codigos_do_texto(texto))
         with conn.cursor() as cur, cur.copy("COPY public.documento_dispositivo (documento_id, codigo) FROM STDIN") as copy:
             for par in pares:
                 copy.write_row(par)
