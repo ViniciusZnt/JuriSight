@@ -64,6 +64,32 @@ def test_main_do_scraper_sai_com_2_quando_interrompida(monkeypatch, capsys):
     assert "blocked" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("erro, msg", [
+    (scraper_run.ErroConexao("recusada"), "Erro ao conectar no PostgreSQL: recusada"),
+    (scraper_run.ErroDatas("ruim"), "Erro ao resolver datas: ruim"),
+])
+def test_main_do_scraper_sai_com_1_em_erro_de_conexao_ou_datas(monkeypatch, capsys, erro, msg):
+    monkeypatch.setattr("sys.argv", ["run.py"])
+
+    def _falha(*a, **k):
+        raise erro
+
+    monkeypatch.setattr(scraper_run, "coletar", _falha)
+    with pytest.raises(SystemExit) as e:
+        scraper_run.main()
+    assert e.value.code == 1
+    assert msg in capsys.readouterr().err
+
+
+def test_coletar_levanta_erro_de_conexao(monkeypatch):
+    class _Falha(_FakeWriter):
+        def connect(self): raise OSError("recusada")
+
+    monkeypatch.setattr(scraper_run, "PostgresWriter", _Falha)
+    with pytest.raises(scraper_run.ErroConexao):
+        scraper_run.coletar(None, None)
+
+
 def test_indexar_devolve_contagens(monkeypatch):
     class _Fonte:
         def __init__(self, *a): pass

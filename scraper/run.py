@@ -43,6 +43,14 @@ def resolve_dates(from_date: date | None, to_date: date | None, writer: Postgres
     return resolve_collection_window(from_date, to_date, writer.get_last_collected_date())
 
 
+class ErroConexao(Exception):
+    """Falha ao conectar no PostgreSQL (o CLI sai com 1, sem traceback)."""
+
+
+class ErroDatas(Exception):
+    """Falha ao resolver a janela de datas (o CLI sai com 1, sem traceback)."""
+
+
 def coletar(
     from_date: date | None,
     to_date: date | None,
@@ -51,7 +59,7 @@ def coletar(
 ) -> dict:
     """Coleta acórdãos (ou outra coleção) do TST e persiste no PostgreSQL.
 
-    Não chama sys.exit: erros de conexão/datas levantam exceção; coleta interrompida volta com
+    Não chama sys.exit: erros de conexão/datas levantam ErroConexao/ErroDatas; coleta interrompida volta com
     completed=False (+ halt_reason/halt_message).
 
     Returns: dict com completed, documents_saved, requests_made, inicio, fim (ISO) e,
@@ -61,14 +69,12 @@ def coletar(
     try:
         writer.connect()
     except Exception as e:
-        print(f"Erro ao conectar no PostgreSQL: {e}", file=sys.stderr)
-        raise
+        raise ErroConexao(str(e)) from e
     try:
         try:
             start, end = resolve_dates(from_date, to_date, writer)
         except Exception as e:
-            print(f"Erro ao resolver datas: {e}", file=sys.stderr)
-            raise
+            raise ErroDatas(str(e)) from e
         if start > end:
             print(f"Nenhuma coleta necessária: início ({start}) >= fim ({end}).")
             return {"completed": True, "documents_saved": 0, "requests_made": 0,
@@ -136,7 +142,14 @@ def main() -> None:
         writer.close()
         print("Reset: tabela documentos recriada e estado zerado.")
 
-    result = coletar(args.from_date, args.to_date, args.colecao)  # erro de conexão/datas: sai com 1
+    try:
+        result = coletar(args.from_date, args.to_date, args.colecao)
+    except ErroConexao as e:
+        print(f"Erro ao conectar no PostgreSQL: {e}", file=sys.stderr)
+        sys.exit(1)
+    except ErroDatas as e:
+        print(f"Erro ao resolver datas: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if result["inicio"] > result["fim"]:  # nada a coletar (já avisado em coletar)
         return
