@@ -541,9 +541,11 @@ só tribunal e fase também já tornam a busca restrita:
 - **Fase do processo:** uma só, deduzida da classe processual: **Conhecimento** (ROT, RORSum, RO, RemNecRO,
   RemNecTrab, AIRO), **Execução** (AP, AIAP) ou **Outras** (todo o resto, inclusive classe vazia).
 - **Normas e dispositivos:** um campo só, com autocompletar. O que se escolhe da lista vira filtro
-  (dispositivos como `art_791_clt`, `b_ii_art_10_adct`, e também NR, Tema e Súmula Vinculante); o texto
-  digitado e confirmado com Enter vira **expressão obrigatória** (ex.: "dano moral coletivo", singular ou
-  plural, sem depender de acento ou quebra de linha) ou, se não escolhido, "só busca livre".
+  (dispositivos como `art_791_clt`, `b_ii_art_10_adct`, e também NR, Tema e Súmula Vinculante). O texto
+  digitado e confirmado com Enter, sem ser escolhido da lista, vira norma "só busca livre": orienta a busca
+  mas **não filtra**.
+- **Expressões obrigatórias:** campo separado; cada expressão (ex.: "dano moral coletivo", singular ou
+  plural, sem depender de acento ou quebra de linha) é filtro.
 
 Com algum filtro, o `/query` devolve só decisões que cumprem **todos** eles (faixa "restrita"); a busca
 livre, sem esses filtros, vem sob demanda em `/query/livre` (faixa "livre"). `/filtros/*` dá o autocompletar
@@ -551,9 +553,10 @@ e as contagens. `/filtros/*` e `/query/livre` exigem login; só o `/query` conta
 
 **NR, Tema e Súmula Vinculante** são extraídos do texto (ementa e fundamentação) pelo preparo, com os
 códigos `nr_<n>` ("NR-15"), `tema_<n>` ("Tema 1046") e `sv_<n>` ("Súmula Vinculante 4"); Súmula Vinculante
-só quando o texto diz "vinculante" ou "SV" colado ao número. No acervo local: 6.703 pares decisão-NR em 40
-NRs distintas, 14.236 em 411 temas (ex.: Tema 1046, 1.886 decisões) e 1.120 em 18 súmulas vinculantes
-(ex.: SV 10, 516; SV 4, 314).
+só quando o texto diz "vinculante" ou "SV" colado ao número. No acervo local: 33 NRs distintas (só NR 1 a 38) em 6.713 pares decisão-NR (NR-15: 3.378 decisões), 411
+temas em 14.115 pares (Tema 1046: 1.866) e 17 súmulas vinculantes em 1.090 pares (SV 4: 312). Números só
+são lidos depois de palavra no plural ("Temas 1 e 2"). O número do Tema não está ligado a um tribunal
+(ex.: "Tema 2" no acervo é o IRDR do TST), como a especificação aceitou.
 
 Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas antes do primeiro uso (rode de novo quando entrarem decisões novas):
 
