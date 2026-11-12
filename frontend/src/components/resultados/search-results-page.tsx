@@ -336,7 +336,7 @@ export function SearchResultsPage() {
 
       {/* Body */}
       <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-4 pb-10">
-        <StepIndicator current={2} />
+        <StepIndicator current={2} onEditarRevisao={() => router.push("/revisao")} />
 
         {estrutura && (
           <ParecerPesquisa

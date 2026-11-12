@@ -54,14 +54,14 @@ argumentativa digitada).
 
 Responda SEMPRE em JSON válido, com exatamente estes campos:
 - pedido_principal (string): o que se pede na ação.
-- agente_nocivo (lista de strings): agentes de risco citados (ex.: substâncias, ruído).
+- agente_nocivo (lista de strings): fatos e condições que caracterizam o caso, curtos (ex.: "benzeno", "ruído", "gravidez", "jornada controlada por tacógrafo", "doença ocupacional").
 - violacoes (lista de strings): condutas omissivas ou comissivas da empresa.
 - normas (lista de strings): normas jurídicas citadas no texto, sempre com a lei ou o \
 tribunal (ex.: "NR-15", "CLT art. 192", "ADCT art. 10, II, b", "Súmula 85 do TST"). \
 Só as que aparecem no texto.
-- empresa_ciente (true, false ou null): há evidência de que a empresa tinha ciência do risco?
+- empresa_ciente (true, false ou null): há evidência de que a empresa sabia do fato ou do risco?
 - setor (string ou null): ramo de atividade da empresa.
-- cargo (string ou null): cargo do trabalhador.
+- cargo (string ou null): cargo ou função do trabalhador.
 - tese_central (string): uma frase que resume o argumento principal do caso.
 - expressoes_chave (lista de strings): de 1 a 3 expressões jurídicas curtas (2 a 4 palavras) \
 que nomeiam o tema do caso como os tribunais escrevem nas ementas (ex.: "horas extras", \
