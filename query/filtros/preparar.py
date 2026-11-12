@@ -7,6 +7,7 @@ mudou (`_VERSAO_TEXTO`), o índice de texto é refeito do zero. Uso: python -m q
 from __future__ import annotations
 
 import os
+import time
 
 import psycopg
 
@@ -53,8 +54,13 @@ _VERSAO_TEXTO = "texto v2: so [a-z0-9], sem ponto entre digitos"
 _INDICE = "CREATE INDEX IF NOT EXISTS documento_tsv_gin ON public.documento_tsv USING gin (tsv)"
 
 
-def preparar(database_url: str) -> None:
-    """Cria/recarrega as tabelas de dispositivos e o índice de texto."""
+def preparar(database_url: str) -> dict:
+    """Cria/recarrega as tabelas de dispositivos e o índice de texto.
+
+    Returns: dict com dispositivos, pares (linhas em documento_dispositivo), por_familia
+    (pares de nr/tema/sv) e tempo_s.
+    """
+    t0 = time.monotonic()
     with psycopg.connect(database_url) as conn:
         conn.execute("CREATE EXTENSION IF NOT EXISTS unaccent")
         conn.execute(_FUNCAO)
@@ -89,8 +95,11 @@ def preparar(database_url: str) -> None:
         conn.execute(_INDICE)
         conn.execute(f"COMMENT ON TABLE public.documento_tsv IS '{_VERSAO_TEXTO}'")
         conn.execute("ANALYZE public.documento_tsv")
-    print(f"{n_disp} dispositivos, {len(pares)} linhas em documento_dispositivo")
+    por_familia = {f: sum(1 for _, c in pares if c.startswith(f + "_")) for f in ("nr", "tema", "sv")}
+    return {"dispositivos": n_disp, "pares": len(pares), "por_familia": por_familia,
+            "tempo_s": time.monotonic() - t0}
 
 
 if __name__ == "__main__":
-    preparar(os.environ["DATABASE_URL"])
+    r = preparar(os.environ["DATABASE_URL"])
+    print(f"{r['dispositivos']} dispositivos, {r['pares']} linhas em documento_dispositivo")

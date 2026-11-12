@@ -17,6 +17,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from qdrant_client import QdrantClient
@@ -75,9 +76,18 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def main() -> None:
-    args = _parse_args()
+def indexar(
+    reset: bool = False,
+    limit: int | None = None,
+    workers: int = 6,
+    flush_docs: int = 100,
+    no_bm25: bool = False,
+) -> dict:
+    """Indexa os documentos do PostgreSQL no Qdrant (+ BM25, salvo em disco).
 
+    Returns: dict com docs, chunks, novos, falhas, bm25_salvo (bool) e tempo_s (float).
+    """
+    t0 = time.monotonic()
     client = QdrantClient(url=QDRANT_URL, timeout=210)  # > _SEARCH_TIMEOUT_S (qdrant_store.py)
     source = DocumentSource(DATABASE_URL)
     chunker = SACChunker()
@@ -85,7 +95,7 @@ def main() -> None:
     store = QdrantStore(client)
     bm25 = BM25Builder()
 
-    if args.reset:
+    if reset:
         logger.info("Reset: limpando coleções do Qdrant.")
         store.reset()
 
@@ -99,7 +109,7 @@ def main() -> None:
 
     # Embedding (I/O na OpenAI) roda em `workers` threads; a escrita no Qdrant fica só nesta
     # thread. Buffer acumula flush_docs docs por gravação para cortar round-trips em disco lento.
-    workers = max(1, args.workers)
+    workers = max(1, workers)
     max_inflight = workers * 5
     futures: dict = {}   # future -> (documento_id, chunks)
     buf: dict = {"chunks": [], "ec": [], "ee": [], "docs": 0}
@@ -127,16 +137,16 @@ def main() -> None:
         total_novos += 1
         if total_novos % 25 == 0:
             logger.info("  ... %d novos documentos embedados", total_novos)
-        if buf["docs"] >= args.flush_docs:
+        if buf["docs"] >= flush_docs:
             _flush()
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         for i, (documento_id, doc) in enumerate(source.iter_documents()):
-            if args.limit is not None and i >= args.limit:
+            if limit is not None and i >= limit:
                 break
 
             ja_feito = documento_id in ja_indexados
-            if ja_feito and args.no_bm25:         # já indexado e sem BM25: nada a fazer
+            if ja_feito and no_bm25:         # já indexado e sem BM25: nada a fazer
                 continue
 
             try:
@@ -148,7 +158,7 @@ def main() -> None:
             if not chunks:
                 continue
 
-            if not args.no_bm25:
+            if not no_bm25:
                 bm25.add(chunks)
             total_docs += 1
             total_chunks += len(chunks)
@@ -166,10 +176,12 @@ def main() -> None:
             _colher(fut)
         _flush()
 
-    if args.no_bm25:
+    bm25_salvo = False
+    if no_bm25:
         logger.info("BM25 pulado (--no-bm25). Construa-o à parte depois.")
     elif total_chunks:
         bm25.build_and_save()
+        bm25_salvo = True
         logger.info("Índice BM25 salvo em %s", bm25.index_path)
     else:
         logger.warning("Nenhum chunk indexado — BM25 não foi construído.")
@@ -178,6 +190,14 @@ def main() -> None:
         "Indexação concluída: %d documentos (%d novos embedados), %d chunks, %d falhas.",
         total_docs, total_novos, total_chunks, total_falhas,
     )
+    return {"docs": total_docs, "chunks": total_chunks, "novos": total_novos, "falhas": total_falhas,
+            "bm25_salvo": bm25_salvo, "tempo_s": time.monotonic() - t0}
+
+
+def main() -> None:
+    args = _parse_args()
+    indexar(reset=args.reset, limit=args.limit, workers=args.workers,
+            flush_docs=args.flush_docs, no_bm25=args.no_bm25)
 
 
 if __name__ == "__main__":
