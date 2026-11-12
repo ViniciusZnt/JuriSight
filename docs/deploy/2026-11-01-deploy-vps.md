@@ -199,6 +199,8 @@ O `.env` nunca vai para o Git; ele existe só no servidor.
 
 ## 8. Fase 5 — copiar os dados (Vinicius, 1 a 2 h, quase tudo esperando upload)
 
+> Nota histórica: esta cópia local→VPS foi o caminho da primeira carga. O caminho atual é o pipeline Dagster (README, "Pipeline de dados (Dagster)").
+
 Nesta máquina, em `~/JuriSight` (o WSL não tem `rsync`: instale antes com `sudo apt install -y rsync`):
 
 ```bash

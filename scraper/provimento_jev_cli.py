@@ -101,9 +101,46 @@ def _positivo(valor: str) -> int:
     return n
 
 
+def _nada(*_):
+    pass
+
+
+def _modelo(classificador) -> str:
+    return classificador.model if classificador else os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
+
+
+def classificar(
+    store, classificador, limite: int | None, lote: int = 500, max_workers: int = 8, log=_nada
+) -> dict:
+    """Backfill retomável com o Jev. Nunca pergunta nada: a confirmação é de quem chama.
+    `classificador=None` cria o `ClassificadorJev()` real."""
+    modelo = _modelo(classificador)
+    sha = perguntas_sha()
+    pendentes = store.contar_pendentes(modelo, sha)
+    if limite is not None:
+        pendentes = min(pendentes, limite)
+    classificador = classificador or ClassificadorJev()
+
+    ok = falhas = tentados = 0
+    cursor = None
+    while limite is None or tentados < limite:
+        restante = lote if limite is None else min(lote, limite - tentados)
+        itens = store.pendentes(modelo, sha, limite=restante, apos_id=cursor)
+        if not itens:
+            break
+        o, f = classificar_pendentes(store, classificador, itens, sha, max_workers)
+        ok, falhas, tentados = ok + o, falhas + f, tentados + len(itens)
+        cursor = itens[-1].documento_id  # item que sempre falha não volta
+        log(f"  {tentados} tentados (ok={ok}, falhas={falhas})")
+    return {
+        "ok": ok, "falhas": falhas, "tentados": tentados, "pendentes": pendentes,
+        "estimativa_tokens": tentados * TOKENS_POR_ACORDAO, "modelo": modelo,
+    }
+
+
 def _cmd_classificar(args, store, classificador) -> int:
     # O cliente real só é criado depois da confirmação.
-    modelo = classificador.model if classificador else os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
+    modelo = _modelo(classificador)
     sha = perguntas_sha()
     n = store.contar_pendentes(modelo, sha)
     if args.limite is not None:
@@ -116,21 +153,9 @@ def _cmd_classificar(args, store, classificador) -> int:
     if not args.sim and not confirmar("Chamar o Jev (custo)? [s/N] "):
         print("Cancelado.")
         return 1
-    classificador = classificador or ClassificadorJev()
-
-    ok = falhas = tentados = 0
-    cursor = None
-    while args.limite is None or tentados < args.limite:
-        restante = args.lote if args.limite is None else min(args.lote, args.limite - tentados)
-        itens = store.pendentes(modelo, sha, limite=restante, apos_id=cursor)
-        if not itens:
-            break
-        o, f = classificar_pendentes(store, classificador, itens, sha, args.max_workers)
-        ok, falhas, tentados = ok + o, falhas + f, tentados + len(itens)
-        cursor = itens[-1].documento_id  # item que sempre falha não volta
-        print(f"  {tentados} tentados (ok={ok}, falhas={falhas})")
-    print(f"ok={ok} falhas={falhas}")
-    return 1 if falhas else 0
+    r = classificar(store, classificador, args.limite, args.lote, args.max_workers, log=print)
+    print(f"ok={r['ok']} falhas={r['falhas']}")
+    return 1 if r["falhas"] else 0
 
 
 def mudancas(linhas: list, confianca_min: float) -> list[tuple[str, str, str]]:
@@ -143,26 +168,39 @@ def mudancas(linhas: list, confianca_min: float) -> list[tuple[str, str, str]]:
     return r
 
 
-def _cmd_aplicar(args, store) -> int:
-    modelo = os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
-    linhas = store.linhas(modelo, perguntas_sha())
-    if not linhas:
-        print(f"Nenhuma classificação para {modelo}; rode `classificar` primeiro.")
-        return 1
-    muda = mudancas(linhas, args.confianca_min)
-    abaixo = [l for l in linhas if l.confianca_resultado < args.confianca_min]
+def aplicar(store, confianca_min: float, confirmar: bool) -> dict:
+    """Calcula as mudanças do Jev sobre `documentos.provimento`; só grava com `confirmar`.
+    `linhas == 0`: nenhuma classificação para o modelo atual."""
+    linhas = store.linhas(os.getenv("TYPESAFE_MODEL", MODELO_PADRAO), perguntas_sha())
+    muda = mudancas(linhas, confianca_min)
+    abaixo = [l for l in linhas if l.confianca_resultado < confianca_min]
     abaixo_muda = sum(para_provimento(l.resultado).value != l.provimento_atual for l in abaixo)
-    for (atual, novo), n in sorted(Counter((a, n) for _, a, n in muda).items()):
-        print(f"{atual or '(vazio)'} → {novo}: {n}")
-    print(f"Mudanças: {len(muda)} de {len(linhas)} linhas")
+    transicoes = {
+        f"{'(nulo)' if atual is None else atual or '(vazio)'} → {novo}": n
+        for (atual, novo), n in sorted(Counter((a, n) for _, a, n in muda).items())
+    }
+    aplicadas = store.aplicar([(d, novo) for d, _, novo in muda]) if confirmar and linhas else 0
+    return {
+        "transicoes": transicoes, "abaixo_limite": len(abaixo), "aplicadas": aplicadas,
+        "abaixo_muda": abaixo_muda, "mudancas": len(muda), "linhas": len(linhas),
+    }
+
+
+def _cmd_aplicar(args, store) -> int:
+    r = aplicar(store, args.confianca_min, args.confirmar)
+    if not r["linhas"]:
+        print(f"Nenhuma classificação para {os.getenv('TYPESAFE_MODEL', MODELO_PADRAO)}; rode `classificar` primeiro.")
+        return 1
+    for transicao, n in r["transicoes"].items():
+        print(f"{transicao}: {n}")
+    print(f"Mudanças: {r['mudancas']} de {r['linhas']} linhas")
     limite = args.confianca_min
-    print(f"Linhas abaixo do limite e mudariam: {abaixo_muda} (confiança < {limite})")
-    print(f"Linhas abaixo do limite sem mudança: {len(abaixo) - abaixo_muda} (confiança < {limite})")
+    print(f"Linhas abaixo do limite e mudariam: {r['abaixo_muda']} (confiança < {limite})")
+    print(f"Linhas abaixo do limite sem mudança: {r['abaixo_limite'] - r['abaixo_muda']} (confiança < {limite})")
     if not args.confirmar:
         print("Nada foi escrito; use --confirmar para aplicar.")
         return 0
-    mudou = store.aplicar([(d, novo) for d, _, novo in muda])
-    print(f"Linhas alteradas em documentos.provimento: {mudou}")
+    print(f"Linhas alteradas em documentos.provimento: {r['aplicadas']}")
     print("Para restaurar a regex: uv run python utils/reclassify.py")
     return 0
 
@@ -199,34 +237,45 @@ def _construir_qdrant():
     return QdrantStore(QdrantClient(url=url, timeout=210))
 
 
-def _cmd_sincronizar(args, store, qdrant) -> int:
+def sincronizar(
+    store, qdrant, lote: int = 1000, so_bm25: bool = False, so_qdrant: bool = False,
+    indice_bm25: Path | None = None, log=_nada,
+) -> dict:
+    """Leva `documentos.provimento` ao Qdrant e ao provimentos.json do BM25."""
     inicio = time.monotonic()
     por_documento = store.provimentos_documentos()
-    print(f"Documentos no Postgres: {len(por_documento)}")
+    log(f"Documentos no Postgres: {len(por_documento)}")
     grupos: dict[str, list[str]] = {}
     for doc_id, prov in por_documento.items():
         grupos.setdefault(prov, []).append(doc_id)
 
-    if not args.so_bm25:
+    if not so_bm25:
         qdrant = qdrant or _construir_qdrant()
         qdrant.garantir_indices_payload()
         for prov, ids in sorted(grupos.items()):
-            enviados = qdrant.atualizar_provimento(prov, sorted(ids), lote=args.lote)
-            print(f"Qdrant {prov}: {enviados} documentos")
+            enviados = qdrant.atualizar_provimento(prov, sorted(ids), lote=lote)
+            log(f"Qdrant {prov}: {enviados} documentos")
 
-    if not args.so_qdrant:
+    if not so_qdrant:
         from indexing.lexical import bm25_builder
 
-        indice = args.indice_bm25 or bm25_builder.BM25_INDEX_PATH
+        indice = indice_bm25 or bm25_builder.BM25_INDEX_PATH
         with open(Path(indice) / "chunk_ids.json") as f:
             chunk_ids = json.load(f)
         provimentos, orfaos = provimentos_dos_chunks(chunk_ids, por_documento)
         bm25_builder.gravar_provimentos(Path(indice), provimentos)
         for prov, n in sorted(Counter(provimentos).items()):
-            print(f"BM25 {prov}: {n} chunks")
-        print(f"Chunks órfãos (documento ausente, NAO_APLICAVEL): {orfaos}")
-        print(f"Gravado {Path(indice) / bm25_builder.PROVIMENTOS_FILENAME}")
-    print(f"Tempo total: {time.monotonic() - inicio:.1f}s")
+            log(f"BM25 {prov}: {n} chunks")
+        log(f"Chunks órfãos (documento ausente, NAO_APLICAVEL): {orfaos}")
+        log(f"Gravado {Path(indice) / bm25_builder.PROVIMENTOS_FILENAME}")
+    return {"docs": len(por_documento), "tempo_s": time.monotonic() - inicio}
+
+
+def _cmd_sincronizar(args, store, qdrant) -> int:
+    r = sincronizar(
+        store, qdrant, args.lote, args.so_bm25, args.so_qdrant, args.indice_bm25, log=print
+    )
+    print(f"Tempo total: {r['tempo_s']:.1f}s")
     print("Reinicie o backend para o BM25 recarregar o provimentos.json.")
     return 0
 

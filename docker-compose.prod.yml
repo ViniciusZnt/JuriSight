@@ -32,13 +32,34 @@ services:
       - ollama_models:/root/.ollama
 
   api:
-    build: .
+    build:
+      context: .
+      target: api
     restart: unless-stopped
     env_file: .env
     environment:
       API_RELOAD: "false"
     volumes:
       - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
+
+  dagster:
+    build:
+      context: .
+      target: dagster
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - dagster_home:/app/dagster_home
+    ports:
+      - "127.0.0.1:3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,3 +99,4 @@ volumes:
   ollama_models:
   caddy_data:
   caddy_config:
+  dagster_home:
