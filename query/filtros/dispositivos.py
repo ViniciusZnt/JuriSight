@@ -166,9 +166,10 @@ def citada_em(norma: str, texto: str) -> bool:
     return bool(fichas) and fichas <= set(tokens_da_busca(texto))
 
 
-_NUM = r"(?:n\s*[º°.]?\s*)?(\d+(?:\.\d{3})*)\b"
+_N = r"\d+(?:\.\d{3})*(?![\d/-]|\.\d)"  # sem número de processo (0001639-12.2023...)
+_NUM = r"(?:n\s*[º°.]?\s*)?(" + _N + r"(?:\s*(?:,|e)\s*" + _N + r")*)"  # "1046, 725 e 1232"
 _DO_TEXTO_RE = (
-    ("nr", re.compile(r"(?<![a-z])(?:nr|norma\s+regulamentadora)[\s-]*" + _NUM, re.I)),
+    ("nr", re.compile(r"(?<![a-z])(?:nrs?|normas?\s+regulamentadoras?)[\s-]*" + _NUM, re.I)),
     ("tema", re.compile(r"\btemas?\s*" + _NUM, re.I)),
     ("sv", re.compile(r"(?<![a-z])(?:s[úu]mulas?\s+vinculantes?|sv)[\s-]*" + _NUM, re.I)),
 )
@@ -177,5 +178,11 @@ _DO_TEXTO_RE = (
 def codigos_do_texto(texto: str) -> set[str]:
     """`nr_<n>`, `tema_<n>` e `sv_<n>` citados no texto. Súmula vinculante só com "vinculante" ou
     "SV" colado ao número: "Súmula 4 do STF" não conta."""
-    return {f"{tipo}_{int(n.replace('.', ''))}"
-            for tipo, padrao in _DO_TEXTO_RE for n in padrao.findall(texto or "")}
+    codigos = set()
+    for tipo, padrao in _DO_TEXTO_RE:
+        for lista in padrao.findall(texto or ""):
+            for n in re.findall(_N, lista):
+                n = int(n.replace(".", ""))
+                if tipo != "nr" or 1 <= n <= 38:  # as NRs vão de 1 a 38
+                    codigos.add(f"{tipo}_{n}")
+    return codigos

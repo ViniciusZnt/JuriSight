@@ -144,6 +144,6 @@ def test_nr_tema_e_sv_filtraveis(store):
     with psycopg.connect(DATABASE_URL) as conn:
         ruins = conn.execute(
             r"""SELECT count(*) FROM documentos WHERE id = ANY(%s::uuid[]) AND NOT
-                (coalesce(ementa,'') || ' ' || coalesce(fundamentacao,'') ~* '(?<![a-z])(nr|norma\s+regulamentadora)[\s-]*(n[º°.]?\s*)?0*15\y')""",
+                (coalesce(ementa,'') || ' ' || coalesce(fundamentacao,'') ~* '(?<![a-z])(nrs?|normas?\s+regulamentadoras?)[\s-]*(n[º°.]?\s*)?([0-9.]+\s*(,|e)\s*)*0*15(?![0-9])')""",
             (ids,)).fetchone()[0]
     assert ruins == 0

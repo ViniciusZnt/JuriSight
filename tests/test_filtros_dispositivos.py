@@ -125,6 +125,12 @@ def test_citada_em(norma, texto, esperado):
     ("Súmula Vinculante 4", {"sv_4"}), ("Súmula Vinculante nº 40", {"sv_40"}), ("SV 13", {"sv_13"}),
     ("Súmula 4 do STF e Súmula 85 do TST", set()),
     ("CNR 15 e NRA-2", set()),  # NR dentro de outra sigla
+    ("Nr 0001639-12.2023.5.04.0001", set()), ("NR 0", set()), ("NR 95", set()), ("NR-38", {"nr_38"}),
+    ("Temas 1046 e 725", {"tema_1046", "tema_725"}),
+    ("Temas 1046, 725 e 1232", {"tema_1046", "tema_725", "tema_1232"}),
+    ("NRs 15 e 16", {"nr_15", "nr_16"}),
+    ("Súmulas Vinculantes 4 e 13", {"sv_4", "sv_13"}),
+    ("tema e NR 15", {"nr_15"}),
 ])
 def test_codigos_do_texto(texto, esperado):
     assert codigos_do_texto(texto) == esperado
