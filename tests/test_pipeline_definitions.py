@@ -2,6 +2,7 @@
 
 import dagster as dg
 import pytest
+from pydantic import ValidationError
 
 from pipeline.definitions import acervo, defs, jev_classificacoes
 
@@ -40,12 +41,19 @@ def test_acervo_falha_com_coleta_interrompida(monkeypatch):
     )
     r = dg.materialize([acervo], raise_on_error=False)
     assert not r.success
+    dados = r.get_step_failure_events()[0].event_specific_data.user_failure_data
+    assert dados.description == "parou"
+    assert dados.metadata["documentos_salvos"].value == 2
 
 
 def test_data_invalida_e_erro_de_config():
     cfg = {"ops": {"acervo": {"config": {"data_inicio": "2024-13-01"}}}}
-    with pytest.raises(Exception):
+    # O validador roda ao montar a Config no op; com raise_on_error o Dagster relança
+    # o ValidationError do pydantic, que nomeia o campo.
+    with pytest.raises(ValidationError, match="data_inicio"):
         dg.materialize([acervo], run_config=cfg)
+    # Sem relançar, a execução apenas falha (erro legível na UI).
+    assert not dg.materialize([acervo], run_config=cfg, raise_on_error=False).success
 
 
 def test_jev_limite_zero_vira_none(monkeypatch):
