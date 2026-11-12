@@ -26,6 +26,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import tempfile
 import unicodedata
 from pathlib import Path
 
@@ -133,9 +135,20 @@ class BM25Builder:
         retriever = bm25s.BM25()
         retriever.index(self._corpus_tokens)
         self.index_path.mkdir(parents=True, exist_ok=True)
-        retriever.save(str(self.index_path))
-        with open(self.index_path / _CHUNK_IDS_FILENAME, "w") as f:
-            json.dump(self._chunk_ids, f)
+        # Gravação atômica: o api mantém os arquivos em mmap; truncar no lugar
+        # derrubaria uma consulta em andamento (SIGBUS). Grava num diretório
+        # irmão e troca cada arquivo por os.replace (inode novo; o mapeamento
+        # antigo segue consistente até o api reiniciar).
+        tmp = Path(tempfile.mkdtemp(prefix=self.index_path.name + ".", suffix=".tmp",
+                                    dir=self.index_path.parent))
+        try:
+            retriever.save(str(tmp))
+            with open(tmp / _CHUNK_IDS_FILENAME, "w") as f:
+                json.dump(self._chunk_ids, f)
+            for arq in tmp.iterdir():
+                os.replace(arq, self.index_path / arq.name)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
         gravar_provimentos(self.index_path, self._provimentos)
 
     @staticmethod

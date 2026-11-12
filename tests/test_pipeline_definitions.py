@@ -4,7 +4,7 @@ import dagster as dg
 import pytest
 from pydantic import ValidationError
 
-from pipeline.definitions import acervo, defs, jev_classificacoes
+from pipeline.definitions import AcervoConfig, acervo, defs, jev_classificacoes
 
 
 def test_defs_tem_assets_e_jobs():
@@ -70,3 +70,22 @@ def test_jev_limite_zero_vira_none(monkeypatch):
     assert dg.materialize([jev_classificacoes], run_config=cfg).success
     assert dg.materialize([jev_classificacoes]).success
     assert vistos == [None, 500]
+
+
+def test_colecao_invalida_e_erro_de_config():
+    cfg = {"ops": {"acervo": {"config": {"colecao": "acordao"}}}}
+    # Literal vira enum no schema de config: o Dagster recusa antes de rodar.
+    with pytest.raises(dg.DagsterInvalidConfigError, match="colecao"):
+        dg.materialize([acervo], run_config=cfg)
+    with pytest.raises(ValidationError, match="colecao"):
+        AcervoConfig(colecao="acordao")
+
+
+def test_jev_falha_quando_tudo_falha(monkeypatch):
+    monkeypatch.setattr("scraper.provimento_jev_cli._construir_store", lambda: None)
+    monkeypatch.setattr(
+        "scraper.provimento_jev_cli.classificar",
+        lambda *a, **k: {"ok": 0, "falhas": 3, "tentados": 3, "pendentes": 0,
+                         "estimativa_tokens": 0, "modelo": "m"},
+    )
+    assert not dg.materialize([jev_classificacoes], raise_on_error=False).success

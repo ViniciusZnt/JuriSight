@@ -176,7 +176,7 @@ def aplicar(store, confianca_min: float, confirmar: bool) -> dict:
     abaixo = [l for l in linhas if l.confianca_resultado < confianca_min]
     abaixo_muda = sum(para_provimento(l.resultado).value != l.provimento_atual for l in abaixo)
     transicoes = {
-        f"{atual or '(vazio)'} → {novo}": n
+        f"{'(nulo)' if atual is None else atual or '(vazio)'} → {novo}": n
         for (atual, novo), n in sorted(Counter((a, n) for _, a, n in muda).items())
     }
     aplicadas = store.aplicar([(d, novo) for d, _, novo in muda]) if confirmar and linhas else 0

@@ -210,3 +210,17 @@ def test_bm25_ids_e_provimento_juntos(tmp_path):
     loaded = BM25Builder.load(_indice_com_provimentos(tmp_path))
     res = loaded.search("benzeno", n=10, provimento="NEGADO", documento_ids={"d1", "d2"})
     assert [c for c, _ in res] == ["d1:0"]  # d2 está na lista mas é APROVADO
+
+
+def test_build_and_save_troca_arquivos_sem_truncar(tmp_path):
+    path = tmp_path / "bm25.pkl"
+    inodes = []
+    for _ in range(2):
+        b = BM25Builder(index_path=path)
+        b.add([_chunk("d1", 0, "benzeno insalubridade"), _chunk("d2", 0, "horas extras")])
+        b.build_and_save()
+        principal = next(p for p in path.iterdir() if p.name.startswith("data"))
+        inodes.append(principal.stat().st_ino)
+        assert BM25Builder.load(path).search("benzeno", n=1)[0][0] == "d1:0"
+    assert inodes[0] != inodes[1]
+    assert not list(tmp_path.glob("*.tmp"))

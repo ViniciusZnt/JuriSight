@@ -6,6 +6,7 @@ Nenhum asset expõe reset.
 
 import os
 from datetime import date
+from typing import Literal
 
 import dagster as dg
 from pydantic import field_validator
@@ -14,7 +15,7 @@ from pydantic import field_validator
 class AcervoConfig(dg.Config):
     data_inicio: str | None = None
     data_fim: str | None = None
-    colecao: str = "acordaos"
+    colecao: Literal["acordaos", "sumulas", "precedentes", "ojs"] = "acordaos"
 
     @field_validator("data_inicio", "data_fim")
     @classmethod
@@ -81,6 +82,11 @@ def jev_classificacoes(config: JevClassificacoesConfig) -> dg.MaterializeResult:
     r = classificar(
         _construir_store(), None, config.limite or None, config.lote, config.max_workers
     )
+    if r["tentados"] > 0 and r["ok"] == 0:
+        raise dg.Failure(
+            description=f"Jev falhou em todos os {r['tentados']} itens tentados",
+            metadata=r,
+        )
     return dg.MaterializeResult(metadata=r)
 
 
