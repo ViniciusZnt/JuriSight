@@ -206,4 +206,28 @@ describe("FiltroRestrito", () => {
     expect(onPatch).toHaveBeenCalledWith({ fase: "execucao" });
     await waitFor(() => expect(contar).toHaveBeenLastCalledWith({ dispositivos: [], expressoes: [], tribunais: [], fase: "execucao" }));
   });
+
+  it("falha na lista de tribunais mostra aviso e reabrir tenta de novo", async () => {
+    listar.mockRejectedValueOnce(new Error("503"));
+    render(<Harness />);
+    const abrir = screen.getByRole("button", { name: "Todos os tribunais" });
+    await userEvent.click(abrir);
+    expect(await screen.findByText("Lista de tribunais indisponível")).toBeInTheDocument();
+    await userEvent.click(abrir);
+    await userEvent.click(abrir);
+    expect(await screen.findByText("TRT-4 · 20 decisões")).toBeInTheDocument();
+  });
+
+  it("Esc e clique fora fecham o menu de tribunais", async () => {
+    render(<Harness />);
+    const abrir = screen.getByRole("button", { name: "Todos os tribunais" });
+    await userEvent.click(abrir);
+    expect(await screen.findByText("TRT-4 · 20 decisões")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByText("TRT-4 · 20 decisões")).not.toBeInTheDocument();
+    await userEvent.click(abrir);
+    expect(await screen.findByText("TRT-4 · 20 decisões")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Execução" }));
+    expect(screen.queryByText("TRT-4 · 20 decisões")).not.toBeInTheDocument();
+  });
 });

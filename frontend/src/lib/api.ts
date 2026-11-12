@@ -52,8 +52,8 @@ export interface EstruturaArgumentativa {
 
 export type Fase = "conhecimento" | "execucao" | "outras";
 export const ROTULO_FASE: Record<Fase, string> = { conhecimento: "Conhecimento", execucao: "Execução", outras: "Outras" };
-/** "TRT4" vira "TRT-4" (o valor gravado é o do acervo). */
-export const rotuloTribunal = (t: string) => t.replace(/^TRT(\d+)$/, "TRT-$1");
+/** "TRT4" vira "TRT-4", "TRF3" vira "TRF-3" (o valor gravado é o do acervo); "TST" fica. */
+export const rotuloTribunal = (t: string) => t.replace(/^([A-Z]+)(\d+)$/, "$1-$2");
 
 export function emptyEstrutura(): EstruturaArgumentativa {
   return {

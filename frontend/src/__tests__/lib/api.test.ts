@@ -17,6 +17,7 @@ import {
   emptyEstrutura,
   temFiltroRestrito,
   contarFiltros,
+  rotuloTribunal,
   type EstruturaArgumentativa,
 } from "@/lib/api";
 
@@ -273,5 +274,13 @@ describe("contarFiltros", () => {
     mockFetchOnce(200, { total: 1, dispositivos: [], expressoes: [] });
     await contarFiltros({ dispositivos: [], expressoes: [], tribunais: ["TRT4"], fase: "execucao" });
     expect(JSON.parse((global.fetch as jest.Mock).mock.calls.at(-1)[1].body)).toEqual({ dispositivos: [], expressoes: [], tribunais: ["TRT4"], fase: "execucao" });
+  });
+});
+
+describe("rotuloTribunal", () => {
+  it("separa sigla e número, e deixa o resto", () => {
+    expect(rotuloTribunal("TRT4")).toBe("TRT-4");
+    expect(rotuloTribunal("TRF3")).toBe("TRF-3");
+    expect(rotuloTribunal("TST")).toBe("TST");
   });
 });

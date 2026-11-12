@@ -79,6 +79,8 @@ export function FiltroRestrito({
   // lista dos tribunais do acervo: carregada na primeira vez que o menu abre (null = ainda não / falhou)
   const [menuTribunais, setMenuTribunais] = useState(false);
   const [listaTribunais, setListaTribunais] = useState<{ tribunal: string; rotulo: string; total: number }[] | null>(null);
+  const [listaFalhou, setListaFalhou] = useState(false);
+  const blocoTribunais = useRef<HTMLDivElement>(null);
   const buscaRef = useRef<HTMLInputElement>(null);
   const exprRef = useRef<HTMLInputElement>(null);
 
@@ -142,8 +144,23 @@ export function FiltroRestrito({
 
   const abrirTribunais = () => {
     setMenuTribunais((a) => !a);
-    if (!listaTribunais) listarTribunais().then(setListaTribunais).catch(() => setListaTribunais(null));
+    if (!listaTribunais) {
+      setListaFalhou(false);
+      listarTribunais().then(setListaTribunais).catch(() => setListaFalhou(true));
+    }
   };
+  // o menu fecha com Esc e com clique fora dele
+  useEffect(() => {
+    if (!menuTribunais) return;
+    const fora = (e: MouseEvent) => !blocoTribunais.current?.contains(e.target as Node) && setMenuTribunais(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuTribunais(false);
+    document.addEventListener("mousedown", fora);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", fora);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [menuTribunais]);
   const alternarTribunal = (t: string) => onChange({ tribunais: tribunais.includes(t) ? tribunais.filter((x) => x !== t) : [...tribunais, t] });
 
   const addExpr = () => {
@@ -278,7 +295,7 @@ export function FiltroRestrito({
             </div>
           ))}
         </div>
-        <div className="relative max-w-full">
+        <div ref={blocoTribunais} className="relative max-w-full">
           <button
             onClick={abrirTribunais}
             aria-expanded={menuTribunais}
@@ -289,8 +306,11 @@ export function FiltroRestrito({
           </button>
           {menuTribunais && (
             <ul className="absolute z-10 left-0 right-0 max-w-full mt-1 max-h-56 overflow-y-auto rounded-lg border border-[#E4E4EC] dark:border-[#26262C] bg-white dark:bg-[#17171B] shadow-lg">
-              {listaTribunais === null && (
+              {listaTribunais === null && !listaFalhou && (
                 <li className={`px-3 py-2 ${mutedCls}`} style={{ fontSize: "13.2px" }}>Carregando tribunais…</li>
+              )}
+              {listaTribunais === null && listaFalhou && (
+                <li className="px-3 py-2 text-[#7A1A1A] dark:text-[#E08A93]" style={{ fontSize: "13.2px" }}>Lista de tribunais indisponível</li>
               )}
               {listaTribunais?.map((o) => (
                 <li key={o.tribunal}>
