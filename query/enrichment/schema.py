@@ -8,6 +8,8 @@ os acórdãos já coletados do TST; ver §6.1 LGPD).
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -24,6 +26,8 @@ class EstruturaArgumentativa(BaseModel):
     normas: list[str] = Field(default_factory=list)
     dispositivos: list[str] = Field(default_factory=list)  # códigos (ex.: art_192_clt) — filtro restrito
     expressoes: list[str] = Field(default_factory=list)  # expressões obrigatórias — filtro restrito
+    tribunais: list[str] = Field(default_factory=list)  # ex.: TRT4 (OU entre eles) — filtro restrito
+    fase: Literal["conhecimento", "execucao", "outras"] | None = None  # filtro restrito
     empresa_ciente: bool | None = None
     setor: str | None = None
     cargo: str | None = None

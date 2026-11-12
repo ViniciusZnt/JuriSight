@@ -53,13 +53,14 @@ from query.api.auth_routes import get_current_user
 from query.api.auth_routes import router as auth_router
 from query.api.conversa_routes import router as conversa_router
 from query.api.filtros_routes import (
-    MAX_FILTROS, MAX_TEXTO, DispositivoView, ExpressaoView, filtro_indisponivel, get_filtro_store,
+    MAX_FILTROS, MAX_TEXTO, MAX_TRIBUNAIS, DispositivoView, ExpressaoView, filtro_indisponivel, get_filtro_store,
 )
 from query.api.filtros_routes import router as filtros_router
 from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
 from query.filtros.dispositivos import citada_em, codigo_de_texto
+from query.filtros.fases import tem_filtro_restrito
 from query.filtros.store import FiltroIndisponivel, FiltroStore
 from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
@@ -361,6 +362,8 @@ class QueryRequest(BaseModel):
     @classmethod
     def _filtros_no_limite(cls, e: EstruturaArgumentativa) -> EstruturaArgumentativa:
         """Mesmo teto do /filtros/contagem (query/api/filtros_routes.py); o enrich não passa por aqui."""
+        if len(e.tribunais) > MAX_TRIBUNAIS or any(len(t) > MAX_TEXTO for t in e.tribunais):
+            raise ValueError(f"No máximo {MAX_TRIBUNAIS} tribunais.")
         if (len(e.dispositivos) > MAX_FILTROS or len(e.expressoes) > MAX_FILTROS
                 or any(len(t) > MAX_TEXTO for t in e.dispositivos + e.expressoes)):
             raise ValueError(f"No máximo {MAX_FILTROS} dispositivos e {MAX_FILTROS} expressões, "
@@ -378,11 +381,12 @@ async def query(
     filtro_store: FiltroStore | None = Depends(get_filtro_store),
 ) -> list[ResultCard]:
     ids: list[str] | None = None
-    if body.estrutura.dispositivos or body.estrutura.expressoes:
+    if tem_filtro_restrito(body.estrutura):
         if filtro_store is None:
             raise filtro_indisponivel()
         try:
-            ids = await run_in_threadpool(filtro_store.elegiveis, body.estrutura.dispositivos, body.estrutura.expressoes)
+            ids = await run_in_threadpool(filtro_store.elegiveis, body.estrutura.dispositivos, body.estrutura.expressoes,
+                                       body.estrutura.tribunais, body.estrutura.fase)
         except FiltroIndisponivel as exc:
             raise filtro_indisponivel() from exc
         if not ids:
