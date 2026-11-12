@@ -307,7 +307,7 @@ export function SearchResultsPage() {
 
         {estrutura && (
           <ComoFoiBuscado
-            key={`${versionNumero}|${JSON.stringify(estrutura)}`}
+            key={`como-foi-buscado|${versionNumero}|${JSON.stringify(estrutura)}`}
             estrutura={estrutura}
             filtro={
               restrito
@@ -600,7 +600,7 @@ export function SearchResultsPage() {
         )}
 
         {estrutura && restrito && (
-          <FaixaLivre key={`${versionNumero}|${JSON.stringify(estrutura)}`} estrutura={estrutura} excluir={new Set(results.map((d) => d.id))} passa={passaFiltrosComuns} />
+          <FaixaLivre key={`faixa-livre|${versionNumero}|${JSON.stringify(estrutura)}`} estrutura={estrutura} excluir={new Set(results.map((d) => d.id))} passa={passaFiltrosComuns} />
         )}
         {!restrito && (
           <p className="w-full max-w-[800px] mt-6 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
