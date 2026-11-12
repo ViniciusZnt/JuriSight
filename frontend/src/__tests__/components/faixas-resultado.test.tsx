@@ -93,7 +93,7 @@ describe("faixas de resultado", () => {
     expect(within(resumo).getByText(/decisões do acervo/)).toBeInTheDocument();
     expect(within(resumo).getByText("CLT art. 59")).toBeInTheDocument();
     expect(within(resumo).getByText("banco de horas")).toBeInTheDocument();
-    expect(within(resumo).getByText("mostrando a mais relevante")).toBeInTheDocument();
+    expect(within(resumo).getByText("Panorama da decisão mais relevante")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Filtro restrito" })).toBeInTheDocument();
     expect(screen.getByText(/Só entram decisões que citam todos os dispositivos/)).toBeInTheDocument();
     expect(screen.queryByText(/Busca só semântica/)).not.toBeInTheDocument();
@@ -113,7 +113,7 @@ describe("faixas de resultado", () => {
     sessao.resultados = [card("a"), card("b"), card("c")];
     sessao.estrutura = restrita;
     render(<SearchResultsPage />);
-    expect(await screen.findByText("mostrando as 3 mais relevantes")).toBeInTheDocument();
+    expect(await screen.findByText("Panorama das 3 mais relevantes")).toBeInTheDocument();
   });
 
   it("faixa livre começa fechada e só chama queryLivre ao abrir", async () => {

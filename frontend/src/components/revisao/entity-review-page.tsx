@@ -490,31 +490,31 @@ export function EntityReviewPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FieldCard>
-                <FieldLabel label="Agentes nocivos" description="Agentes de risco identificados" />
-                <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.amber} placeholder="Novo agente…" />
+                <FieldLabel label="Fatos do caso" description="Situações que caracterizam o caso (ex.: gravidez, ruído, jornada controlada)" />
+                <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.amber} placeholder="Novo fato…" />
               </FieldCard>
               <FieldCard>
-                <FieldLabel label="Outras normas · busca livre" description="NRs e normas fora da lista de dispositivos; orientam a busca livre, não filtram" />
+                <FieldLabel label="Outras normas" description="NRs e normas fora da lista de dispositivos; orientam a busca livre, não filtram" />
                 <TagList items={data.normas} onChange={set("normas")} colorScheme={colors.blue} placeholder="Ex: NR-15…" />
               </FieldCard>
             </div>
 
             <FieldCard>
-              <FieldLabel label="Violações identificadas" description="Condutas omissivas ou comissivas do empregador" />
-              <TagList items={data.violacoes} onChange={set("violacoes")} colorScheme={colors.green} placeholder="Nova violação…" />
+              <FieldLabel label="Condutas da empresa" description="O que a empresa fez ou deixou de fazer" />
+              <TagList items={data.violacoes} onChange={set("violacoes")} colorScheme={colors.green} placeholder="Nova conduta…" />
             </FieldCard>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FieldCard>
-                <FieldLabel label="Setor / Ramo" description="Ramo de atividade" />
+                <FieldLabel label="Setor da empresa" description="Ramo de atividade" />
                 <InlineEdit value={data.setor} onChange={set("setor")} placeholder="Ex: metalurgia" />
               </FieldCard>
               <FieldCard>
-                <FieldLabel label="Cargo" description="Cargo do trabalhador" />
+                <FieldLabel label="Função do trabalhador" description="Cargo ou atividade exercida" />
                 <InlineEdit value={data.cargo} onChange={set("cargo")} placeholder="Ex: operador de prensa" />
               </FieldCard>
               <FieldCard>
-                <FieldLabel label="Ciência patronal" description="Evidência de conhecimento do risco" />
+                <FieldLabel label="A empresa sabia?" description="Ciência da empresa sobre o fato ou o risco" />
                 <BooleanToggle value={data.empresa_ciente} onChange={set("empresa_ciente")} />
               </FieldCard>
             </div>

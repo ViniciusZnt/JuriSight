@@ -23,8 +23,8 @@ import { ResumoDecisoes } from "@/components/resultados/resumo-decisoes";
 import { ResultadoCard } from "@/components/resultados/resultado-card";
 import { FaixaLivre } from "@/components/resultados/faixa-livre";
 import { contarFiltros, temFiltroRestrito, type ContagemFiltros } from "@/lib/api";
-import { RespostaGerada, useRespostaGerada } from "@/components/resultados/resposta-gerada";
-import { ComoFoiBuscado } from "@/components/resultados/como-foi-buscado";
+import { useRespostaGerada } from "@/components/resultados/resposta-gerada";
+import { ParecerPesquisa } from "@/components/resultados/parecer-pesquisa";
 import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
@@ -176,7 +176,6 @@ export function SearchResultsPage() {
   const porRank = useMemo(() => [...results].sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!), [results, ranks]);
   const resposta = useRespostaGerada(estrutura, porRank);
   const sintese = useMemo(() => sintetizar(results), [results]);
-  const porId = useMemo(() => new Map(results.map((d) => [d.id, d])), [results]);
   const tribunais = useMemo(() => {
     const n = new Map<string, number>();
     for (const d of results) n.set(d.tribunal, (n.get(d.tribunal) ?? 0) + 1);
@@ -204,7 +203,7 @@ export function SearchResultsPage() {
   const periodLabel =
     dateFrom || dateTo
       ? `${dateFrom ? formatDateShort(dateFrom) : "…"} – ${dateTo ? formatDateShort(dateTo) : "…"}`
-      : "Em qualquer data";
+      : "Data";
 
   const inPeriod = (dateStr: string | null) => {
     if (!dateStr) return true; // documento sem data conhecida não é excluído pelo filtro de período
@@ -232,6 +231,41 @@ export function SearchResultsPage() {
 
   const contagemDesfecho = contarDesfechos(results);
 
+  // Versões (V1, V2…) e "Refinar consulta": são da consulta, ficam no canto da faixa azul do resumo.
+  const versaoAtual = versionNumero ?? versoes[versoes.length - 1]?.numero;
+  const acoesConsulta = (
+    <>
+      {versoes.length > 1 && (
+        <div role="tablist" aria-label="Versões da consulta" className="inline-flex p-[2px] gap-0.5 rounded-lg bg-white/10 border border-white/20">
+          {versoes.map((v) => {
+            const ativa = v.numero === versaoAtual;
+            return (
+              <button
+                key={v.numero}
+                role="tab"
+                aria-selected={ativa}
+                onClick={() => loadVersion(v)}
+                title={v.numero === versoes.length ? "Versão mais recente" : `Versão ${v.numero}`}
+                className={`px-2 py-[3px] rounded-md transition-colors ${ativa ? "bg-white text-[#1A3A5C]" : "text-[#AFC6E3] hover:text-white"}`}
+                style={{ fontSize: "12px", fontWeight: ativa ? 600 : 400 }}
+              >
+                V{v.numero}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <button
+        onClick={() => router.push("/revisao")}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-white text-[#1A3A5C] px-2.5 py-[5px] hover:bg-[#EEF3FB] transition-colors"
+        style={{ fontSize: "12.8px", fontWeight: 600 }}
+      >
+        <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
+        Refinar
+      </button>
+    </>
+  );
+
   // Topo do resumo: quantas decisões, o que foi exigido e uma nota (corte em 20, contagem, vazio).
   const resumoTopo = (() => {
     const grupos: { verbo: string; itens: string[] }[] = [];
@@ -254,12 +288,11 @@ export function SearchResultsPage() {
         nota: contagemFalhou ? "contagem do acervo indisponível" : contando ? "contando no acervo…" : null,
       };
     }
-    const mostra = results.length;
     return {
       total: contagem.total,
       descricao: contagem.total === 1 ? "decisão do acervo" : "decisões do acervo",
       grupos,
-      nota: contagem.total > mostra ? `mostrando ${mostra === 1 ? "a mais relevante" : `as ${mostra} mais relevantes`}` : null,
+      nota: null,
     };
   })();
 
@@ -303,32 +336,28 @@ export function SearchResultsPage() {
 
       {/* Body */}
       <div className="flex-1 flex flex-col items-center px-4 sm:px-8 py-4 pb-10">
-        <StepIndicator current={2} />
+        <StepIndicator current={2} onEditarRevisao={() => router.push("/revisao")} />
 
         {estrutura && (
-          <ComoFoiBuscado
-            key={`como-foi-buscado|${versionNumero}|${JSON.stringify(estrutura)}`}
+          <ParecerPesquisa
+            key={`parecer|${versionNumero}|${JSON.stringify(estrutura)}`}
             estrutura={estrutura}
             filtro={
               restrito
                 ? {
                     itens: [
                       ...(contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos),
-                      ...estrutura.expressoes.map((e) => `“${e}”`),
+                      ...estrutura.expressoes,
                     ],
                     total: contagem?.total ?? null,
                   }
                 : null
             }
+            resposta={resposta}
+            ordem={porRank}
+            onIr={irPara}
+            semResposta={restrito && results.length === 0 ? "Sem decisões no filtro restrito, a resposta não é gerada." : undefined}
           />
-        )}
-
-        {restrito && results.length === 0 ? (
-          <p className="w-full max-w-[800px] mb-4 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
-            Sem decisões no filtro restrito, a resposta não é gerada.
-          </p>
-        ) : (
-          <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
         )}
 
         {restrito && (
@@ -351,14 +380,10 @@ export function SearchResultsPage() {
           tese={estrutura?.tese_central ? truncate(estrutura.tese_central, 180) : ""}
           desfechos={contagemDesfecho}
           mostradas={results.length}
-          filtro={filter}
-          onFiltro={setFilter}
           sintese={sintese}
-          porId={porId}
-          ranks={ranks}
           citacao={citacao}
           onCitacao={setCitacao}
-          onIr={irPara}
+          acoes={acoesConsulta}
         />
 
         {/* Barra de filtros: desfecho (segmentos), tribunal, data e ordem; versões e refinar à direita */}
@@ -383,7 +408,9 @@ export function SearchResultsPage() {
             })}
           </div>
 
-            <DropdownPill icon={Scale} label={tribunal ?? "Todos os tribunais"} active={tribunal !== null}>
+          <span className="flex-1" />
+
+            <DropdownPill icon={Scale} label={tribunal ?? "Tribunal"} active={tribunal !== null}>
               {(close) => (
                 <div className="p-1 max-h-[320px] overflow-y-auto">
                   {[[null, results.length] as const, ...tribunais].map(([t, n]) => (
@@ -489,40 +516,6 @@ export function SearchResultsPage() {
                 <ArrowDown className="w-3.5 h-3.5" strokeWidth={2} />
               )}
             </button>
-          <span className="flex-1" />
-
-          {versoes.length > 1 && (
-            <div role="tablist" aria-label="Versões da consulta" className="inline-flex p-[3px] gap-0.5 rounded-[9px] border border-[#E0E0EA] dark:border-[#2A2A32] bg-[#FAFAFC] dark:bg-[#1C1C21]">
-              {versoes.map((v) => {
-                const ativa = v.numero === (versionNumero ?? versoes[versoes.length - 1].numero);
-                return (
-                  <button
-                    key={v.numero}
-                    role="tab"
-                    aria-selected={ativa}
-                    onClick={() => loadVersion(v)}
-                    title={v.numero === versoes.length ? "Versão mais recente" : `Versão ${v.numero}`}
-                    className={`px-2.5 py-1 rounded-[6px] transition-all ${
-                      ativa
-                        ? "bg-white dark:bg-[#17171B] text-[#1A3A5C] dark:text-[#8AB0DC] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                        : "text-[#8A8A9A] dark:text-[#9494A2] hover:text-[#4A4A5A] dark:hover:text-[#C4C4CE]"
-                    }`}
-                    style={{ fontSize: "12.6px", fontWeight: ativa ? 600 : 400 }}
-                  >
-                    V{v.numero}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          <button
-            onClick={() => router.push("/revisao")}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#C8D9EF] dark:border-[#2A3A4C] bg-[#EEF3FB] dark:bg-[#1A2A3C] text-[#1A3A5C] dark:text-[#8AB0DC] hover:border-[#1A3A5C]/40 transition-colors"
-            style={{ fontSize: "13.4px", fontWeight: 600 }}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={1.8} />
-            Refinar consulta
-          </button>
         </div>
 
         {/* FA04 — filtro de provimento com poucos resultados */}

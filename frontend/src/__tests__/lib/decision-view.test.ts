@@ -1,4 +1,4 @@
-import { assuntoDoCard, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
+import { assuntoDoCard, orgaoDe, orgaosCitados, vereditoDe, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -148,5 +148,35 @@ describe("assuntoDoCard", () => {
 
   it("não mexe em assunto que já tem minúsculas", () => {
     expect(assuntoDoCard("Comprovada a exposição ao ruído, é devido o adicional.")).toBe("Comprovada a exposição ao ruído, é devido o adicional.");
+  });
+});
+
+
+describe("orgaoDe", () => {
+  it("escreve o órgão no padrão de citação, com o tribunal hifenizado", () => {
+    expect(orgaoDe({ tribunal: "TRT4", turma: "1ª Turma" })).toBe("1ª Turma do TRT-4");
+    expect(orgaoDe({ tribunal: "TRT6", turma: "Quarta Turma" })).toBe("4ª Turma do TRT-6");
+    expect(orgaoDe({ tribunal: "TRT2", turma: "03ª Turma" })).toBe("3ª Turma do TRT-2");
+    expect(orgaoDe({ tribunal: "TRT9", turma: "3ª TURMA" })).toBe("3ª Turma do TRT-9");
+    expect(orgaoDe({ tribunal: "TRT15", turma: "11ª Câmara" })).toBe("11ª Câmara do TRT-15");
+    expect(orgaoDe({ tribunal: "TRT3", turma: "Décima Primeira Turma" })).toBe("11ª Turma do TRT-3");
+    expect(orgaoDe({ tribunal: "TST", turma: "" })).toBe("TST");
+  });
+
+  it("orgaosCitados junta órgãos repetidos e mostra no máximo dois", () => {
+    const d = (tribunal: string, turma: string) => ({ tribunal, turma });
+    expect(orgaosCitados([d("TRT4", "1ª Turma"), d("TRT4", "1ª Turma")])).toBe("1ª Turma do TRT-4");
+    expect(orgaosCitados([d("TRT4", "1ª Turma"), d("TRT22", "2ª Turma")])).toBe("1ª Turma do TRT-4 e 2ª Turma do TRT-22");
+    expect(orgaosCitados([d("TRT4", "1ª Turma"), d("TRT22", "2ª Turma"), d("TRT9", "3ª Turma")])).toBe("1ª Turma do TRT-4, 2ª Turma do TRT-22 e mais 1");
+  });
+});
+
+describe("vereditoDe", () => {
+  it("separa o Sim/Não/Depende do começo da resposta", () => {
+    expect(vereditoDe("Sim. Há horas extras a pagar.")).toEqual({ veredito: "Sim", resto: "Há horas extras a pagar." });
+    expect(vereditoDe("Sim, quando a ausência de controle gera presunção.")).toEqual({ veredito: "Sim", resto: "Quando a ausência de controle gera presunção." });
+    expect(vereditoDe("Não, porque o EPI era eficaz.")).toEqual({ veredito: "Não", resto: "Porque o EPI era eficaz." });
+    expect(vereditoDe("Depende de prova da exposição.")).toEqual({ veredito: "Depende", resto: "de prova da exposição." });
+    expect(vereditoDe("Há divergência entre as turmas.")).toEqual({ veredito: null, resto: "Há divergência entre as turmas." });
   });
 });

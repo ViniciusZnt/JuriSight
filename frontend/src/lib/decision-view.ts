@@ -200,3 +200,52 @@ export function dispositivoDe(teor: string, max = 1500): string | null {
   const fim = trecho.lastIndexOf(". ");
   return `${fim > 0 ? trecho.slice(0, fim + 1) : trecho} […]`;
 }
+
+
+// Ordinais por extenso nas turmas ("Quarta Turma", "Décima Primeira Turma").
+const ORDINAIS: Record<string, number> = {
+  primeira: 1, segunda: 2, terceira: 3, quarta: 4, quinta: 5, sexta: 6, setima: 7, oitava: 8, nona: 9,
+  decima: 10, vigesima: 20,
+};
+const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+/** Órgão no padrão de citação: "1ª Turma do TRT-4" (turma por extenso, com zero à esquerda ou em
+ *  maiúsculas vira "4ª Turma"; câmaras e seções seguem o mesmo jeito; sem turma, só o tribunal). */
+export function orgaoDe(d: Pick<ResultCard, "tribunal" | "turma">): string {
+  const tribunal = d.tribunal.replace(/^([A-Z]+)(\d+)$/, "$1-$2");
+  const bruto = d.turma.trim();
+  if (!bruto) return tribunal;
+  const palavras = bruto.split(/\s+/);
+  let n = 0;
+  let i = 0;
+  for (; i < palavras.length; i++) {
+    const v = ORDINAIS[semAcento(palavras[i].toLowerCase())];
+    if (v === undefined) break;
+    n += v;
+  }
+  let orgao: string;
+  if (n > 0) orgao = `${n}ª ${palavras.slice(i).join(" ")}`;
+  else orgao = bruto.replace(/^0+(\d)/, "$1");
+  // "3ª TURMA" → "3ª Turma"
+  orgao = orgao.replace(/\p{Lu}{2,}/gu, (w) => w.charAt(0) + w.slice(1).toLocaleLowerCase("pt-BR"));
+  return `${orgao} do ${tribunal}`;
+}
+
+/** Órgãos das decisões citadas por uma frase, sem repetir: "1ª Turma do TRT-4 e 2ª Turma do
+ *  TRT-22"; acima de dois, "…, … e mais N". */
+export function orgaosCitados(decisoes: Pick<ResultCard, "tribunal" | "turma">[]): string {
+  const unicos = [...new Set(decisoes.map(orgaoDe))];
+  if (unicos.length <= 2) return unicos.join(" e ");
+  return `${unicos.slice(0, 2).join(", ")} e mais ${unicos.length - 2}`;
+}
+
+/** Separa o veredito ("Sim", "Não", "Depende") do começo da resposta. Depois de "." ou "," o resto
+ *  vira frase com maiúscula; "Depende de …" continua a mesma frase. */
+export function vereditoDe(texto: string): { veredito: "Sim" | "Não" | "Depende" | null; resto: string } {
+  const m = texto.trim().match(/^(sim|não|nao|depende)\b\s*([.,:;—-])?\s*/i);
+  if (!m) return { veredito: null, resto: texto.trim() };
+  const palavra = m[1].toLowerCase();
+  const veredito = palavra === "sim" ? "Sim" : palavra === "depende" ? "Depende" : "Não";
+  const resto = texto.trim().slice(m[0].length);
+  return { veredito, resto: m[2] ? resto.charAt(0).toLocaleUpperCase("pt-BR") + resto.slice(1) : resto };
+}
