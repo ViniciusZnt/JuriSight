@@ -91,7 +91,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
   const loadVersion = useCallback((version: ConversationVersion) => {
     setState({
       // versões salvas antes do filtro restrito não têm esses campos
-      estrutura: { ...version.estrutura, dispositivos: version.estrutura.dispositivos ?? [], expressoes: version.estrutura.expressoes ?? [] },
+      estrutura: { ...version.estrutura, dispositivos: version.estrutura.dispositivos ?? [], expressoes: version.estrutura.expressoes ?? [], tribunais: version.estrutura.tribunais ?? [], fase: version.estrutura.fase ?? null },
       hasFile: version.hasFile,
       fileName: version.fileName,
       pdfExtraido: version.pdfExtraido,

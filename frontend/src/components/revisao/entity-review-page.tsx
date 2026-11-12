@@ -482,6 +482,8 @@ export function EntityReviewPage() {
             <FiltroRestrito
               dispositivos={data.dispositivos}
               expressoes={data.expressoes}
+              tribunais={data.tribunais}
+              fase={data.fase}
               dispositivosIa={dispositivosIa}
               expressoesSugeridas={expressoesSugeridas}
               dispositivosSugeridos={dispositivosSugeridos}

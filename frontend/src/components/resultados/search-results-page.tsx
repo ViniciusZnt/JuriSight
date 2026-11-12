@@ -22,7 +22,7 @@ import { contarDesfechos, outcomeDe, resumoProvimento, PROVIMENTO_LABEL } from "
 import { ResumoDecisoes } from "@/components/resultados/resumo-decisoes";
 import { ResultadoCard } from "@/components/resultados/resultado-card";
 import { FaixaLivre } from "@/components/resultados/faixa-livre";
-import { contarFiltros, temFiltroRestrito, type ContagemFiltros } from "@/lib/api";
+import { contarFiltros, temFiltroRestrito, rotuloTribunal, ROTULO_FASE, type ContagemFiltros } from "@/lib/api";
 import { useRespostaGerada } from "@/components/resultados/resposta-gerada";
 import { ParecerPesquisa } from "@/components/resultados/parecer-pesquisa";
 import { sintetizar } from "@/lib/sintese";
@@ -142,17 +142,17 @@ export function SearchResultsPage() {
   const [tribunal, setTribunal] = useState<string | null>(null);
   const [recebida, setRecebida] = useState<{ chave: string; dados: ContagemFiltros | null } | null>(null);
   const restrito = estrutura !== null && temFiltroRestrito(estrutura);
-  const chaveFiltro = JSON.stringify([estrutura?.dispositivos, estrutura?.expressoes]);
+  const chaveFiltro = JSON.stringify([estrutura?.dispositivos, estrutura?.expressoes, estrutura?.tribunais, estrutura?.fase]);
   useEffect(() => {
     if (!estrutura || !temFiltroRestrito(estrutura)) return;
     let vivo = true;
-    contarFiltros(estrutura.dispositivos, estrutura.expressoes)
+    contarFiltros(estrutura)
       .then((c) => vivo && setRecebida({ chave: chaveFiltro, dados: c }))
       .catch(() => vivo && setRecebida({ chave: chaveFiltro, dados: null })); // cabeçalho cai para o número de cards
     return () => {
       vivo = false;
     };
-    // `chaveFiltro` resume dispositivos + expressões
+    // `chaveFiltro` resume dispositivos, expressões, tribunais e fase
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chaveFiltro]);
   // só vale a contagem do filtro atual (nunca a de um filtro anterior)
@@ -275,6 +275,8 @@ export function SearchResultsPage() {
         grupos.push({ verbo: varias ? "citam" : "cita", itens: contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos });
       }
       if (estrutura.expressoes.length) grupos.push({ verbo: varias ? "contêm" : "contém", itens: estrutura.expressoes });
+      if (estrutura.tribunais.length) grupos.push({ verbo: estrutura.tribunais.length > 1 ? "dos" : "do", itens: estrutura.tribunais.map(rotuloTribunal) });
+      if (estrutura.fase) grupos.push({ verbo: "na fase de", itens: [ROTULO_FASE[estrutura.fase].toLowerCase()] });
     }
     if (!restrito) return { total: results.length, descricao: results.length === 1 ? "decisão encontrada" : "decisões encontradas", grupos, nota: null };
     if (results.length === 0) {
@@ -348,6 +350,8 @@ export function SearchResultsPage() {
                     itens: [
                       ...(contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos),
                       ...estrutura.expressoes,
+                      ...estrutura.tribunais.map(rotuloTribunal),
+                      ...(estrutura.fase ? [ROTULO_FASE[estrutura.fase]] : []),
                     ],
                     total: contagem?.total ?? null,
                   }
