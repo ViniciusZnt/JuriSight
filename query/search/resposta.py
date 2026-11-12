@@ -36,18 +36,19 @@ _PROMPT = (
     "a decisão deu por provados contradizem a premissa da tese (ex.: a premissa diz proteção "
     "ineficaz e a decisão a deu por eficaz; a premissa diz acima do limite e a decisão achou abaixo; "
     "outro agente); true se são os mesmos fatos.\n"
-    "- `resposta`: frase completa que responde direto e condicionada à premissa (\"Sim, quando …\", "
-    "\"Não, porque …\", \"Depende de …\").\n"
+    "- `resposta`: começa por \"Sim.\", \"Não.\" ou \"Depende.\" e segue com UMA frase completa, "
+    "condicionada à premissa, que um advogado possa citar (\"Sim. Há horas extras a pagar quando a "
+    "empresa não comprova o controle da jornada.\").\n"
     "- `fundamentos`: 1 a 3 frases, uma por entendimento: junte numa frase só todas as turmas que "
-    "entendem a mesma coisa (\"a 3ª Turma do TRT12, a 4ª do TRT9 e a 3ª do TRT4 entendem…\"). Em cada uma: `quem_decidiu` = tribunal e turma de cada decisão "
-    "citada, como no cabeçalho (ex.: \"TRT12 1ª Turma\"), e o texto nomeia a turma quando outras "
-    "turmas do mesmo tribunal decidiram diferente; `precedente_de_outro_ramo` = o precedente de tribunal superior que essas ementas "
+    "entendem a mesma coisa. Em cada uma: `quem_decidiu` = tribunal e turma de cada decisão "
+    "citada, como no cabeçalho (ex.: \"TRT12 1ª Turma\"); `precedente_de_outro_ramo` = o precedente de tribunal superior que essas ementas "
     "invocam quando ele trata de outro ramo do direito ou de outro direito, com o nome e o direito "
     "de que trata, como a própria ementa diz (ex.: \"tese do STF sobre aposentadoria especial\", "
-    "usada para um adicional trabalhista), ou vazio. O texto atribui o entendimento a quem decidiu "
-    "(\"a 1ª Turma do TRT12 entende…\", \"turmas do TRT2…\"). Se `precedente_de_outro_ramo` não é "
-    "vazio, cite só decisões que o invocam e escreva, com estas palavras, que o tribunal \"aplica por "
-    "analogia <precedente_de_outro_ramo>\" ou que \"recusa a analogia com <precedente_de_outro_ramo>\"; "
+    "usada para um adicional trabalhista), ou vazio. O texto enuncia o entendimento direto, como "
+    "regra (\"A falta de controle formal da jornada não dispensa o empregador de provar…\"), sem "
+    "nomear tribunal nem turma: a tela mostra quem decidiu a partir das citações. Se `precedente_de_outro_ramo` não é "
+    "vazio, cite só decisões que o invocam e escreva, com estas palavras, que se \"aplica por "
+    "analogia <precedente_de_outro_ramo>\" ou que se \"recusa a analogia com <precedente_de_outro_ramo>\"; "
     "nunca diga que esse precedente decidiu o pedido da tese. É proibido "
     "escrever que o STF ou o TST decidiu, estabelece ou entende algo sobre o pedido, salvo se a "
     "decisão citada for desse tribunal.\n"
@@ -142,15 +143,6 @@ def _sem_erro_de_precedente(f: Citada | Fundamento) -> bool:
     return not getattr(f, "precedente_de_outro_ramo", "").strip() or bool(_ANALOGIA.search(f.texto))
 
 
-def _do_tribunal_nomeado(f: Citada | Fundamento, decisoes: dict[int, DocumentoJuridico]) -> list[int]:
-    """Num fundamento, só ficam as citações de decisões cujo tribunal o texto nomeia ("o TRT2 entende"
-    não pode levar chip de decisão do TRT12)."""
-    if not isinstance(f, Fundamento):
-        return f.citacoes
-    # número inexistente fica, para a frase inteira cair na validação de baixo
-    return [c for c in f.citacoes if c not in decisoes or re.search(rf"\b{re.escape(decisoes[c].tribunal)}\b", f.texto)]
-
-
 def _posicao(d: Desfecho) -> PosicaoTese:
     return "fato_diferente" if d.pedido_da_tese == "negou" and not d.fatos_da_premissa else d.pedido_da_tese
 
@@ -211,7 +203,7 @@ def gerar_resposta(
     ]
     frases: list[Frase] = []
     for tipo, f, exigida in partes:
-        citacoes = [c for c in dict.fromkeys(_do_tribunal_nomeado(f, decisoes)) if exigida is None or posicoes.get(c) == exigida]
+        citacoes = [c for c in dict.fromkeys(f.citacoes) if exigida is None or posicoes.get(c) == exigida]
         if f.texto.strip() and citacoes and all(c in decisoes for c in citacoes) and _sem_erro_de_precedente(f):
             frases.append(Frase(tipo=tipo, texto=f.texto.strip(), citacoes=citacoes))
     return Resposta(

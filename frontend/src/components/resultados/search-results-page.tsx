@@ -23,8 +23,8 @@ import { ResumoDecisoes } from "@/components/resultados/resumo-decisoes";
 import { ResultadoCard } from "@/components/resultados/resultado-card";
 import { FaixaLivre } from "@/components/resultados/faixa-livre";
 import { contarFiltros, temFiltroRestrito, type ContagemFiltros } from "@/lib/api";
-import { RespostaGerada, useRespostaGerada } from "@/components/resultados/resposta-gerada";
-import { ComoFoiBuscado } from "@/components/resultados/como-foi-buscado";
+import { useRespostaGerada } from "@/components/resultados/resposta-gerada";
+import { ParecerPesquisa } from "@/components/resultados/parecer-pesquisa";
 import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
@@ -339,29 +339,25 @@ export function SearchResultsPage() {
         <StepIndicator current={2} />
 
         {estrutura && (
-          <ComoFoiBuscado
-            key={`como-foi-buscado|${versionNumero}|${JSON.stringify(estrutura)}`}
+          <ParecerPesquisa
+            key={`parecer|${versionNumero}|${JSON.stringify(estrutura)}`}
             estrutura={estrutura}
             filtro={
               restrito
                 ? {
                     itens: [
                       ...(contagem?.dispositivos.map((d) => d.rotulo) ?? estrutura.dispositivos),
-                      ...estrutura.expressoes.map((e) => `“${e}”`),
+                      ...estrutura.expressoes,
                     ],
                     total: contagem?.total ?? null,
                   }
                 : null
             }
+            resposta={resposta}
+            ordem={porRank}
+            onIr={irPara}
+            semResposta={restrito && results.length === 0 ? "Sem decisões no filtro restrito, a resposta não é gerada." : undefined}
           />
-        )}
-
-        {restrito && results.length === 0 ? (
-          <p className="w-full max-w-[800px] mb-4 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.8px" }}>
-            Sem decisões no filtro restrito, a resposta não é gerada.
-          </p>
-        ) : (
-          <RespostaGerada resposta={resposta} ordem={porRank} onIr={irPara} />
         )}
 
         {restrito && (

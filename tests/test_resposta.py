@@ -149,14 +149,21 @@ def test_divergencia_so_cita_decisao_com_o_desfecho_certo(usar):
     ]
 
 
-def test_fundamento_sem_analogia_ou_de_outro_tribunal_some(usar):
+def test_fundamento_com_precedente_de_outro_ramo_sem_analogia_some(usar):
     usar(_FakeOpenAI(_gerada(fundamentos=[
-        _fund("O TRT2 aplica a tese do STF: EPI não elimina.", [1], precedente="Tema 555, aposentadoria especial"),
-        _fund("O TRT2 aplica por analogia a tese do STF sobre aposentadoria especial.", [1], precedente="Tema 555"),
-        _fund("O TRT12 entende assim.", [2]),  # a decisão #2 é do TRT2
+        _fund("Aplica-se a tese do STF: EPI não elimina.", [1], precedente="Tema 555, aposentadoria especial"),
+        _fund("Aplica-se por analogia a tese do STF sobre aposentadoria especial.", [1], precedente="Tema 555"),
     ])))
     assert client.post("/resposta", json=CORPO).json()["frases"] == [
-        {"tipo": "fundamento", "texto": "O TRT2 aplica por analogia a tese do STF sobre aposentadoria especial.", "citacoes": [1]},
+        {"tipo": "fundamento", "texto": "Aplica-se por analogia a tese do STF sobre aposentadoria especial.", "citacoes": [1]},
+    ]
+
+
+def test_fundamento_enunciado_sem_nomear_o_tribunal_fica(usar):
+    """O texto enuncia a regra; quem decidiu vem das citações (a tela monta "1ª Turma do TRT-2")."""
+    usar(_FakeOpenAI(_gerada(fundamentos=[_fund("O EPI eficaz afasta o adicional.", [2])])))
+    assert client.post("/resposta", json=CORPO).json()["frases"] == [
+        {"tipo": "fundamento", "texto": "O EPI eficaz afasta o adicional.", "citacoes": [2]},
     ]
 
 

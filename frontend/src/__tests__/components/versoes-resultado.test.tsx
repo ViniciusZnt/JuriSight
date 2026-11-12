@@ -25,5 +25,5 @@ it("trocar de versão não acumula o painel \"Como esta busca foi feita\" (keys 
     sessao.estrutura = { ...emptyEstrutura(), tese_central: "t", expressoes: [...e] };
     rerender(<SearchResultsPage />);
   }
-  expect(await screen.findAllByRole("heading", { name: "Como esta busca foi feita" })).toHaveLength(1);
+  expect(await screen.findAllByRole("region", { name: "Como esta busca foi feita" })).toHaveLength(1);
 });
