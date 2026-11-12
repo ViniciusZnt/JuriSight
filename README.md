@@ -553,10 +553,11 @@ e as contagens. `/filtros/*` e `/query/livre` exigem login; só o `/query` conta
 
 **NR, Tema e Súmula Vinculante** são extraídos do texto (ementa e fundamentação) pelo preparo, com os
 códigos `nr_<n>` ("NR-15"), `tema_<n>` ("Tema 1046") e `sv_<n>` ("Súmula Vinculante 4"); Súmula Vinculante
-só quando o texto diz "vinculante" ou "SV" colado ao número. No acervo local: 33 NRs distintas (só NR 1 a 38) em 6.713 pares decisão-NR (NR-15: 3.378 decisões), 411
-temas em 14.115 pares (Tema 1046: 1.866) e 17 súmulas vinculantes em 1.090 pares (SV 4: 312). Números só
-são lidos depois de palavra no plural ("Temas 1 e 2"). O número do Tema não está ligado a um tribunal
-(ex.: "Tema 2" no acervo é o IRDR do TST), como a especificação aceitou.
+só quando o texto diz "vinculante" ou "SV" colado ao número. Listas ("Temas 1046 e 725", "NRs 15 e 16")
+só são lidas depois da palavra no plural. No acervo local: 33 NRs distintas (só NR 1 a 38) em 6.713 pares
+decisão-NR (NR-15: 3.378 decisões), 411 temas em 14.115 pares (Tema 1046: 1.866) e 17 súmulas vinculantes
+em 1.090 pares (SV 4: 312). O número do Tema não está ligado a um tribunal (ex.: "Tema 2" no acervo é o
+IRDR do TST), como a especificação aceitou.
 
 Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas antes do primeiro uso (rode de novo quando entrarem decisões novas):
 
