@@ -133,3 +133,17 @@ def test_tribunais_com_total(store):
     assert lista["TRT2"] == 13073
     nomes = [t for t, _ in store.tribunais()]
     assert nomes.index("TRT2") < nomes.index("TRT10") < nomes.index("TRT24")
+
+
+def test_nr_tema_e_sv_filtraveis(store):
+    nr = store.sugerir("nr 15")[0]
+    assert nr.codigo == "nr_15" and 2500 <= nr.total <= 3500
+    assert "tema_1046" in [s.codigo for s in store.sugerir("tema 1046")]
+    ids = store.elegiveis(["nr_15"], ["adicional de insalubridade"])
+    assert ids
+    with psycopg.connect(DATABASE_URL) as conn:
+        ruins = conn.execute(
+            r"""SELECT count(*) FROM documentos WHERE id = ANY(%s::uuid[]) AND NOT
+                (coalesce(ementa,'') || ' ' || coalesce(fundamentacao,'') ~* '(?<![a-z])(nr|norma\s+regulamentadora)[\s-]*(n[º°.]?\s*)?0*15\y')""",
+            (ids,)).fetchone()[0]
+    assert ruins == 0

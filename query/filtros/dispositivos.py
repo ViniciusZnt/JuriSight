@@ -3,11 +3,14 @@
 Um dispositivo é um código com uma âncora (art, sumula, oj, convencao, lei)
 precedida, opcionalmente, de unidades de detalhe: `prgf_<n>`, `prgf_unico`,
 `caput`, incisos romanos e alíneas. Ex.: `b_ii_art_10_adct`.
+Também são dispositivos `nr_<n>`, `tema_<n>` e `sv_<n>` (súmula vinculante): a fonte não os
+codifica, então saem do texto da decisão (`codigos_do_texto`).
 """
 import re
 import unicodedata
 
-ANCORAS = ("art", "sumula", "oj", "convencao", "lei")
+ANCORAS = ("art", "sumula", "oj", "convencao", "lei", "nr", "tema", "sv")
+_DO_TEXTO = ("nr", "tema", "sv")
 SIGLAS = {"clt": "CLT", "cf": "CF", "adct": "ADCT", "cpc": "CPC",
           "ccb": "CC", "cp": "CP", "cdc": "CDC"}
 _ROMANO = re.compile(r"^(?=.)(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$")  # i a lxxxix
@@ -85,6 +88,10 @@ def rotulo(codigo: str) -> str:
             if len(resto) > 2:
                 orgao = f"da {re.sub(r'^sdi(\d)$', r'SDI-\1', resto[1])} {orgao}"
             principal = f"OJ {resto[0]} {orgao}"
+        elif ancora in _DO_TEXTO:
+            if detalhes or len(resto) != 1:
+                return codigo
+            return {"nr": "NR-", "tema": "Tema ", "sv": "Súmula Vinculante "}[ancora] + resto[0]
         elif ancora == "convencao":
             principal = f"Convenção {resto[0]} da {resto[1].upper()}"
         else:
@@ -99,12 +106,14 @@ def tokens_da_busca(texto: str) -> list[str]:
     `CF/88`->cf, `SBDI-1`->sdi1, sem conectivos (de, da, do, das, dos, e)."""
     t = unicodedata.normalize("NFD", texto.lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
+    t = re.sub(r"\bnorma regulamentadora\b", "nr", t)
+    t = re.sub(r"\bsumulas? vinculantes?\b", "sv", t)
     t = re.sub(r"\bn\s*[º°]?\.?\s*(?=\d)", " ", t)  # "nº 85", "n. 85"
     t = re.sub(r"[ºª°]", "", t).replace("§", " prgf ")
     t = re.sub(r"(?<=\d)\.(?=\d)", "", t)
     t = re.sub(r"\bsb?di\s*-?\s*(\d)", r"sdi\1", t)
     t = re.sub(r"\bcf\s*/\s*(19)?88\b", "cf", t)
-    trocas = {"artigo": "art", "arts": "art", "paragrafo": "prgf", "cc": "ccb"}
+    trocas = {"artigo": "art", "arts": "art", "paragrafo": "prgf", "cc": "ccb", "vinculante": "sv"}
     return [trocas.get(f, f) for f in re.findall(r"[a-z0-9]+", t) if f not in _CONECTIVOS]
 
 
@@ -118,6 +127,8 @@ def codigo_de_texto(texto: str) -> str | None:
             # o acervo usa o ano com 2 dígitos: "Lei 13.467/2017" -> lei_13467_17
             lei, fichas = ["lei", fichas[j + 1], fichas[j + 2][-2:]], fichas[:j] + fichas[j + 3:]
             break
+    if len(fichas) == 2 and fichas[0] in _DO_TEXTO and fichas[1].isdigit():
+        return f"{fichas[0]}_{int(fichas[1])}"
     i = next((k for k, f in enumerate(fichas[:-1])
               if f in ("art", "sumula", "oj") and fichas[k + 1].isdigit()), None)
     if i is None:
@@ -153,3 +164,18 @@ def citada_em(norma: str, texto: str) -> bool:
     que o advogado citou da que o modelo deduziu (que só pode virar sugestão)."""
     fichas = set(tokens_da_busca(norma))
     return bool(fichas) and fichas <= set(tokens_da_busca(texto))
+
+
+_NUM = r"(?:n\s*[º°.]?\s*)?(\d+(?:\.\d{3})*)\b"
+_DO_TEXTO_RE = (
+    ("nr", re.compile(r"(?<![a-z])(?:nr|norma\s+regulamentadora)[\s-]*" + _NUM, re.I)),
+    ("tema", re.compile(r"\btemas?\s*" + _NUM, re.I)),
+    ("sv", re.compile(r"(?<![a-z])(?:s[úu]mulas?\s+vinculantes?|sv)[\s-]*" + _NUM, re.I)),
+)
+
+
+def codigos_do_texto(texto: str) -> set[str]:
+    """`nr_<n>`, `tema_<n>` e `sv_<n>` citados no texto. Súmula vinculante só com "vinculante" ou
+    "SV" colado ao número: "Súmula 4 do STF" não conta."""
+    return {f"{tipo}_{int(n.replace('.', ''))}"
+            for tipo, padrao in _DO_TEXTO_RE for n in padrao.findall(texto or "")}
