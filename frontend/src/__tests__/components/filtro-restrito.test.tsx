@@ -14,9 +14,10 @@ const listar = listarTribunais as jest.Mock;
 const sugerir = sugerirDispositivos as jest.Mock;
 const contar = contarFiltros as jest.Mock;
 
-function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[], sugeridas = [] as { texto: string; total: number }[], dispSugeridos = [] as { codigo: string; rotulo: string; total: number }[], onBuscar = (() => {}) as (e: string[]) => void, onPatch = (() => {}) as (p: object) => void }) {
+function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as string[], sugeridas = [] as { texto: string; total: number }[], dispSugeridos = [] as { codigo: string; rotulo: string; total: number }[], onBuscar = (() => {}) as (e: string[]) => void, onPatch = (() => {}) as (p: object) => void, normas = [] as string[] }) {
   const [d, setD] = useState(disp);
   const [e, setE] = useState(exp);
+  const [n, setN] = useState(normas);
   const [t, setT] = useState<string[]>([]);
   const [f, setF] = useState<Fase | null>(null);
   return (
@@ -24,6 +25,7 @@ function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as strin
       <FiltroRestrito
         dispositivos={d}
         expressoes={e}
+        normas={n}
         tribunais={t}
         fase={f}
         dispositivosIa={ia}
@@ -32,6 +34,7 @@ function Harness({ ia = [] as string[], disp = [] as string[], exp = [] as strin
         onChange={(p) => {
           if (p.dispositivos) setD(p.dispositivos);
           if (p.expressoes) setE(p.expressoes);
+          if (p.normas) setN(p.normas);
           if (p.tribunais) setT(p.tribunais);
           if (p.fase !== undefined) setF(p.fase);
           onPatch(p);
@@ -62,11 +65,42 @@ describe("FiltroRestrito", () => {
     expect(sugerir).toHaveBeenCalledWith("clt 59");
   });
 
-  it("texto sem escolher da lista não vira chip", async () => {
-    const onChange = jest.fn();
-    render(<FiltroRestrito dispositivos={[]} expressoes={[]} tribunais={[]} fase={null} dispositivosIa={[]} expressoesSugeridas={[]} onChange={onChange} />);
-    await userEvent.type(screen.getByPlaceholderText(/buscar dispositivo/i), "clt 59{Enter}");
-    expect(onChange).not.toHaveBeenCalled();
+  it('Enter com texto livre vira chip "só busca livre" e entra em normas', async () => {
+    const onPatch = jest.fn();
+    render(<Harness onPatch={onPatch} />);
+    await userEvent.type(screen.getByPlaceholderText(/buscar dispositivo/i), "NR 99{Enter}");
+    expect(onPatch).toHaveBeenCalledWith({ normas: ["NR 99"] });
+    expect(screen.getByText("NR 99")).toBeInTheDocument();
+    expect(screen.getByText("só busca livre")).toBeInTheDocument();
+    expect(screen.getByLabelText("Buscar dispositivo legal")).toHaveValue("");
+  });
+
+  it("Enter com texto que bate com um código continua só busca livre", async () => {
+    sugerir.mockResolvedValue([{ codigo: "CLT:59", rotulo: "CLT art. 59", total: 1 }]);
+    const onPatch = jest.fn();
+    render(<Harness onPatch={onPatch} />);
+    await userEvent.type(screen.getByLabelText("Buscar dispositivo legal"), "CLT art. 59{Enter}");
+    expect(onPatch).toHaveBeenCalledWith({ normas: ["CLT art. 59"] });
+    expect(onPatch).not.toHaveBeenCalledWith(expect.objectContaining({ dispositivos: expect.anything() }));
+  });
+
+  it('remover chip "só busca livre" atualiza normas', async () => {
+    const onPatch = jest.fn();
+    render(<Harness normas={["NR 99", "NR 15"]} onPatch={onPatch} />);
+    await userEvent.click(screen.getByRole("button", { name: "Remover NR 99" }));
+    expect(onPatch).toHaveBeenCalledWith({ normas: ["NR 15"] });
+  });
+
+  it('lápis do chip "só busca livre" leva o texto à busca', async () => {
+    render(<Harness normas={["NR 99"]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Editar NR 99" }));
+    expect(screen.getByLabelText("Buscar dispositivo legal")).toHaveValue("NR 99");
+    expect(screen.queryByRole("button", { name: "Remover NR 99" })).not.toBeInTheDocument();
+  });
+
+  it("campo se chama Normas e dispositivos", () => {
+    render(<Harness />);
+    expect(screen.getByText("Normas e dispositivos")).toBeInTheDocument();
   });
 
   it('chip de dispositivo da IA mostra "sugestão da IA"', async () => {

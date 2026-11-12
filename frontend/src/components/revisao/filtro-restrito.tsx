@@ -12,9 +12,12 @@ const inputCls =
   "w-full rounded-lg border border-[#E4E4EC] dark:border-[#26262C] bg-[#FAFAFA] dark:bg-[#1C1C21] px-3 py-2 outline-none text-[#1A1A2A] dark:text-[#ECECEF] placeholder:text-[#C0C0CE] dark:placeholder:text-[#4A4A54] focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC]";
 const mutedCls = "text-[#AEAEBF] dark:text-[#6E6E7C]";
 
-function Chip({ children, onRemove, onEdit, label }: { children: React.ReactNode; onRemove: () => void; onEdit: () => void; label: string }) {
+const chipLivreCls =
+  "flex items-center gap-1.5 rounded-lg border border-dashed px-2.5 py-1.5 border-[#C8D9EF] dark:border-[#2A3A4C] text-[#6B6B80] dark:text-[#A6A6B4]";
+
+function Chip({ children, onRemove, onEdit, label, livre }: { children: React.ReactNode; onRemove: () => void; onEdit: () => void; label: string; livre?: boolean }) {
   return (
-    <div className={chipCls} style={{ fontSize: "13.8px", fontWeight: 500 }}>
+    <div className={livre ? chipLivreCls : chipCls} style={{ fontSize: "13.8px", fontWeight: 500 }}>
       {children}
       <button onClick={onEdit} aria-label={`Editar ${label}`} className="opacity-50 hover:opacity-100">
         <Pencil style={{ width: "10px", height: "10px" }} strokeWidth={2} />
@@ -51,6 +54,7 @@ function SugestoesDaIa({ itens, onEscolher }: { itens: { rotulo: string; total: 
 export function FiltroRestrito({
   dispositivos,
   expressoes,
+  normas,
   tribunais,
   fase,
   dispositivosIa,
@@ -60,6 +64,8 @@ export function FiltroRestrito({
 }: {
   dispositivos: string[];
   expressoes: string[];
+  /** Texto livre: orienta a busca por termos, não filtra. */
+  normas: string[];
   tribunais: string[];
   fase: Fase | null;
   dispositivosIa: string[];
@@ -67,7 +73,7 @@ export function FiltroRestrito({
   expressoesSugeridas?: ExpressaoSugerida[];
   /** Dispositivos que a IA relaciona ao tema, também só sob clique. */
   dispositivosSugeridos?: SugestaoDispositivo[];
-  onChange: (patch: { dispositivos?: string[]; expressoes?: string[]; tribunais?: string[]; fase?: Fase | null }) => void;
+  onChange: (patch: { dispositivos?: string[]; normas?: string[]; expressoes?: string[]; tribunais?: string[]; fase?: Fase | null }) => void;
 }) {
   const [busca, setBusca] = useState("");
   // última resposta das sugestões e de qual busca ela é (null em `opcoes` = falhou)
@@ -139,6 +145,13 @@ export function FiltroRestrito({
     setBusca("");
   };
 
+  // Enter: o texto que não foi escolhido da lista vira norma "só busca livre" (não filtra)
+  const addNorma = () => {
+    const t = busca.trim();
+    if (t && !normas.includes(t)) onChange({ normas: [...normas, t] });
+    setBusca("");
+  };
+
   const sugeridasRestantes = expressoesSugeridas.filter((s) => !expressoes.includes(s.texto));
   const dispositivosRestantes = dispositivosSugeridos.filter((d) => !dispositivos.includes(d.codigo));
 
@@ -175,12 +188,12 @@ export function FiltroRestrito({
         Filtro restrito
       </h3>
       <p className="text-[#7A7A8E] dark:text-[#9E9EAC] mb-4" style={{ fontSize: "13.2px" }}>
-        Só entram decisões que citam todos os dispositivos, contêm todas as expressões e são do tribunal e da fase escolhidos. Os outros campos orientam a busca livre.
+        Só entram decisões que citam todos os dispositivos, contêm todas as expressões e são do tribunal e da fase escolhidos. As normas “só busca livre” e os outros campos orientam a busca, mas não filtram.
       </p>
 
       <div className="mb-4">
         <div className="mb-2 text-[#4A4A5A] dark:text-[#C4C4CE] tracking-[0.04em] uppercase" style={{ fontSize: "11.5px", fontWeight: 700 }}>
-          Dispositivos legais
+          Normas e dispositivos
         </div>
         <div className="flex flex-wrap gap-1.5 mb-2">
           {dispositivos.map((c) => (
@@ -202,6 +215,22 @@ export function FiltroRestrito({
               )}
             </Chip>
           ))}
+          {normas.map((n) => (
+            <Chip
+              key={n}
+              livre
+              label={n}
+              onRemove={() => onChange({ normas: normas.filter((x) => x !== n) })}
+              onEdit={() => {
+                onChange({ normas: normas.filter((x) => x !== n) });
+                setBusca(n);
+                buscaRef.current?.focus();
+              }}
+            >
+              <span>{n}</span>
+              <span className={mutedCls} style={{ fontSize: "11px" }}>só busca livre</span>
+            </Chip>
+          ))}
         </div>
         <div className="relative">
           <input
@@ -209,7 +238,8 @@ export function FiltroRestrito({
             aria-label="Buscar dispositivo legal"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar dispositivo (ex: CLT 59, Súmula 85)…"
+            onKeyDown={(e) => e.key === "Enter" && addNorma()}
+            placeholder="Buscar dispositivo ou norma (ex: CLT 59, Súmula 85, NR 15)…"
             className={inputCls}
             style={{ fontSize: "14px" }}
           />
@@ -236,7 +266,7 @@ export function FiltroRestrito({
         )}
         {semOpcoes === "vazio" && (
           <p className={`mt-1 ${mutedCls}`} style={{ fontSize: "13.2px" }}>
-            {`Nenhum dispositivo do acervo para “${q}”. Normas fora da lista (ex.: NRs) vão em Outras normas ou em Expressões obrigatórias.`}
+            {`Nenhum dispositivo do acervo para “${q}”. Tecle Enter para adicionar como “só busca livre” (não filtra) ou use Expressões obrigatórias.`}
           </p>
         )}
         <SugestoesDaIa itens={dispositivosRestantes} onEscolher={(i) => escolher(dispositivosRestantes[i])} />

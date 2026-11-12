@@ -482,6 +482,7 @@ export function EntityReviewPage() {
             <FiltroRestrito
               dispositivos={data.dispositivos}
               expressoes={data.expressoes}
+              normas={data.normas}
               tribunais={data.tribunais}
               fase={data.fase}
               dispositivosIa={dispositivosIa}
@@ -490,16 +491,10 @@ export function EntityReviewPage() {
               onChange={(patch) => setData((prev) => ({ ...prev, ...patch }))}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FieldCard>
+            <FieldCard>
                 <FieldLabel label="Fatos do caso" description="Situações que caracterizam o caso (ex.: gravidez, ruído, jornada controlada)" />
                 <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.amber} placeholder="Novo fato…" />
-              </FieldCard>
-              <FieldCard>
-                <FieldLabel label="Outras normas" description="NRs e normas fora da lista de dispositivos; orientam a busca livre, não filtram" />
-                <TagList items={data.normas} onChange={set("normas")} colorScheme={colors.blue} placeholder="Ex: NR-15…" />
-              </FieldCard>
-            </div>
+            </FieldCard>
 
             <FieldCard>
               <FieldLabel label="Condutas da empresa" description="O que a empresa fez ou deixou de fazer" />
