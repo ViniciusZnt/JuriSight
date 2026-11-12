@@ -657,9 +657,8 @@ O Qdrant (`indexing/vector_store/qdrant_store.py`) guarda os vetores brutos em
 disco (mmap, `VectorParams.on_disk=True` — a parte grande, ~2.4GB pra 400k
 pontos de 1536 dims). Troca localizada, como planejado: só o `ChromaStore`
 virou `QdrantStore` — `HybridSearch`, `query/api/app.py` e `indexing/run.py`
-não mudaram de lógica, só de import. Dados migrados com
-`indexing/vector_store/migrate_chroma_to_qdrant.py` (lê o Chroma antigo, sem
-apagá-lo, e faz upsert idempotente no Qdrant).
+não mudaram de lógica, só de import. A migração Chroma→Qdrant foi feita por
+`indexing/vector_store/migrate_chroma_to_qdrant.py` (removido; último estado em 1fb6d8a).
 
 **Ajuste de 2026-09-28 — grafo HNSW em RAM + quantização.** A primeira versão
 também colocava o grafo HNSW em disco (`HnswConfigDiff.on_disk=True`), na
