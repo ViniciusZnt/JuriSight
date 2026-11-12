@@ -131,6 +131,8 @@ def test_citada_em(norma, texto, esperado):
     ("NRs 15 e 16", {"nr_15", "nr_16"}),
     ("Súmulas Vinculantes 4 e 13", {"sv_4", "sv_13"}),
     ("tema e NR 15", {"nr_15"}),
+    ("Tema 1046 e 2 testemunhas", {"tema_1046"}), ("Tema nº 725 e 1 hora", {"tema_725"}),
+    ("Súmula vinculante 4, 2 partes", {"sv_4"}), ("NR 15, 3 anos", {"nr_15"}), ("NR 15 e 16 horas", {"nr_15"}),
 ])
 def test_codigos_do_texto(texto, esperado):
     assert codigos_do_texto(texto) == esperado

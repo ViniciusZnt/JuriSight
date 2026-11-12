@@ -169,9 +169,9 @@ def citada_em(norma: str, texto: str) -> bool:
 _N = r"\d+(?:\.\d{3})*(?![\d/-]|\.\d)"  # sem número de processo (0001639-12.2023...)
 _NUM = r"(?:n\s*[º°.]?\s*)?(" + _N + r"(?:\s*(?:,|e)\s*" + _N + r")*)"  # "1046, 725 e 1232"
 _DO_TEXTO_RE = (
-    ("nr", re.compile(r"(?<![a-z])(?:nrs?|normas?\s+regulamentadoras?)[\s-]*" + _NUM, re.I)),
-    ("tema", re.compile(r"\btemas?\s*" + _NUM, re.I)),
-    ("sv", re.compile(r"(?<![a-z])(?:s[úu]mulas?\s+vinculantes?|sv)[\s-]*" + _NUM, re.I)),
+    ("nr", re.compile(r"(?<![a-z])(nrs?|normas?\s+regulamentadoras?)[\s-]*" + _NUM, re.I)),
+    ("tema", re.compile(r"\b(temas?)\s*" + _NUM, re.I)),
+    ("sv", re.compile(r"(?<![a-z])(s[úu]mulas?\s+vinculantes?|svs?)[\s-]*" + _NUM, re.I)),
 )
 
 
@@ -180,8 +180,10 @@ def codigos_do_texto(texto: str) -> set[str]:
     "SV" colado ao número: "Súmula 4 do STF" não conta."""
     codigos = set()
     for tipo, padrao in _DO_TEXTO_RE:
-        for lista in padrao.findall(texto or ""):
-            for n in re.findall(_N, lista):
+        for palavra, lista in padrao.findall(texto or ""):
+            numeros = re.findall(_N, lista)
+            # lista ("Temas 1046, 725 e 1232") só depois de palavra no plural; no singular, só o primeiro
+            for n in numeros if palavra.lower().endswith("s") else numeros[:1]:
                 n = int(n.replace(".", ""))
                 if tipo != "nr" or 1 <= n <= 38:  # as NRs vão de 1 a 38
                     codigos.add(f"{tipo}_{n}")
