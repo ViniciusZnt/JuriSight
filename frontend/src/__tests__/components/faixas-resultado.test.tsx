@@ -79,7 +79,7 @@ describe("faixas de resultado", () => {
     sessao.resultados = [card("a")];
     sessao.estrutura = emptyEstrutura();
     render(<SearchResultsPage />);
-    expect(screen.getByText(/Busca só semântica\. Para restringir, informe dispositivos ou expressões na Revisão de Contexto\./)).toBeInTheDocument();
+    expect(screen.getByText(/Busca só semântica\. Para restringir, informe normas, expressões, tribunal ou fase na Revisão de Contexto\./)).toBeInTheDocument();
     expect(screen.queryByText("Busca livre (semântica)")).not.toBeInTheDocument();
     expect(contarFiltros).not.toHaveBeenCalled();
   });

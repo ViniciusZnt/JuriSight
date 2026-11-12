@@ -601,7 +601,7 @@ export function SearchResultsPage() {
         )}
         {!restrito && (
           <p className="w-full max-w-[800px] mt-6 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
-            Busca só semântica. Para restringir, informe dispositivos ou expressões na Revisão de Contexto.
+            Busca só semântica. Para restringir, informe normas, expressões, tribunal ou fase na Revisão de Contexto.
           </p>
         )}
       </div>
