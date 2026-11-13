@@ -21,6 +21,7 @@ LGPD (RFC §6.1): o PDF enviado nunca é guardado. Só o que a pessoa revisou
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -276,9 +277,12 @@ async def enrich(
     deduzidas = [n for n in estrutura.normas if not citada_em(n, texto_do_caso)]
     estrutura = estrutura.model_copy(update={"normas": [n for n in estrutura.normas if n not in deduzidas]})
     estrutura, dispositivos_ia = await run_in_threadpool(_normas_em_dispositivos, estrutura, filtro_store)
-    expressoes_sugeridas = await run_in_threadpool(_expressoes_no_acervo, sugeridas, filtro_store)
-    dispositivos_sugeridos = await run_in_threadpool(
-        _dispositivos_no_acervo, [*deduzidas, *dispositivos_texto], estrutura.dispositivos, filtro_store
+    # As duas conferências no acervo não dependem uma da outra: rodam juntas (cada uma trata o próprio erro).
+    expressoes_sugeridas, dispositivos_sugeridos = await asyncio.gather(
+        run_in_threadpool(_expressoes_no_acervo, sugeridas, filtro_store),
+        run_in_threadpool(
+            _dispositivos_no_acervo, [*deduzidas, *dispositivos_texto], estrutura.dispositivos, filtro_store
+        ),
     )
     return EnrichResponse(
         estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso, dispositivos_ia=dispositivos_ia,
