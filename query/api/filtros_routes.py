@@ -36,8 +36,8 @@ def get_filtro_store(request: Request) -> FiltroStore | None:
     return getattr(request.app.state, "filtro_store", None)
 
 
-def exigir_filtro_store(store: FiltroStore | None = Depends(get_filtro_store)) -> FiltroStore:
-    """Para as rotas que não funcionam sem o preparo do filtro restrito."""
+def exigir(store: FiltroStore | None) -> FiltroStore:
+    """Primeira linha das rotas que não funcionam sem o preparo; roda depois da validação do pedido."""
     if store is None:
         raise FiltroIndisponivel()
     return store
@@ -80,8 +80,8 @@ class ContagemResponse(BaseModel):
 
 
 @router.get("/dispositivos", response_model=list[DispositivoView])
-async def sugerir_dispositivos(q: str = Query("", max_length=MAX_TEXTO), store: FiltroStore = Depends(exigir_filtro_store)):
-    sugestoes = await run_in_threadpool(store.sugerir, q, 10)
+async def sugerir_dispositivos(q: str = Query("", max_length=MAX_TEXTO), store: FiltroStore | None = Depends(get_filtro_store)):
+    sugestoes = await run_in_threadpool(exigir(store).sugerir, q, 10)
     return [DispositivoView(codigo=s.codigo, rotulo=s.rotulo, total=s.total) for s in sugestoes]
 
 
@@ -90,14 +90,14 @@ def rotulo_do_tribunal(t: str) -> str:
 
 
 @router.get("/tribunais", response_model=list[TribunalView])
-async def listar_tribunais(store: FiltroStore = Depends(exigir_filtro_store)):
-    lista = await run_in_threadpool(store.tribunais)
+async def listar_tribunais(store: FiltroStore | None = Depends(get_filtro_store)):
+    lista = await run_in_threadpool(exigir(store).tribunais)
     return [TribunalView(tribunal=t, rotulo=rotulo_do_tribunal(t), total=n) for t, n in lista]
 
 
 @router.post("/contagem", response_model=ContagemResponse)
-async def contar(body: ContagemRequest, store: FiltroStore = Depends(exigir_filtro_store)):
-    c = await run_in_threadpool(store.contar, body.dispositivos, body.expressoes, body.tribunais, body.fase)
+async def contar(body: ContagemRequest, store: FiltroStore | None = Depends(get_filtro_store)):
+    c = await run_in_threadpool(exigir(store).contar, body.dispositivos, body.expressoes, body.tribunais, body.fase)
     return ContagemResponse(
         total=c.total,
         dispositivos=[DispositivoView(codigo=d.codigo, rotulo=d.rotulo, total=d.total) for d in c.dispositivos],

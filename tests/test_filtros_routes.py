@@ -74,6 +74,15 @@ def test_filtros_503_sem_store(client, chamada):
     assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."  # sem comando de servidor
 
 
+def test_filtros_sem_store_valida_antes_de_dar_503(client):
+    app.dependency_overrides[get_filtro_store] = lambda: None
+    assert client.post("/filtros/contagem", json={"dispositivos": "x"}).status_code == 422
+    assert client.get("/filtros/dispositivos", params={"q": "x" * 300}).status_code == 422
+    resp = client.post("/filtros/contagem", json={"dispositivos": ["a"]})
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."
+
+
 @pytest.mark.parametrize("body", [
     {"expressoes": ["x" * 201]},
     {"dispositivos": ["x" * 201]},
