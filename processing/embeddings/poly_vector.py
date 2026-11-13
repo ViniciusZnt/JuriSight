@@ -17,7 +17,6 @@ import os
 
 from openai import OpenAI
 
-from processing.chunking.sac_chunker import Chunk
 
 EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 EMBED_DIM = 1536
@@ -68,14 +67,3 @@ class PolyVectorEmbedder:
                     f"Dimensão inesperada do embedding: {len(v)} (esperado {EMBED_DIM})."
                 )
         return vetores
-
-    def embed_chunk(self, chunk: Chunk) -> tuple[Vector, Vector]:
-        """Gera os dois embeddings Poly-Vector de um chunk.
-
-        Input:  chunk — Chunk a embedar.
-        Returns: (embedding_completo ← chunk.texto, embedding_ementa ← chunk.sac_summary).
-        """
-        # sac_summary vazio (súmulas/OJs) → usa o texto para não embedar string vazia.
-        fonte_ementa = chunk.sac_summary or chunk.texto
-        completo, ementa = self.embed_batch([chunk.texto, fonte_ementa])
-        return completo, ementa

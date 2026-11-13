@@ -21,7 +21,6 @@ from scraper.provimento import _DISPOSITIVO_MARKERS
 # Veja os testes de test_chunker
 TARGET_TOKENS = 500
 MIN_TOKENS = 400
-MAX_TOKENS = 700
 # Sobreposição entre chunks consecutivos para não cortar contexto no limite.
 OVERLAP_TOKENS = 80
 # Teto de palavras do resumo SAC, aplicado tanto à ementaquanto ao dispositivo:
@@ -61,15 +60,6 @@ class Chunk(BaseModel):
         if not self.chunk_id:
             self.chunk_id = f"{self.documento_id}:{self.posicao}"
         return self
-
-
-def _count_tokens(text: str) -> int:
-    """Mede o tamanho do texto em palavras (aproximação de tokens).
-
-    Input:  text — texto a medir.
-    Returns: número de palavras.
-    """
-    return len(text.split())
 
 
 def _dispositivo_summary(acordao: str, max_words: int = SUMMARY_MAX_WORDS) -> str:

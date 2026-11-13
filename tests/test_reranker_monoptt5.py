@@ -2,7 +2,7 @@
 import pytest
 
 from query.search.reranker import _MAX_PASSAGE_CHARS
-from query.search.reranker_monoptt5 import PROMPT, MonoPTT5
+from query.search.reranker_monoptt5 import MonoPTT5
 
 EOS, UNK = 1, 2
 
@@ -59,7 +59,6 @@ def test_prompt_no_formato_do_card():
 
     _mono(logits=logits).rerank_scores("minha query", ["texto x"])
     assert vistos[0].strip() == "Pergunta: minha query Documento: texto x Relevante:"
-    assert PROMPT == "Pergunta: {query} Documento: {text} Relevante:"
 
 
 def test_passagem_cortada_em_caracteres():

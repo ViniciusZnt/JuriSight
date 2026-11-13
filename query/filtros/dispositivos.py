@@ -46,10 +46,6 @@ def niveis(codigo: str) -> list[str]:
     return ["_".join(sum(unidades[k:], []) + resto) for k in range(len(unidades) + 1)]
 
 
-def eh_dispositivo(codigo: str) -> bool:
-    return bool(niveis(codigo))
-
-
 def _numero(n: str) -> str:
     return f"{int(n):,}".replace(",", ".")
 

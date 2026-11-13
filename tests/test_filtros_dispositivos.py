@@ -1,5 +1,5 @@
 import pytest
-from query.filtros.dispositivos import niveis, eh_dispositivo, rotulo, codigo_de_texto, tokens_da_busca, codigos_do_texto
+from query.filtros.dispositivos import niveis, rotulo, codigo_de_texto, tokens_da_busca, codigos_do_texto
 
 @pytest.mark.parametrize("codigo,esperado", [
     ("b_ii_art_10_adct", ["b_ii_art_10_adct", "ii_art_10_adct", "art_10_adct"]),
@@ -13,10 +13,6 @@ from query.filtros.dispositivos import niveis, eh_dispositivo, rotulo, codigo_de
 ])
 def test_niveis(codigo, esperado):
     assert niveis(codigo) == esperado
-
-def test_eh_dispositivo():
-    assert eh_dispositivo("oj_394_sdi1_tst") and eh_dispositivo("lei_13467_17") and eh_dispositivo("convencao_155_oit")
-    assert not eh_dispositivo("trt9") and not eh_dispositivo("clt")
 
 @pytest.mark.parametrize("codigo,esperado", [
     ("art_15_clt", "CLT art. 15"),
@@ -147,4 +143,4 @@ def test_conversao_e_busca_dos_codigos_novos():
     assert codigo_de_texto("Súmula 4 do STF") != "sv_4"
     assert tokens_da_busca("nr 15") == ["nr", "15"]
     assert tokens_da_busca("súmula vinculante 4") == ["sv", "4"] and tokens_da_busca("vinculante 4") == ["sv", "4"]
-    assert niveis("nr_15") == ["nr_15"] and eh_dispositivo("tema_1046")
+    assert niveis("nr_15") == ["nr_15"] and niveis("tema_1046") == ["tema_1046"]

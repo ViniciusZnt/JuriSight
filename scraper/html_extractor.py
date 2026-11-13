@@ -38,20 +38,8 @@ def _normalize_title(titulo: str) -> str:
     return t.strip(" .:;-").strip()
 
 
-# Seções nomeadas de interesse — chave = título normalizado.
-_SECTION_MAP = {
-    "cabecalho":     "cabecalho",
-    "ementa":        "ementa",
-    "relatorio":     "relatorio",
-    "fundamentacao": "fundamentacao",
-    "votos":         "votos",
-}
+# Seções nomeadas de interesse (o título normalizado coincide com o nome do campo).
 _SECTION_FIELDS = ("cabecalho", "ementa", "relatorio", "fundamentacao", "votos")
-
-
-def extract_ementa(ementa_html: str) -> str:
-    """Extrai o texto puro do campo textoEmenta (HTML simples de parágrafos)."""
-    return html_to_text(ementa_html)
 
 
 def extract_sections(acordao_html: str) -> dict:
@@ -74,8 +62,8 @@ def extract_sections(acordao_html: str) -> dict:
         id=lambda x: x and x.endswith("_titulo") and "completo" not in x,
     )
     for titulo_div in titulo_divs:
-        field = _SECTION_MAP.get(_normalize_title(titulo_div.get_text(strip=True)))
-        if not field:
+        field = _normalize_title(titulo_div.get_text(strip=True))
+        if field not in _SECTION_FIELDS:
             continue
         content_div = soup.find("div", id=titulo_div["id"].replace("_titulo", "_conteudo"))
         if not content_div:
@@ -107,5 +95,5 @@ def parse_document(ementa_html: str, acordao_html: str) -> dict:
     sections = extract_sections(acordao_html)
     return {
         "acordao_section": sections,
-        "ementa": extract_ementa(ementa_html) or sections.get("ementa", ""),
+        "ementa": html_to_text(ementa_html) or sections.get("ementa", ""),
     }

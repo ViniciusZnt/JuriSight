@@ -134,21 +134,6 @@ def test_buscar_sem_filtro_nao_passa_provimento_e_usa_pool_30():
     assert hybrid.calls == [{"n_results": 30, "provimento": None}]
 
 
-def test_buscar_sem_filtrar_nos_canais_comportamento_antigo():
-    docs = {
-        "a": _doc(id_documento="a", provimento=Provimento.NEGADO),
-        "b": _doc(id_documento="b", provimento=Provimento.APROVADO),
-    }
-    hybrid = _FakeHybrid([("a", 2.0), ("b", 1.0)])
-
-    resultado = _buscar_com(
-        hybrid, docs, provimento=Provimento.APROVADO, filtrar_nos_canais=False
-    )
-
-    assert hybrid.calls == [{"n_results": 80, "provimento": None}]
-    assert [c.id for c in resultado] == ["b"]
-
-
 def test_buscar_com_ids_usa_pool_normal():
     hybrid = _FakeHybrid([("a", 1.0)])
 

@@ -16,8 +16,6 @@ export function provimentoToOutcome(provimento: Provimento): Outcome {
       return "favorable";
     case "APROVADO":
       return "unfavorable";
-    case "PARCIAL":
-    case "NAO_APLICAVEL":
     default:
       return "neutral";
   }

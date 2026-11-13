@@ -93,7 +93,7 @@ ok "Postgres no ar."
 
 info "Conferindo modelos do Ollama (baixa só o que faltar — pode demorar na primeira vez)…"
 modelos_atuais="$(curl -s -m 5 http://localhost:11434/api/tags 2>/dev/null || echo '')"
-for modelo in nomic-embed-text llama3.2:3b; do
+for modelo in llama3.2:3b; do
     if echo "$modelos_atuais" | grep -q "\"${modelo%%:*}"; then
         ok "Modelo $modelo já presente."
     else

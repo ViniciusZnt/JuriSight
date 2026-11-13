@@ -397,20 +397,6 @@ def test_query_filtro_provimento_reduz_resultados_e_filtra_nos_canais(client):
     assert fake_hybrid.calls[0]["provimento"] == "APROVADO"
 
 
-def test_query_sem_filtro_usa_pool_de_rerank(client):
-    """Sem filtro, o pool pedido ao hybrid search é N_CANDIDATOS_PARA_RERANK
-    (maior que N_RESULTS_FINAL) — o re-ranking precisa de mais candidatos que
-    o corte final pra ter o que escolher (ver query/api/app.py::query)."""
-    doc = _doc()
-    fake_hybrid = _FakeHybrid([("doc-1", 1.0)])
-    app.dependency_overrides[get_hybrid] = lambda: fake_hybrid
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever({"doc-1": doc})
-
-    client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
-
-    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_PARA_RERANK
-
-
 def test_query_reranking_promove_candidato_mal_rankeado_pelo_rrf(client):
     """O re-ranking (query/search/reranker.py) reordena por relevância real —
     um candidato que o RRF rankeou por último pode terminar primeiro, se o

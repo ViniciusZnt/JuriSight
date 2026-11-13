@@ -31,11 +31,11 @@ N_RESULTS_FINAL = 20
 # BUSCA, não só no re-ranking. 30 é o equilíbrio medido: ~50% de folga sobre
 # os 20 finais, latência total ficando ~2x o baseline sem re-ranking.
 N_CANDIDATOS_PARA_RERANK = 30
-# Pool de candidatos maior quando algum filtro (provimento/período) está ativo —
-# o filtro é aplicado em Python DEPOIS da busca (ver aplicar_filtros), então um
-# pool maior evita perder recall. Filtro dentro dos canais (provimento, lista de
-# documentos do filtro restrito) dispensa: já devolve só candidatos válidos, então
-# vale o pool normal — e pontuar 80 ementas no re-ranking custa ~3 s a mais.
+# Pool de candidatos maior quando há filtro de período: ele é aplicado em Python
+# DEPOIS da busca (ver aplicar_filtros), então um pool maior evita perder recall.
+# O provimento e a lista de documentos do filtro restrito entram nos canais, já
+# devolvem só candidatos válidos e dispensam: pontuar 80 ementas no re-ranking
+# custa ~3 s a mais.
 N_CANDIDATOS_COM_FILTRO = 80
 
 
@@ -95,7 +95,6 @@ def buscar(
     provimento: Provimento | None = None,
     data_inicio: date | None = None,
     data_fim: date | None = None,
-    filtrar_nos_canais: bool = True,
     documento_ids: list[str] | None = None,
     marcar_canais: bool = False,
 ) -> list[ResultCard]:
@@ -111,20 +110,15 @@ def buscar(
     frase_tese = query_builder.build_frase_tese(estrutura)
 
     tem_filtro = provimento is not None or data_inicio is not None or data_fim is not None
-    # Provimento filtrado dentro dos canais já devolve só candidatos do provimento:
-    # o pool normal basta. Período (sempre pós-busca) ou provimento pós-busca
-    # (filtrar_nos_canais=False) precisam do pool maior.
-    provimento_nos_canais = provimento is not None and filtrar_nos_canais
-    filtro_pos_busca = (
-        data_inicio is not None or data_fim is not None
-        or (provimento is not None and not filtrar_nos_canais)
-    )
+    # Provimento é filtrado dentro dos canais e já devolve só candidatos válidos: o pool
+    # normal basta. Período (sempre pós-busca) precisa do pool maior.
+    filtro_pos_busca = data_inicio is not None or data_fim is not None
     restrito = documento_ids is not None
     if restrito and not documento_ids:
         return []
     n_candidatos = N_CANDIDATOS_COM_FILTRO if filtro_pos_busca else N_CANDIDATOS_PARA_RERANK
 
-    kwargs_busca = {"provimento": provimento.value} if provimento_nos_canais else {}
+    kwargs_busca = {"provimento": provimento.value} if provimento is not None else {}
     if restrito:
         kwargs_busca["documento_ids"] = documento_ids
     canais: dict[str, list[str]] = {}
