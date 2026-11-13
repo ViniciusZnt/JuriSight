@@ -40,13 +40,15 @@
 | 6 | Telas de login com casca única | ~230 | médio (sem teste unitário) | não (visual idêntico) |
 | 7 | Molde de página e topbar únicos | ~35 | médio (sem teste) | não |
 | **1–7** | **seguro** | **~1.730 (≈ 4,7%)** | | |
-| D1–D15 | decisões suas | até ~2.600 a mais | médio | alguns sim (marcados) |
+| 8 | decisões aprovadas (D1, D2, D3, D8, D9, D12, D13, D14) | ~600 | médio | D1/D2: some a suíte E2E e o script de carga; D8: some a migração do perfil antigo |
+| 9 | otimizações | ~0 | baixo-médio | não (mesmos resultados, mais rápido) |
+| **1–9** | **aprovado em 13/11** | **~2.330 (≈ 6,4%)** | | |
 
-Com os lotes seguros mais as decisões que eu recomendo (D1, D2, D3, D5 só planos e D6), o total fica em **≈ -4.200 linhas, ≈ 11,5%**.
+Aprovado em 13/11: lotes 1–7, as decisões D1, D2, D3, D8, D9, D12, D13 e D14, e as otimizações. Total ≈ **-2.330 linhas, ≈ 6,4%**.
 
 ---
 
-## Lote 1 — Código e dependências mortos (~140 linhas)
+## Task 1: Lote 1 — Código e dependências mortos (~140 linhas)
 
 Cada item foi provado com grep no repo inteiro: só há uso no próprio arquivo, ou apenas em testes que existem para ele.
 
@@ -78,7 +80,7 @@ Cada item foi provado com grep no repo inteiro: só há uso no próprio arquivo,
 - [ ] Rodar o build.
 - [ ] Commit: "Remove código e dependências mortos (N linhas)".
 
-## Lote 2 — Documentação desatualizada ou duplicada (~850 linhas)
+## Task 2: Lote 2 — Documentação desatualizada ou duplicada (~850 linhas)
 
 São só texto, e cada afirmação apagada ou corrigida foi conferida no código. Não toca as RFCs.
 
@@ -107,7 +109,7 @@ São só texto, e cada afirmação apagada ou corrigida foi conferida no código
 - [ ] Rodar a verificação completa (os docstrings não mudam comportamento, mas os imports de `app.py`/`qdrant_store.py` mudam).
 - [ ] Commit: "Docs: tira o que descrevia código que não existe mais (N linhas)".
 
-## Lote 3 — Testes: fixtures e fakes repetidos (~135 linhas)
+## Task 3: Lote 3 — Testes: fixtures e fakes repetidos (~135 linhas)
 
 Os testes continuam sendo os mesmos e a contagem não pode mudar.
 
@@ -117,7 +119,7 @@ Os testes continuam sendo os mesmos e a contagem não pode mudar.
 - [ ] Rodar a suíte com e sem `DATABASE_URL`, para confirmar que os de integração pulam e rodam como antes.
 - [ ] Commit.
 
-## Lote 4 — Backend: duplicação simples coberta por teste (~150 linhas)
+## Task 4: Lote 4 — Backend: duplicação simples coberta por teste (~150 linhas)
 
 Comportamento igual, provado pelos testes que já existem.
 
@@ -140,7 +142,7 @@ Comportamento igual, provado pelos testes que já existem.
 - unir os requests de conversa;
 - `_row_para_documento` com `zip`.
 
-## Lote 5 — Frontend: duplicação de lógica e CSS morto (~190 linhas)
+## Task 5: Lote 5 — Frontend: duplicação de lógica e CSS morto (~190 linhas)
 
 - **`globals.css`:** só 7 variáveis são usadas. Tirar os tokens card, popover, primary, secondary, muted, accent, destructive, input, chart-1..5 e sidebar-\* (`:root`, `.dark` e `@theme`). Conferir o fundo e o texto do `body` no claro e no escuro com captura. (-80)
 - **`lib/api.ts`:** o mesmo bloco `{method, headers JSON, body: JSON.stringify}` aparece 12 vezes e vira um helper `enviarJson(path, method, body)`. O `api.test.ts` já confere método, header e corpo. (-30)
@@ -158,7 +160,7 @@ Comportamento igual, provado pelos testes que já existem.
 - [ ] Capturar Resultados, Revisão, Decisão e Salvos no claro e no escuro.
 - [ ] Commit.
 
-## Lote 6 — Telas de login com casca única (~230 linhas, risco médio)
+## Task 6: Lote 6 — Telas de login com casca única (~230 linhas, risco médio)
 
 As 4 telas (`login`, `register`, `forgot-password`, `reset-password`, com 683 linhas) repetem várias peças:
 - logo e cartão;
@@ -176,7 +178,7 @@ A ideia é extrair `login/auth-shell.tsx` e `login/campo-auth.tsx`.
 - [ ] Capturar as 4 telas no claro, no escuro e a 375 px, comparando com antes.
 - [ ] Commit.
 
-## Lote 7 — Molde de página e topbar (~35 linhas, risco médio)
+## Task 7: Lote 7 — Molde de página e topbar (~35 linhas, risco médio)
 
 - **Fundo da página:** `bg-[#F7F7F9] dark:bg-[#0E0E11]` aparece em 16 `<main>`.
 - **Topbar:** guia e home copiam o header do `PageTopbar`. O `PageTopbar` passa a aceitar um slot à direita, e um `Pagina` envolve o `<main>`.
@@ -184,27 +186,56 @@ A ideia é extrair `login/auth-shell.tsx` e `login/campo-auth.tsx`.
 - [ ] Capturar todas as telas antes e depois.
 - [ ] Commit.
 
+## Task 8: Lote 8 — Decisões aprovadas (D1, D2, D3, D8, D9, D12, D13, D14) (~600 linhas)
+
+- **D1 Cypress:** apagar `frontend/cypress/`, `cypress.config.ts`, as deps `cypress` e `start-server-and-test`, os scripts `cypress:*` e `test:e2e`, `cypress` em `pnpm-workspace.yaml` (`onlyBuiltDependencies`), `CYPRESS_INSTALL_BINARY` (`.github/workflows/ci.yml`, `Dockerfile`), a exclusão em `jest.config.mjs` e `tsconfig.json`, e as menções no README.
+- **D2:** apagar `tests/test_api_stress.py`. Tirar o `--ignore` do `ci.yml` e as menções (README, `docs/deploy`, `docs/refactor/baseline.md` fica como está, porque é registro, e o docstring de `test_auth_store_integration.py`). Daqui para a frente o comando de testes é `uv run pytest -q`.
+- **D3:** apagar `requirements.txt`.
+- **D8:** em `frontend/src/lib/profile.tsx` e `saved.tsx`, tirar a migração do localStorage antigo (`CHAVE_SEM_DONO`, `chaveAntigaDe`, `removeItem(CHAVE_ANTIGA)`) e os testes dela.
+- **D9:** em `conversations/db.py`, tirar `_MIGRACAO_ADICIONA_VERSOES` e `_MIGRACAO_REMOVE_COLUNAS_SNAPSHOT_UNICO` e as chamadas. O `CREATE TABLE` atual já tem `versoes`.
+- **D12:** README · Escalabilidade: o diário de 53 linhas vira ~15 linhas com as decisões e os números que importam (Qdrant, bm25s, reranker), apontando para os docstrings.
+- **D13:** `docs/Diagramas`: manter um só C4 nível 3 do backend, o que gerou o `.svg` rastreado (conferir pelo nome e pela data). Apagar o outro.
+- **D14:** em `scraper/db_writer.py`, gerar o upsert a partir de uma tupla `COLUNAS` única, mantendo o SQL legível (uma coluna por linha na tupla). **Antes**, escrever um teste que guarda o SQL atual (`_CREATE_TABLE`, `_UPSERT`) normalizado (espaços colapsados) e exige igualdade depois da troca. A coleta não tem teste, e este é o seguro.
+- [ ] Rodar a verificação completa. O comando do backend perde o `--deselect`.
+- [ ] Rodar o build.
+- [ ] Rodar `docker build --target api .` (o Dockerfile mudou).
+- [ ] Commit.
+
+## Task 9: Lote 9 — Otimizações (aprovadas)
+
+Cada uma com teste quando o comportamento puder ser observado. Nenhuma muda resultado de busca.
+- **`query/search/reranker.py`:** o `ThreadPoolExecutor` é criado uma vez no `__init__`, não a cada chamada.
+- **`query/api/app.py` `/enrich`:** `_expressoes_no_acervo` e `_dispositivos_no_acervo` rodam juntos (`asyncio.gather`), porque não dependem um do outro. O teste existente do `/enrich` precisa continuar igual.
+- **`/query`:** `DocRetriever` ganha um modo que busca só as colunas usadas no card e na reordenação (ementa e metadados). `/document/{id}`, `/resposta` e `avaliacao/` continuam com o documento completo. Teste: o card da `/query` é idêntico com o modo enxuto.
+- **`scraper/provimento_jev_db.py`:** `classificar_pendentes` grava o lote numa conexão só, não uma por acórdão.
+- **`frontend/.../search-results-page.tsx`:** `filteredResults`, `resumoTopo` e `idsCitacao` vão para `useMemo`.
+- **Bug do `TagList`** (`entity-review-page.tsx`): `key={idx}` vira chave estável. Teste: remover o 1º de 3 chips em edição não leva o estado ao item errado.
+- **Respostas atrasadas:** na Revisão (`queryJurisprudencia`) e na faixa livre (`queryLivre`), uma resposta antiga é ignorada se uma busca mais nova foi disparada (contador em `useRef` ou `AbortController`). Teste com duas promessas resolvidas fora de ordem.
+- **Remoção de acentos:** `query/filtros/dispositivos.py` e `expressoes.py` (NFD, iguais) passam a usar um `sem_acento()` só. **O tokenizer do BM25 (`bm25_builder.py`, NFKD), `provimento.py` e `html_extractor.py` ficam como estão**, porque mudar a normalização do índice exigiria reindexar. Teste: a mesma saída para uma amostra de 20 textos com acentos, cedilha, ordinais (º/ª) e §.
+- [ ] Rodar a verificação completa.
+- [ ] Commit.
+
 ---
 
 ## Decisões suas (uma por vez, nada entra sem o seu "sim")
 
-| # | O quê | Linhas | Muda algo? | Minha recomendação |
-|---|---|---:|---|---|
-| D1 | **Cypress**: os specs foram escritos para o login falso ("qualquer credencial entra"), e o login hoje é real. O CI não roda o Cypress e ninguém mexeu nele desde o `7b40068`. Apagar `cypress/`, a config, 2 deps, 3 scripts, `CYPRESS_INSTALL_BINARY` (CI e Dockerfile) e as menções no README. | -245 | sim: some a suíte E2E, que já não funciona | apagar |
-| D2 | **`tests/test_api_stress.py`**: não é teste. É um script de carga contra o portal da JT, com **cookies e token escritos no código**, já expirados. Apagar e tirar o `--ignore` do CI. | -94 | toca o CI | apagar. O token continua no histórico do git; como expirou, não exige ação. |
-| D3 | **`requirements.txt`**: duplica o `pyproject.toml` e já divergiu dele (não tem dagster). Nada o usa: Docker e CI usam o uv. | -42 | sim, para quem instala com pip | apagar |
-| D4 | **HTML do inventário** (`docs/superpowers/specs/2026-10-21-...html`): o mesmo conteúdo do `.md` de 503 linhas. O PDF e o artifact são os entregáveis. | -1.558 (fora da métrica: o `.html` não entra na contagem) | não | apagar, se o PDF e o artifact bastam |
-| D5 | **`docs/superpowers/`** (24 arquivos): os **planos** (10 arquivos) são passo a passo de features já entregues. Os **specs** guardam o porquê, e as 3 conferências do Jev são evidência citada no README. | -1.906 (só planos) a -3.780 (tudo) | não | apagar só os planos e manter specs e conferências |
-| D6 | **`.claude/skills/gauntlet-loop/`**: skill pessoal sem relação com o projeto. | -133 | não | mover para `~/.claude/skills` |
-| D7 | **Filtro de provimento e período no `/query`**: nenhuma tela envia esses campos. Removê-lo por inteiro mexe no `QueryRequest`. | -65 | sim, no contrato da API | manter (há o Lote 1 mínimo) |
-| D8 | **Migração antiga do localStorage** (perfil e salvos de versões antigas). | -47 com testes | sim: perde dados de quem ainda tem perfil local | manter até a apresentação |
-| D9 | **Migrações caducas em `conversations/db.py`**. | -18 | sim, se a VPS ainda não migrou | só depois de conferir a VPS |
-| D10 | **Colunas de probabilidade em `avaliacao/`**: sobraram do juiz-LLM e ninguém grava nem lê. | -28 | schema; as colunas ficam no banco, nulas | pode tirar |
-| D11 | **`provimento_routes`**: 3 validators viram `Literal`. | -10 | sim: muda o texto do erro 422 | manter |
-| D12 | **README · Escalabilidade**: diário de migração de 53 linhas, condensado em ~15. | -45 | não, mas é texto de TCC | condensar |
-| D13 | **Diagramas `.txt` duplicados**: dois C4 nível 3 do backend, ambos com Chroma. | -82 | não, mas é artefato do TCC | manter um |
-| D14 | **Upsert gerado em `db_writer.py`**: as 24 colunas aparecem 4 vezes. | -25 | não | **não fazer**: o SQL literal é mais fácil de explicar |
-| D15 | **"Avança o dia" duplicado no `orchestrator.py`** (coleta, sem teste). | -12 | só o texto do log | fazer só com um teste novo da coleta |
+| # | O quê | Linhas | Muda algo? | Minha recomendação | Vinicius (13/11) |
+|---|---|---:|---|---|---|
+| D1 | **Cypress**: os specs foram escritos para o login falso ("qualquer credencial entra"), e o login hoje é real. O CI não roda o Cypress e ninguém mexeu nele desde o `7b40068`. Apagar `cypress/`, a config, 2 deps, 3 scripts, `CYPRESS_INSTALL_BINARY` (CI e Dockerfile) e as menções no README. | -245 | sim: some a suíte E2E, que já não funciona | apagar | ✅ aprovado |
+| D2 | **`tests/test_api_stress.py`**: não é teste. É um script de carga contra o portal da JT, com **cookies e token escritos no código**, já expirados. Apagar e tirar o `--ignore` do CI. | -94 | toca o CI | apagar. O token continua no histórico do git; como expirou, não exige ação. | ✅ aprovado |
+| D3 | **`requirements.txt`**: duplica o `pyproject.toml` e já divergiu dele (não tem dagster). Nada o usa: Docker e CI usam o uv. | -42 | sim, para quem instala com pip | apagar | ✅ aprovado (conferido: nada cita o arquivo; Docker e CI usam uv) |
+| D4 | **HTML do inventário** (`docs/superpowers/specs/2026-10-21-...html`): o mesmo conteúdo do `.md` de 503 linhas. O PDF e o artifact são os entregáveis. | -1.558 (fora da métrica: o `.html` não entra na contagem) | não | apagar, se o PDF e o artifact bastam | ❌ ainda não |
+| D5 | **`docs/superpowers/`** (24 arquivos): os **planos** (10 arquivos) são passo a passo de features já entregues. Os **specs** guardam o porquê, e as 3 conferências do Jev são evidência citada no README. | -1.906 (só planos) a -3.780 (tudo) | não | apagar só os planos e manter specs e conferências | ❌ não |
+| D6 | **`.claude/skills/gauntlet-loop/`**: skill pessoal sem relação com o projeto. | -133 | não | mover para `~/.claude/skills` | ❌ não |
+| D7 | **Filtro de provimento e período no `/query`**: nenhuma tela envia esses campos. Removê-lo por inteiro mexe no `QueryRequest`. | -65 | sim, no contrato da API | manter (há o Lote 1 mínimo) | ❌ não |
+| D8 | **Migração antiga do localStorage** (perfil e salvos de versões antigas). | -47 com testes | sim: perde dados de quem ainda tem perfil local | manter até a apresentação | ✅ aprovado |
+| D9 | **Migrações caducas em `conversations/db.py`**. | -18 | sim, se a VPS ainda não migrou | só depois de conferir a VPS | ✅ aprovado (local já migrado; VPS restaurada do dump local em 01/11, depois da migração de 04/10) |
+| D10 | **Colunas de probabilidade em `avaliacao/`**: sobraram do juiz-LLM e ninguém grava nem lê. | -28 | schema; as colunas ficam no banco, nulas | pode tirar | ❌ não |
+| D11 | **`provimento_routes`**: 3 validators viram `Literal`. | -10 | sim: muda o texto do erro 422 | manter | ❌ não |
+| D12 | **README · Escalabilidade**: diário de migração de 53 linhas, condensado em ~15. | -45 | não, mas é texto de TCC | condensar | ✅ aprovado |
+| D13 | **Diagramas `.txt` duplicados**: dois C4 nível 3 do backend, ambos com Chroma. | -82 | não, mas é artefato do TCC | manter um | ✅ aprovado |
+| D14 | **Upsert gerado em `db_writer.py`**: as 24 colunas aparecem 4 vezes. | -25 | não | **não fazer**: o SQL literal é mais fácil de explicar | ✅ aprovado (com teste que prova SQL idêntico) |
+| D15 | **"Avança o dia" duplicado no `orchestrator.py`** (coleta, sem teste). | -12 | só o texto do log | fazer só com um teste novo da coleta | ❌ não |
 
 ## Otimizações encontradas
 
