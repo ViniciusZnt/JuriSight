@@ -23,7 +23,7 @@ def _database_url() -> str:
 
 
 def carregar_store():
-    """Só o AvaliacaoStore (leve: não carrega BM25, embedder nem reranker)."""
+    """Só o AvaliacaoStore (leve: não carrega BM25 nem embedder)."""
     from avaliacao.db import ensure_schema
     from avaliacao.store import AvaliacaoStore
 
@@ -33,9 +33,9 @@ def carregar_store():
 
 
 def carregar_dependencias() -> SimpleNamespace:
-    """Devolve SimpleNamespace(hybrid, retriever, reranker, store, database_url).
+    """Devolve SimpleNamespace(hybrid, retriever, store, database_url).
 
-    Lento (BM25, embedder e reranker) — chame uma vez por processo.
+    Lento (BM25 e embedder) — chame uma vez por processo.
     """
     url = _database_url()
 
@@ -46,14 +46,12 @@ def carregar_dependencias() -> SimpleNamespace:
     from processing.embeddings.poly_vector import PolyVectorEmbedder
     from query.search.doc_retriever import DocRetriever
     from query.search.hybrid_search import HybridSearch
-    from query.search.reranker import Reranker
 
     client = QdrantClient(url=os.getenv("QDRANT_URL", "http://localhost:6333"), timeout=210)
     hybrid = HybridSearch(PolyVectorEmbedder(), QdrantStore(client), BM25Builder.load())
     return SimpleNamespace(
         hybrid=hybrid,
         retriever=DocRetriever(url),
-        reranker=Reranker(),
         store=carregar_store(),
         database_url=url,
     )

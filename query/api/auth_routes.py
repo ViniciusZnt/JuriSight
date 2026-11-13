@@ -15,11 +15,11 @@ import os
 import secrets
 import smtplib
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
 import jwt
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator
 
 from auth import envio_email
 from auth.password import DUMMY_HASH, hash_password, verify_password
@@ -61,38 +61,30 @@ def _validar_email_basico(v: str) -> str:
     return v
 
 
+# Texto sem espaços nas pontas; `TextoOuNulo` também troca o vazio por None.
+EmailSemEspacos = Annotated[str, AfterValidator(str.strip)]
+TextoOuNulo = Annotated[str | None, AfterValidator(lambda v: (v or "").strip() or None)]
+
+
 class RegistroRequest(BaseModel):
     email: str
     # Só o tamanho mínimo: regras de composição incentivam "Senha123!" (NIST 800-63B).
     password: str = Field(min_length=8, max_length=128)
-    nome: str | None = Field(default=None, max_length=255)
+    nome: TextoOuNulo = Field(default=None, max_length=255)
 
     @field_validator("email")
     @classmethod
     def _valida_email(cls, v: str) -> str:
         return _validar_email_basico(v)
 
-    @field_validator("nome")
-    @classmethod
-    def _limpa_nome(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        v = v.strip()
-        return v or None
-
 
 class LoginRequest(BaseModel):
     """JSON, não `OAuth2PasswordRequestForm` (ver auth/DESIGN.md)."""
 
-    email: str
+    # Sem validar o formato (ao contrário do cadastro): e-mail malformado segue o mesmo
+    # caminho de "credenciais inválidas", sem um 422 que o diferencie.
+    email: EmailSemEspacos
     password: str
-
-    @field_validator("email")
-    @classmethod
-    def _limpa_email(cls, v: str) -> str:
-        # Sem validar o formato (ao contrário do cadastro): e-mail malformado segue o mesmo
-        # caminho de "credenciais inválidas", sem um 422 que o diferencie.
-        return v.strip()
 
 
 class UsuarioPublico(BaseModel):
@@ -124,14 +116,9 @@ class UsuarioPublico(BaseModel):
 class PerfilRequest(BaseModel):
     """Dados de perfil da aba Perfil (issue #15). Texto vazio vira None."""
 
-    telefone: str | None = Field(default=None, max_length=30)
-    oab: str | None = Field(default=None, max_length=30)
+    telefone: TextoOuNulo = Field(default=None, max_length=30)
+    oab: TextoOuNulo = Field(default=None, max_length=30)
     papel: Literal["Advogado", "Assistente Jurídica"] | None = None
-
-    @field_validator("telefone", "oab")
-    @classmethod
-    def _limpa(cls, v: str | None) -> str | None:
-        return (v or "").strip() or None
 
 
 # --------------------------------------------------------------------------- #
@@ -261,18 +248,13 @@ def get_current_user(
     return usuario
 
 
-def get_current_user_publico(usuario: Usuario = Depends(get_current_user)) -> UsuarioPublico:
-    """`get_current_user` já projetado nos campos públicos (sem `hashed_password`)."""
-    return UsuarioPublico.de_usuario(usuario)
-
-
 # --------------------------------------------------------------------------- #
 # GET /auth/me                                                                 #
 # --------------------------------------------------------------------------- #
 
 @router.get("/me", response_model=UsuarioPublico)
-def me(usuario_publico: UsuarioPublico = Depends(get_current_user_publico)) -> UsuarioPublico:
-    return usuario_publico
+def me(usuario: Usuario = Depends(get_current_user)) -> UsuarioPublico:
+    return UsuarioPublico.de_usuario(usuario)
 
 
 @router.patch("/me/perfil", response_model=UsuarioPublico)
@@ -300,12 +282,7 @@ _MSG_LINK_ENVIADO = (
 
 
 class EsqueciSenhaRequest(BaseModel):
-    email: str
-
-    @field_validator("email")
-    @classmethod
-    def _limpa_email(cls, v: str) -> str:
-        return v.strip()
+    email: EmailSemEspacos
 
 
 class RedefinirSenhaRequest(BaseModel):

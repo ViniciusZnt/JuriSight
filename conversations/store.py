@@ -109,36 +109,22 @@ class ConversaStore:
     def create(self, usuario_id: uuid.UUID, titulo: str) -> Conversa:
         """Cria uma conversa nova, sem nenhuma versão ainda (criada ao
         clicar em "Nova pesquisa", antes mesmo do primeiro /enrich)."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_INSERT, (usuario_id, titulo))
-                row = cur.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_INSERT, (usuario_id, titulo))
+            row = cur.fetchone()
         return _row_para_conversa(row)
 
     def list_by_usuario(self, usuario_id: uuid.UUID) -> list[Conversa]:
         """Todas as conversas do usuário, mais recente primeiro (histórico da sidebar)."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_SELECT_BY_USUARIO, (usuario_id,))
-                rows = cur.fetchall()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_SELECT_BY_USUARIO, (usuario_id,))
+            rows = cur.fetchall()
         return [_row_para_conversa(r) for r in rows]
 
     def rename(self, conversa_id: uuid.UUID, usuario_id: uuid.UUID, titulo: str) -> Conversa:
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_UPDATE_TITULO, (titulo, conversa_id, usuario_id))
-                row = cur.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_UPDATE_TITULO, (titulo, conversa_id, usuario_id))
+            row = cur.fetchone()
         if row is None:
             raise ConversaNaoEncontradaError(conversa_id)
         return _row_para_conversa(row)
@@ -160,39 +146,29 @@ class ConversaStore:
         /query (resultados preenchido, mesma versão sendo completada). Cada
         "Refinar consulta" bem-sucedida gera uma versão nova (V2, V3, ...),
         nunca sobrescreve a anterior."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    _ADD_VERSAO,
-                    (
-                        Json(estrutura),
-                        has_file,
-                        file_name,
-                        pdf_extraido,
-                        aviso,
-                        Json(resultados),
-                        datetime.now(timezone.utc).isoformat(),
-                        conversa_id,
-                        usuario_id,
-                    ),
-                )
-                row = cur.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                _ADD_VERSAO,
+                (
+                    Json(estrutura),
+                    has_file,
+                    file_name,
+                    pdf_extraido,
+                    aviso,
+                    Json(resultados),
+                    datetime.now(timezone.utc).isoformat(),
+                    conversa_id,
+                    usuario_id,
+                ),
+            )
+            row = cur.fetchone()
         if row is None:
             raise ConversaNaoEncontradaError(conversa_id)
         return _row_para_conversa(row)
 
     def delete(self, conversa_id: uuid.UUID, usuario_id: uuid.UUID) -> None:
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_DELETE, (conversa_id, usuario_id))
-                apagou = cur.rowcount > 0
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_DELETE, (conversa_id, usuario_id))
+            apagou = cur.rowcount > 0
         if not apagou:
             raise ConversaNaoEncontradaError(conversa_id)

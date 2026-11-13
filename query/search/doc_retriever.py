@@ -44,13 +44,9 @@ class DocRetriever:
             return {}
 
         # Conexão local: a instância é compartilhada entre threads.
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_SELECT_BY_IDS, (documento_ids,))
-                rows = cur.fetchall()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_SELECT_BY_IDS, (documento_ids,))
+            rows = cur.fetchall()
 
         return {str(row[0]): _row_para_documento(row) for row in rows}
 

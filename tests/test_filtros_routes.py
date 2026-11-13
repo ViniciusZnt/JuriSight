@@ -104,7 +104,9 @@ def test_filtros_tribunais_sem_sessao_401(client):
 
 def test_filtros_tribunais_sem_store_503(client):
     app.dependency_overrides[get_filtro_store] = lambda: None
-    assert client.get("/filtros/tribunais").status_code == 503
+    resp = client.get("/filtros/tribunais")
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."
 
 
 def test_contagem_repassa_tribunais_e_fase(client):

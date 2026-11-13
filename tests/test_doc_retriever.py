@@ -178,8 +178,11 @@ class _Conn:
     def cursor(self):
         return _Cursor()
 
-    def close(self):
-        self.fechada = True
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.fechada = True  # como o psycopg: o `with` fecha a conexão
 
 
 def test_fetch_usa_conexao_local_e_fecha(monkeypatch):

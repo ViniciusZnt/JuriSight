@@ -120,10 +120,7 @@ def buscar(
     # reranker=None: sem reordenar, mantém a ordem do RRF (benchmark, sistema S2).
     if triplos and reranker is not None:
         scores_rerank = reranker.rerank_scores(frase_tese, [doc.ementa for _, doc, _ in triplos])
-        triplos = [
-            (doc_id, doc, score_bruto)
-            for (doc_id, doc, _), score_bruto in zip(triplos, scores_rerank)
-        ]
+        triplos = [(doc_id, doc, s) for (doc_id, doc, _), s in zip(triplos, scores_rerank)]
         triplos.sort(key=lambda t: t[2], reverse=True)
 
     triplos = triplos[:N_RESULTS_FINAL]
@@ -133,10 +130,7 @@ def buscar(
     # 100% (o bug de "100% relevante" em toda carta). A ordem não muda (min-max é monótono).
     if triplos:
         scores_normalizados = normalizar_scores([t[2] for t in triplos])
-        triplos = [
-            (doc_id, doc, score_norm)
-            for (doc_id, doc, _), score_norm in zip(triplos, scores_normalizados)
-        ]
+        triplos = [(doc_id, doc, s) for (doc_id, doc, _), s in zip(triplos, scores_normalizados)]
 
     cards = format_results(triplos)
     if marcar_canais:

@@ -36,22 +36,6 @@ def _doc_id_do_chunk(chunk_id: str) -> str:
     return chunk_id.rsplit(":", 1)[0]
 
 
-
-def _dedup_ordenado(doc_ids: list[str]) -> list[str]:
-    """Remove duplicatas preservando a ordem.
-
-    Input:  doc_ids — lista de documento_id, melhor primeiro.
-    Returns: mesma lista sem repetições.
-    """
-    vistos: set[str] = set()
-    ordem: list[str] = []
-    for d in doc_ids:
-        if d not in vistos:
-            vistos.add(d)
-            ordem.append(d)
-    return ordem
-
-
 def reciprocal_rank_fusion(
     rankings: list[list[str]],
     k: int = RRF_K
@@ -130,9 +114,9 @@ class HybridSearch:
             hits_ementa = fut_ementa.result()
 
         # Projeta cada canal para uma lista ranqueada de documento_id, sem duplicar.
-        r_completo = _dedup_ordenado([h["documento_id"] for h in hits_completo])
-        r_ementa = _dedup_ordenado([h["documento_id"] for h in hits_ementa])
-        r_bm25 = _dedup_ordenado([_doc_id_do_chunk(cid) for cid, _ in hits_bm25])
+        r_completo = list(dict.fromkeys(h["documento_id"] for h in hits_completo))
+        r_ementa = list(dict.fromkeys(h["documento_id"] for h in hits_ementa))
+        r_bm25 = list(dict.fromkeys(_doc_id_do_chunk(cid) for cid, _ in hits_bm25))
 
         fundidos = reciprocal_rank_fusion([r_completo, r_ementa, r_bm25])
         if canais is not None:  # por onde cada documento foi achado ("Como esta busca foi feita")

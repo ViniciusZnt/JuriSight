@@ -187,9 +187,13 @@ def test_usuario_nao_ve_conversa_de_outro(client, store):
 
 
 def test_conversa_inexistente_404(client):
-    assert client.patch(f"/conversas/{uuid.uuid4()}", json={"titulo": "x"}).status_code == 404
+    resp = client.patch(f"/conversas/{uuid.uuid4()}", json={"titulo": "x"})
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Conversa não encontrada."}
     assert client.get("/conversas").status_code == 200  # sanity: rota de leitura não quebra
 
 
 def test_id_malformado_404(client):
-    assert client.patch("/conversas/nao-eh-uuid", json={"titulo": "x"}).status_code == 404
+    resp = client.patch("/conversas/nao-eh-uuid", json={"titulo": "x"})
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Conversa não encontrada."}

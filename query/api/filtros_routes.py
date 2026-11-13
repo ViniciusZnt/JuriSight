@@ -12,7 +12,8 @@ import logging
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -35,9 +36,17 @@ def get_filtro_store(request: Request) -> FiltroStore | None:
     return getattr(request.app.state, "filtro_store", None)
 
 
-def filtro_indisponivel() -> HTTPException:
+def exigir_filtro_store(store: FiltroStore | None = Depends(get_filtro_store)) -> FiltroStore:
+    """Para as rotas que não funcionam sem o preparo do filtro restrito."""
+    if store is None:
+        raise FiltroIndisponivel()
+    return store
+
+
+def tratar_filtro_indisponivel(request: Request, exc: FiltroIndisponivel) -> JSONResponse:
+    """Registrado em app.py: `FiltroIndisponivel` (sem store ou sem as tabelas) vira 503."""
     logger.warning("Filtro restrito indisponível: rode `python -m query.filtros.preparar` no servidor.")
-    return HTTPException(status_code=503, detail=MSG_INDISPONIVEL)
+    return JSONResponse(status_code=503, content={"detail": MSG_INDISPONIVEL})
 
 
 class DispositivoView(BaseModel):
@@ -71,13 +80,8 @@ class ContagemResponse(BaseModel):
 
 
 @router.get("/dispositivos", response_model=list[DispositivoView])
-async def sugerir_dispositivos(q: str = Query("", max_length=MAX_TEXTO), store: FiltroStore | None = Depends(get_filtro_store)):
-    if store is None:
-        raise filtro_indisponivel()
-    try:
-        sugestoes = await run_in_threadpool(store.sugerir, q, 10)
-    except FiltroIndisponivel as exc:
-        raise filtro_indisponivel() from exc
+async def sugerir_dispositivos(q: str = Query("", max_length=MAX_TEXTO), store: FiltroStore = Depends(exigir_filtro_store)):
+    sugestoes = await run_in_threadpool(store.sugerir, q, 10)
     return [DispositivoView(codigo=s.codigo, rotulo=s.rotulo, total=s.total) for s in sugestoes]
 
 
@@ -86,24 +90,14 @@ def rotulo_do_tribunal(t: str) -> str:
 
 
 @router.get("/tribunais", response_model=list[TribunalView])
-async def listar_tribunais(store: FiltroStore | None = Depends(get_filtro_store)):
-    if store is None:
-        raise filtro_indisponivel()
-    try:
-        lista = await run_in_threadpool(store.tribunais)
-    except FiltroIndisponivel as exc:
-        raise filtro_indisponivel() from exc
+async def listar_tribunais(store: FiltroStore = Depends(exigir_filtro_store)):
+    lista = await run_in_threadpool(store.tribunais)
     return [TribunalView(tribunal=t, rotulo=rotulo_do_tribunal(t), total=n) for t, n in lista]
 
 
 @router.post("/contagem", response_model=ContagemResponse)
-async def contar(body: ContagemRequest, store: FiltroStore | None = Depends(get_filtro_store)):
-    if store is None:
-        raise filtro_indisponivel()
-    try:
-        c = await run_in_threadpool(store.contar, body.dispositivos, body.expressoes, body.tribunais, body.fase)
-    except FiltroIndisponivel as exc:
-        raise filtro_indisponivel() from exc
+async def contar(body: ContagemRequest, store: FiltroStore = Depends(exigir_filtro_store)):
+    c = await run_in_threadpool(store.contar, body.dispositivos, body.expressoes, body.tribunais, body.fase)
     return ContagemResponse(
         total=c.total,
         dispositivos=[DispositivoView(codigo=d.codigo, rotulo=d.rotulo, total=d.total) for d in c.dispositivos],

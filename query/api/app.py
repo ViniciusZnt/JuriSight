@@ -38,14 +38,14 @@ from starlette.concurrency import run_in_threadpool
 from auth.db import ensure_schema
 from auth.store import Usuario, UsuarioStore
 from conversations.db import ensure_schema as ensure_conversas_schema
-from conversations.store import ConversaStore
+from conversations.store import ConversaNaoEncontradaError, ConversaStore
 from indexing.lexical.bm25_builder import BM25Builder
 from indexing.vector_store.qdrant_store import QdrantStore
 from processing.embeddings.poly_vector import PolyVectorEmbedder
 from query.api.auth_routes import get_current_user, router as auth_router
-from query.api.conversa_routes import router as conversa_router
+from query.api.conversa_routes import router as conversa_router, tratar_conversa_nao_encontrada
 from query.api.filtros_routes import (
-    MAX_FILTROS, MAX_TEXTO, MAX_TRIBUNAIS, DispositivoView, ExpressaoView, filtro_indisponivel, get_filtro_store,
+    MAX_FILTROS, MAX_TEXTO, MAX_TRIBUNAIS, DispositivoView, ExpressaoView, get_filtro_store, tratar_filtro_indisponivel,
     router as filtros_router,
 )
 from query.enrichment import pdf_extractor, query_builder
@@ -105,6 +105,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="JuriSight API", lifespan=lifespan)
+app.add_exception_handler(FiltroIndisponivel, tratar_filtro_indisponivel)
+app.add_exception_handler(ConversaNaoEncontradaError, tratar_conversa_nao_encontrada)
 
 # Falha alto na subida, não em produção sob ataque: /auth/* autentica via cookie
 # httpOnly (query/api/auth_routes.py), e a única coisa que impede qualquer site
@@ -374,12 +376,9 @@ async def query(
     ids: list[str] | None = None
     if tem_filtro_restrito(body.estrutura):
         if filtro_store is None:
-            raise filtro_indisponivel()
-        try:
-            ids = await run_in_threadpool(filtro_store.elegiveis, body.estrutura.dispositivos, body.estrutura.expressoes,
-                                       body.estrutura.tribunais, body.estrutura.fase)
-        except FiltroIndisponivel as exc:
-            raise filtro_indisponivel() from exc
+            raise FiltroIndisponivel()
+        ids = await run_in_threadpool(filtro_store.elegiveis, body.estrutura.dispositivos, body.estrutura.expressoes,
+                                      body.estrutura.tribunais, body.estrutura.fase)
         if not ids:
             return []
     cards = await _buscar_cards(body, hybrid, retriever, reranker, ids)

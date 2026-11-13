@@ -25,7 +25,7 @@ from pathlib import Path
 from typesafe_sdk import TypeSafeError
 
 from scraper.provimento_jev import (
-    MODELO_PADRAO,
+    modelo_configurado,
     TOKENS_POR_ACORDAO,
     ClassificadorJev,
     validar_modelo,
@@ -106,7 +106,7 @@ def _nada(*_):
 
 
 def _modelo(classificador) -> str:
-    return classificador.model if classificador else os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
+    return classificador.model if classificador else modelo_configurado()
 
 
 def classificar(
@@ -171,7 +171,7 @@ def mudancas(linhas: list, confianca_min: float) -> list[tuple[str, str, str]]:
 def aplicar(store, confianca_min: float, confirmar: bool) -> dict:
     """Calcula as mudanças do Jev sobre `documentos.provimento`; só grava com `confirmar`.
     `linhas == 0`: nenhuma classificação para o modelo atual."""
-    linhas = store.linhas(os.getenv("TYPESAFE_MODEL", MODELO_PADRAO), perguntas_sha())
+    linhas = store.linhas(modelo_configurado(), perguntas_sha())
     muda = mudancas(linhas, confianca_min)
     abaixo = [l for l in linhas if l.confianca_resultado < confianca_min]
     abaixo_muda = sum(para_provimento(l.resultado).value != l.provimento_atual for l in abaixo)
@@ -189,7 +189,7 @@ def aplicar(store, confianca_min: float, confirmar: bool) -> dict:
 def _cmd_aplicar(args, store) -> int:
     r = aplicar(store, args.confianca_min, args.confirmar)
     if not r["linhas"]:
-        print(f"Nenhuma classificação para {os.getenv('TYPESAFE_MODEL', MODELO_PADRAO)}; rode `classificar` primeiro.")
+        print(f"Nenhuma classificação para {modelo_configurado()}; rode `classificar` primeiro.")
         return 1
     for transicao, n in r["transicoes"].items():
         print(f"{transicao}: {n}")
@@ -322,7 +322,7 @@ def main(
     if args.comando == "sincronizar":
         return _cmd_sincronizar(args, store or _construir_store(), qdrant)
     try:
-        validar_modelo(os.getenv("TYPESAFE_MODEL", MODELO_PADRAO))
+        validar_modelo(modelo_configurado())
     except ValueError as e:
         print(e, file=sys.stderr)
         return 2

@@ -109,89 +109,55 @@ class UsuarioStore:
         `usuarios_email_lower_idx`; tentamos o INSERT e traduzimos a `UniqueViolation`.
         """
         email = email.strip()
-        conn = psycopg.connect(self.database_url)
         try:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(_INSERT, (email, hashed_password, nome))
-                    row = cur.fetchone()
-                conn.commit()
-            except psycopg.errors.UniqueViolation:
-                conn.rollback()
-                raise EmailJaCadastradoError(email) from None
-        finally:
-            conn.close()
+            with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+                cur.execute(_INSERT, (email, hashed_password, nome))
+                row = cur.fetchone()
+        except psycopg.errors.UniqueViolation:
+            raise EmailJaCadastradoError(email) from None
         return _row_para_usuario(row)
 
     def get_by_email(self, email: str) -> Usuario | None:
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_SELECT_BY_EMAIL, (email.strip(),))
-                row = cur.fetchone()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_SELECT_BY_EMAIL, (email.strip(),))
+            row = cur.fetchone()
         return _row_para_usuario(row) if row else None
 
     def get_by_id(self, usuario_id: str) -> Usuario | None:
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_SELECT_BY_ID, (usuario_id,))
-                row = cur.fetchone()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_SELECT_BY_ID, (usuario_id,))
+            row = cur.fetchone()
         return _row_para_usuario(row) if row else None
 
     def update_perfil(
         self, usuario_id: uuid.UUID, *, telefone: str | None, oab: str | None, papel: str | None
     ) -> Usuario:
         """Grava telefone, OAB e papel; devolve o usuário atualizado."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_UPDATE_PERFIL, (telefone, oab, papel, usuario_id))
-                row = cur.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_UPDATE_PERFIL, (telefone, oab, papel, usuario_id))
+            row = cur.fetchone()
         return _row_para_usuario(row)
 
     def criar_redefinicao(self, usuario_id: uuid.UUID, token_hash: str, expira_em: datetime) -> bool:
         """Registra um link de redefinição. False se a conta já pediu um no último minuto."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_INSERT_REDEFINICAO, (usuario_id, token_hash, expira_em, usuario_id))
-                criado = cur.rowcount == 1
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_INSERT_REDEFINICAO, (usuario_id, token_hash, expira_em, usuario_id))
+            criado = cur.rowcount == 1
         return criado
 
     def consumir_redefinicao(self, token_hash: str) -> uuid.UUID | None:
         """Usa o link (se existe, não expirou e não foi usado) e invalida os outros links abertos
         da mesma conta. Devolve o id da conta, ou None."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_CONSUMIR_REDEFINICAO, (token_hash,))
-                row = cur.fetchone()
-                if row is not None:
-                    cur.execute(_INVALIDAR_REDEFINICOES, (row[0],))
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_CONSUMIR_REDEFINICAO, (token_hash,))
+            row = cur.fetchone()
+            if row is not None:
+                cur.execute(_INVALIDAR_REDEFINICOES, (row[0],))
         return row[0] if row else None
 
     def update_hashed_password(self, usuario_id: uuid.UUID, novo_hash: str) -> None:
         """Persiste um hash re-calculado (rehash-on-verify, ver
         `auth/password.py::verify_password`) — chamado no login quando o hash
         armazenado usava parâmetros/algoritmo desatualizados."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_UPDATE_HASHED_PASSWORD, (novo_hash, usuario_id))
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_UPDATE_HASHED_PASSWORD, (novo_hash, usuario_id))

@@ -610,7 +610,9 @@ def test_query_com_filtro_sem_store_503(client):
 def test_query_com_filtro_e_tabelas_ausentes_503(client):
     _busca_fake()
     app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(indisponivel=True)
-    assert client.post("/query", json=_FILTRO).status_code == 503
+    resp = client.post("/query", json=_FILTRO)
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."
 
 
 def test_query_sem_filtro_sem_store_funciona(client):

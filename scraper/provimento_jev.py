@@ -13,6 +13,13 @@ from typesafe_sdk import Choice, TypeSafeClient
 from scraper.schema import Provimento
 
 MODELO_PADRAO = "jev-1.13.0"
+
+
+def modelo_configurado() -> str:
+    """O modelo de `TYPESAFE_MODEL`, ou o padrão."""
+    return os.getenv("TYPESAFE_MODEL", MODELO_PADRAO)
+
+
 TAMANHO_DISPOSITIVO = 4000
 TAMANHO_EMENTA = 1500
 TOKENS_POR_ACORDAO = 1600
@@ -124,7 +131,7 @@ def validar_modelo(modelo: str) -> str:
 class ClassificadorJev:
     def __init__(self, client: TypeSafeClient | None = None, model: str | None = None):
         self.client = client or TypeSafeClient()
-        self.model = validar_modelo(model or os.getenv("TYPESAFE_MODEL", MODELO_PADRAO))
+        self.model = validar_modelo(model or modelo_configurado())
 
     def classificar(self, acordao: str | None, ementa: str | None) -> ClassificacaoProvimento:
         if not acordao or not acordao.strip():
