@@ -165,14 +165,14 @@ export function GuiaPage() {
               <span className={`inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-3 py-1.5 bg-white dark:bg-[#17171B] border border-[#DCE6F3] dark:border-[#2A3A4C] ${NAVY_TXT}`} style={{ fontSize: "13px", fontWeight: 600 }}>
                 <span className="rounded-full px-1.5 py-[1px] bg-[#EEF3FA] dark:bg-[#1A2A3C]" style={{ fontSize: "11.5px", fontWeight: 800 }}>{n}</span>{t}
               </span>
-              {i < arr.length - 1 && <Ic icon={ArrowRight} className="w-3.5 h-3.5 text-[#9AAAC0]" />}
+              {i < arr.length - 1 && <span className="hidden sm:inline-flex"><Ic icon={ArrowRight} className="w-3.5 h-3.5 text-[#9AAAC0]" /></span>}
             </span>
           ))}
         </nav>
 
         {/* Acervo */}
-        <section aria-label="O que o acervo cobre" className="relative overflow-hidden grid grid-cols-[auto_1fr] gap-4 sm:gap-[18px] items-center rounded-2xl px-5 py-5 mb-10 text-white bg-gradient-to-br from-[#1A3A5C] to-[#1F4670] shadow-[0_10px_24px_-12px_rgba(26,58,92,0.55)]">
-          <span className="grid place-items-center w-[54px] h-[54px] rounded-[14px] bg-white text-[#1A3A5C]"><Ic icon={Database} className="w-6 h-6" /></span>
+        <section aria-label="O que o acervo cobre" className="relative overflow-hidden grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-[18px] items-center rounded-2xl px-5 py-5 mb-10 text-white bg-gradient-to-br from-[#1A3A5C] to-[#1F4670] shadow-[0_10px_24px_-12px_rgba(26,58,92,0.55)]">
+          <span className="hidden sm:grid place-items-center w-[54px] h-[54px] rounded-[14px] bg-white text-[#1A3A5C]"><Ic icon={Database} className="w-6 h-6" /></span>
           <div className="min-w-0">
             <div className="uppercase tracking-[0.08em] text-[#B9CDE6]" style={{ fontSize: "11.5px", fontWeight: 700 }}>Antes de começar · o que o acervo cobre</div>
             <div className="mt-0.5" style={{ fontSize: "15.5px" }}>
@@ -286,7 +286,7 @@ export function GuiaPage() {
                 [Sparkles, "A IA pode errar", "Na extração dos campos, no resumo e na indicação de favorável/desfavorável."],
                 [BookOpen, "Não substitui a leitura", "Confira a decisão inteira antes de usá-la numa peça."],
               ] as const).map(([icon, t, d]) => (
-                <div key={t} className={`${CARD} flex gap-3 items-start p-4 border-l-4 border-l-[#A9781F] ${TXT}`} style={{ fontSize: "13.5px", lineHeight: 1.5 }}>
+                <div key={t} className={`${CARD} flex gap-3 items-start p-4 border-l-4 border-l-[#A9781F] dark:border-l-[#A9781F] ${TXT}`} style={{ fontSize: "13.5px", lineHeight: 1.5 }}>
                   <span className="grid place-items-center w-9 h-9 rounded-[10px] flex-none bg-[#FBF4E4] dark:bg-[#2A2312] text-[#A9781F] dark:text-[#D9B36A]"><Ic icon={icon} /></span>
                   <div><span className={`block mb-0.5 ${FORTE}`} style={{ fontSize: "14.5px", fontWeight: 750 }}>{t}</span>{d}</div>
                 </div>
