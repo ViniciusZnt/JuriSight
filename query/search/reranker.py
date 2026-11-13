@@ -35,6 +35,8 @@ class Reranker:
     def __init__(self, cache_dir: str = "./data/index/reranker_cache", ranker: Ranker | None = None) -> None:
         """Carrega o modelo (baixa na primeira vez). `ranker` é injetável em teste."""
         self._ranker = ranker or Ranker(model_name=MODEL_NAME, cache_dir=cache_dir)
+        # Criado uma vez: antes eram 8 threads criadas e destruídas a cada busca.
+        self._executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
 
     def rerank_scores(self, query: str, passagens: list[str]) -> list[float]:
         """Pontua cada passagem contra a query, na MESMA ordem de entrada (quem chama reordena).
@@ -47,5 +49,4 @@ class Reranker:
             resultado = self._ranker.rerank(RerankRequest(query=query, passages=[{"id": 0, "text": texto}]))
             return float(resultado[0]["score"])
 
-        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
-            return list(executor.map(pontuar_uma, passagens))
+        return list(self._executor.map(pontuar_uma, passagens))
