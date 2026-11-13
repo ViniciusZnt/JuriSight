@@ -39,4 +39,14 @@ describe("useFecharAoClicarFora", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(fechar).toHaveBeenCalledTimes(1);
   });
+
+  it("chama o `fechar` mais recente, sem refazer os listeners", () => {
+    const antigo = jest.fn();
+    const novo = jest.fn();
+    const { rerender } = render(<Caixa aberto fechar={antigo} />);
+    rerender(<Caixa aberto fechar={novo} />);
+    fireEvent.mouseDown(screen.getByText("fora"));
+    expect(antigo).not.toHaveBeenCalled();
+    expect(novo).toHaveBeenCalledTimes(1);
+  });
 });

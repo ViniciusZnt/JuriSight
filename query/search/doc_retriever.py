@@ -23,15 +23,16 @@ _COLUNAS_DO_CARD = {
 }
 
 
-def _colunas_enxutas() -> str:
-    """Mesma lista e MESMA ordem de COLUNAS_DOCUMENTO, com `NULL AS coluna` no lugar das que o
-    card não usa: _row_para_documento lê por índice e as lacunas viram os defaults do modelo."""
-    nomes = [c.strip() for c in COLUNAS_DOCUMENTO.split(",")]
-    return ", ".join(n if n in _COLUNAS_DO_CARD else f"NULL AS {n}" for n in nomes)
+# Mesma lista e MESMA ordem de COLUNAS_DOCUMENTO, com `NULL AS coluna` no lugar das que o card
+# não usa: _row_para_documento lê por índice e as lacunas viram os defaults do modelo.
+_COLUNAS_ENXUTAS = ", ".join(
+    n if n in _COLUNAS_DO_CARD else f"NULL AS {n}"
+    for n in (c.strip() for c in COLUNAS_DOCUMENTO.split(","))
+)
 
 
-_SELECT_BY_IDS = f"""
-SELECT {{colunas}}
+_SELECT_BY_IDS = """
+SELECT {colunas}
 FROM documentos
 WHERE id = ANY(%s::uuid[])
 """
@@ -62,7 +63,7 @@ class DocRetriever:
 
         # Conexão local: a instância é compartilhada entre threads.
         with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
-            colunas = COLUNAS_DOCUMENTO if completo else _colunas_enxutas()
+            colunas = COLUNAS_DOCUMENTO if completo else _COLUNAS_ENXUTAS
             cur.execute(_SELECT_BY_IDS.format(colunas=colunas), (documento_ids,))
             rows = cur.fetchall()
 

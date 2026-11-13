@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Scale,
@@ -196,13 +196,6 @@ export function SearchResultsPage() {
       ? `${dateFrom ? formatarData(dateFrom) : "…"} – ${dateTo ? formatarData(dateTo) : "…"}`
       : "Data";
 
-  const inPeriod = (dateStr: string | null) => {
-    if (!dateStr) return true; // documento sem data conhecida não é excluído pelo filtro de período
-    if (dateFrom && dateStr < dateFrom) return false;
-    if (dateTo && dateStr > dateTo) return false;
-    return true;
-  };
-
   const sortedResults = useMemo(() => {
     const por = sortBy === "date" ? "data" : "relevancia";
     const ordered = [...results].sort((a, b) => compareResultCards(a, b, por));
@@ -211,13 +204,18 @@ export function SearchResultsPage() {
 
   // desfecho, período e tribunal valem também para a faixa livre; o chip da base citada não (ele
   // vem das ementas da faixa restrita e esconderia toda a livre)
-  const passaFiltrosComuns = (d: (typeof results)[number]) =>
-    (filter === "all" || outcomeDe(d) === filter) && inPeriod(d.data_julgamento) && (!tribunal || d.tribunal === tribunal);
+  const passaFiltrosComuns = useCallback(
+    (d: (typeof results)[number]) => {
+      // documento sem data conhecida não é excluído pelo filtro de período
+      const noPeriodo = !d.data_julgamento || ((!dateFrom || d.data_julgamento >= dateFrom) && (!dateTo || d.data_julgamento <= dateTo));
+      return (filter === "all" || outcomeDe(d) === filter) && noPeriodo && (!tribunal || d.tribunal === tribunal);
+    },
+    [filter, dateFrom, dateTo, tribunal],
+  );
 
   const filteredResults = useMemo(
     () => sortedResults.filter((d) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- passaFiltrosComuns só lê estes estados
-    [sortedResults, filter, dateFrom, dateTo, tribunal, citacao, idsCitacao],
+    [sortedResults, passaFiltrosComuns, citacao, idsCitacao],
   );
 
   const contagemDesfecho = contarDesfechos(results);

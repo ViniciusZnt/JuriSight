@@ -7,8 +7,9 @@ import { emptyEstrutura, queryJurisprudencia, queryLivre } from "@/lib/api";
 const push = jest.fn();
 const loadVersion = jest.fn();
 const addVersion = jest.fn();
+let mockActiveId: string | null = null;
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push }), useSearchParams: () => new URLSearchParams("modo=manual") }));
-jest.mock("@/lib/conversations", () => ({ useConversations: () => ({ activeId: null, addVersion }) }));
+jest.mock("@/lib/conversations", () => ({ useConversations: () => ({ activeId: mockActiveId, addVersion }) }));
 jest.mock("@/lib/search-session", () => ({
   useSearchSession: () => ({
     estrutura: null, hasFile: false, fileName: null, pdfExtraido: null, aviso: null,
@@ -37,6 +38,7 @@ function pendente(mock: jest.Mock) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockActiveId = null;
 });
 
 test("Revisão: resposta que chega depois de sair da tela não cria versão nem navega", async () => {
@@ -50,6 +52,23 @@ test("Revisão: resposta que chega depois de sair da tela não cria versão nem 
   await new Promise((r) => setTimeout(r, 0));
 
   expect((queryJurisprudencia as jest.Mock).mock.calls[0][1].aborted).toBe(true);
+  expect(loadVersion).not.toHaveBeenCalled();
+  expect(push).not.toHaveBeenCalled();
+});
+
+test("Revisão: sair da tela durante o salvamento da versão não navega", async () => {
+  mockActiveId = "conversa-1";
+  (queryJurisprudencia as jest.Mock).mockResolvedValue([]);
+  let terminarSalvamento: (v: unknown) => void = () => {};
+  addVersion.mockReturnValue(new Promise((res) => (terminarSalvamento = res)));
+  const { unmount } = render(<EntityReviewPage />);
+  await userEvent.click(screen.getByRole("button", { name: /Buscar jurisprudências/ }));
+  await waitFor(() => expect(addVersion).toHaveBeenCalledTimes(1));
+
+  unmount();
+  terminarSalvamento({ numero: 1 });
+  await new Promise((r) => setTimeout(r, 0));
+
   expect(loadVersion).not.toHaveBeenCalled();
   expect(push).not.toHaveBeenCalled();
 });

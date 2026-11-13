@@ -45,9 +45,10 @@ foram removidos por isso no commit
 [`d2a6abe`](https://github.com/ViniciusZnt/JuriSight/commit/d2a6abe42fb54e134754d7aad6c1b2312c55ad38).
 Se súmulas e OJs entrarem no acervo, a hierarquia volta a fazer sentido.
 
-Custo: o LLM e o enriquecimento de query rodam **100% locais** (Ollama). Só os
-**embeddings** usam a OpenAI (`text-embedding-3-small`) — **~US$ 8 uma única vez**
-para indexar todo o corpus; por consulta, o custo é desprezível.
+Custo: o LLM e o enriquecimento de query rodam **100% locais** (Ollama). A OpenAI entra nos
+**embeddings** (`text-embedding-3-small`, **~US$ 8 uma única vez** para indexar o corpus) e na
+resposta curta (`/resposta`), que recebe só a estrutura revisada e as ementas públicas dos
+resultados, nunca o PDF; por consulta, o custo é desprezível.
 
 ---
 
@@ -505,7 +506,7 @@ um limite de memória conhecido:
   `query/search/pipeline.py`), não 50: a busca híbrida pede 5x esse número por canal, então o
   pool pesa também na busca.
 
-O porquê de cada número está nos docstrings desses arquivos.
+Os docstrings desses arquivos registram a decisão e o motivo; as medições que a sustentaram estão no histórico do git (`git log -p` nos mesmos arquivos).
 
 ---
 
