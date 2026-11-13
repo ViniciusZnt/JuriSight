@@ -486,55 +486,26 @@ acervo crescer, atualize `TOTAL_ACERVO` e as frases do guia.
 
 ## Escalabilidade
 
-**Migração ChromaDB → Qdrant concluída em 2026-09-13.** O ChromaDB era RAM-bound:
-o HNSW carregava o índice inteiro em memória, e com ~69k acórdãos (~470k pontos
-somando as duas coleções Poly-Vector) isso já travava numa máquina com RAM
-limitada ([docs](https://docs.trychroma.com/guides/deploy/performance)).
+O corpus tem ~69k acórdãos (~470k pontos somando as duas coleções do Qdrant). O ChromaDB
+original carregava o índice HNSW inteiro em RAM e travava nessa escala; hoje cada peça tem
+um limite de memória conhecido:
 
-O Qdrant (`indexing/vector_store/qdrant_store.py`) guarda os vetores brutos em
-disco (mmap, `VectorParams.on_disk=True` — a parte grande, ~2.4GB pra 400k
-pontos de 1536 dims). Troca localizada, como planejado: só o `ChromaStore`
-virou `QdrantStore` — `HybridSearch`, `query/api/app.py` e `indexing/run.py`
-não mudaram de lógica, só de import. A migração Chroma→Qdrant foi feita por
-`indexing/vector_store/migrate_chroma_to_qdrant.py` (removido; último estado em 1fb6d8a).
+- **Qdrant** (`indexing/vector_store/qdrant_store.py`): vetores brutos em disco via mmap
+  (`on_disk=True`, ~2.4GB para 400k pontos de 1536 dims). O grafo HNSW fica em RAM
+  (`on_disk=False`): em disco, cada busca fazia I/O a cada salto (80-125s). Quantização
+  escalar int8 mantém em RAM uma cópia ~4x menor dos vetores para a busca inicial; só os
+  candidatos finais são re-pontuados com o vetor original.
+- **BM25** (`indexing/lexical/bm25_builder.py`): `bm25s`, matriz esparsa carregada com
+  `mmap=True`. Trocou o `rank_bm25` (~7GB de dicts Python em RAM) e levou o backend a ~300MB.
+  Com o Qdrant acima, a mesma busca caiu de 80-330s para 3-5s.
+- **Re-ranking** (`query/search/reranker.py`): FlashRank (`ms-marco-MultiBERT-L-12`, ONNX, sem
+  PyTorch) reordena o pool do RRF. Uma chamada por passagem em 8 threads (a chamada única em
+  lote era super-linear) e passagens cortadas em 1200 caracteres (uma ementa de 60 mil
+  travava o lote). O pool é de 30 candidatos (`N_CANDIDATOS_PARA_RERANK`, em
+  `query/search/pipeline.py`), não 50: a busca híbrida pede 5x esse número por canal, então o
+  pool pesa também na busca.
 
-**Ajuste de 2026-09-28 — grafo HNSW em RAM + quantização.** A primeira versão
-também colocava o grafo HNSW em disco (`HnswConfigDiff.on_disk=True`), na
-teoria pra economizar RAM. Na prática, cada busca nova percorre o grafo fazendo
-I/O a disco a cada salto — medido nesta infra, 80-125s por busca. O grafo em si
-(só os links entre vizinhos) custa dezenas de MB pra 400k pontos — bem menos
-que os vetores — então voltou pra RAM (`on_disk=False`, o default do Qdrant).
-Também foi ligada quantização escalar int8 nas duas coleções: uma versão
-comprimida (~4x menor) de cada vetor fica em RAM pra busca inicial no grafo, e
-só os poucos candidatos finais são re-pontuados com o vetor original em disco
-— reduz ainda mais o I/O por busca. Resultado combinado (com a mudança do BM25
-abaixo): a mesma busca caiu de 80-330s para 3-5s.
-
-BM25 migrou de `rank_bm25` para `bm25s` (2026-09-28). O `rank_bm25` guardava um
-dict Python por documento — pra ~400k chunks isso media ~6-7GB desserializado
-em RAM no processo do backend, que numa máquina de 11GB empurrava o sistema
-inteiro pra swap (confirmado via `pswpin`/`pswpout` subindo durante as buscas
-lentas — o Qdrant ficava competindo com o swap pela banda de disco, daí os
-80-125s do parágrafo acima serem ainda piores na prática). `bm25s` guarda o
-índice como matriz esparsa CSC e carrega via `mmap=True`
-(`indexing/lexical/bm25_builder.py`) — fica em disco, paginado sob demanda,
-igual ao Qdrant já fazia com os vetores. RAM do processo do backend: de ~7.4GB
-para ~300MB.
-
-**Re-ranking pós-RRF (2026-10-04).** RRF funde bem o RANK de cada canal
-(Qdrant completo, Qdrant ementa, BM25), mas não lê o conteúdo — só a posição
-relativa. `query/search/reranker.py` adiciona um cross-encoder (FlashRank,
-`ms-marco-MultiBERT-L-12`, ONNX — sem PyTorch/Transformers de propósito, pra
-não pesar a RAM que o BM25 acabou de liberar) que pontua tese+ementa juntas e
-reordena o pool do RRF antes do corte final. Dois problemas de performance
-reais até ficar aceitável: (1) mandar todas as passagens num só
-`RerankRequest` tinha custo super-linear (~49s pra 50) — uma chamada por
-passagem, paralelizada em 8 threads, caiu pra ~5s; (2) uma única ementa-outlier
-(a base tem casos >60 mil caracteres) travava o lote inteiro — corrigido
-truncando a 1200 chars antes de reranquear. `N_CANDIDATOS_PARA_RERANK = 30`
-(não os 50 "de livro-texto"): a busca híbrida pede 5x esse número por canal,
-então o pool também pesa na busca, não só no re-ranking — 30 é o equilíbrio
-que manteve o re-ranking em si consistente (~2s) sem inflar demais a busca.
+O porquê de cada número está nos docstrings desses arquivos.
 
 ---
 
