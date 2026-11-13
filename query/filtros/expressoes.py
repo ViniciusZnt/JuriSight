@@ -15,6 +15,7 @@ _PARES = [("ais", "al"), ("ois", "ol"), ("res", "r"), ("zes", "z"), ("ns", "m")]
 
 
 def sem_acento(texto: str) -> str:
+    """Minúsculo e sem acento (NFD). Também usado por dispositivos.py; o BM25 usa NFKD, de propósito à parte."""
     t = unicodedata.normalize("NFD", texto.lower())
     return "".join(c for c in t if not unicodedata.combining(c))
 
