@@ -5,8 +5,10 @@ Data: 13/11/2026.
 ## Por quê
 
 Os campos `setor`, `cargo` e `empresa_ciente` são extraídos pela IA e aparecem na Revisão
-de Contexto, mas não entram na busca (nem semântica, nem BM25, nem filtro) nem na resposta
-da IA. Confundem o advogado e vão contra o guia de uso que está sendo escrito ("cada campo
+de Contexto, mas não entram na busca (nem semântica, nem BM25, nem filtro). Na resposta da
+IA só apareciam como parte do JSON da tese enviado ao modelo (`gerar_resposta`), sem papel
+próprio — correção feita na revisão final; a primeira versão deste texto dizia que não
+chegavam à resposta. Confundem o advogado e vão contra o guia de uso que está sendo escrito ("cada campo
 faz algo"). Decisão do Vinicius: **tirar de vez**.
 
 ## Abordagens
@@ -26,7 +28,8 @@ faz algo"). Decisão do Vinicius: **tirar de vez**.
 - Front: os três somem do tipo, dos valores padrão e da Revisão de Contexto.
 - Testes que citam os campos são ajustados.
 - README e docstrings citam a decisão: "removidos — não ajudam a achar jurisprudência; a
-  ciência da empresa é questão de mérito, que o advogado avalia na decisão" (mesma linha
+  ciência da empresa é questão de mérito, que o advogado avalia na decisão". Para o TCC:
+  "não entravam na busca; na resposta só apareciam como parte do JSON da tese" (mesma linha
   vai para o documento final do TCC, pelo Vinicius).
 
 ## Efeitos aceitos
