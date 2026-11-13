@@ -81,3 +81,19 @@ só têm rótulo se caírem nos 30 do híbrido. Compare-os por Judged@10 e nDCG@
 pareado com correção de **Holm**, Wilcoxon com Benjamini-Hochberg como checagem e IC95% por
 bootstrap (10.000 reamostragens, seed fixa). Como a correção depende de quantos contrastes
 entram (`m_holm` no JSON), **só cite p ajustado de uma run com todos os sistemas**.
+
+## Resultados medidos: latência por sistema
+
+Mediana / p95, em segundos, de um smoke em 5 teses; inclui a busca inteira, medida nesta
+máquina, sem GPU. Exclui o embedding repetido da OpenAI (ver "Sistemas"), então a latência
+em produção é um pouco maior.
+
+| Sistema | Latência (mediana / p95) |
+|---------|--------------------------|
+| S0 | 0,01 / 0,01 |
+| S1 | 0,36 / 1,48 |
+| S2 | 0,43 / 0,50 |
+| S3 | 3,14 / 3,62 |
+| S4 | 6,85 / 10,13 |
+| S5 | 5,66 / 6,71 |
+| S6 | 8,83 / 15,48 |
