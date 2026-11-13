@@ -19,7 +19,7 @@ class FakeDocRetriever:
     def __init__(self, docs: dict[str, DocumentoJuridico]):
         self._docs = docs
 
-    def fetch(self, ids):
+    def fetch(self, ids, completo=True):
         return {i: self._docs[i] for i in ids if i in self._docs}
 
 

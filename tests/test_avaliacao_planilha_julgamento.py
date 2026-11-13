@@ -204,7 +204,7 @@ def test_cli_exportar_filtra_corredores_e_pula_tese_vazia(cenario, tmp_path, mon
 
     class _Ret:
         def __init__(self, url): pass
-        def fetch(self, ids):
+        def fetch(self, ids, completo=True):
             buscados.extend(ids)
             return docs
 

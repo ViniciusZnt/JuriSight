@@ -109,7 +109,7 @@ def buscar(
     if marcar_canais:
         kwargs_busca["canais"] = canais
     rankings = hybrid.search(frase_tese, n_candidatos, bm25_query=bm25_query, **kwargs_busca)
-    docs = retriever.fetch([doc_id for doc_id, _ in rankings])
+    docs = retriever.fetch([doc_id for doc_id, _ in rankings], completo=False)  # só o que o card usa
 
     triplos = [(doc_id, docs[doc_id], score) for doc_id, score in rankings if doc_id in docs]
     if tem_filtro:

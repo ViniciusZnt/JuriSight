@@ -1,7 +1,7 @@
 """
 Doc Retriever.
 
-Busca os DocumentoJuridico COMPLETOS no PostgreSQL (source of truth) a partir dos
+Busca os DocumentoJuridico (completos, ou só o necessário ao card) no PostgreSQL (source of truth) a partir dos
 documento_id (UUID) que a busca híbrida devolveu.
 """
 import psycopg
@@ -15,8 +15,23 @@ COLUNAS_DOCUMENTO = """id, id_documento, tipo_documento, hierarquia_categoria, d
        cabecalho, ementa, relatorio, fundamentacao, acordao, votos,
        possui_ementa, referencia_legislativa, provimento, link_original"""
 
+# O que o card do /query e a reordenação (ementa) usam. As outras colunas — os textos longos
+# (relatório, fundamentação, acórdão, votos) à frente — não precisam sair do banco nesse caminho.
+_COLUNAS_DO_CARD = {
+    "id", "id_documento", "tipo_documento", "hierarquia_categoria", "numero_processo", "tribunal",
+    "sigla_classe", "relator", "turma", "data_julgamento", "ementa", "provimento", "link_original",
+}
+
+
+def _colunas_enxutas() -> str:
+    """Mesma lista e MESMA ordem de COLUNAS_DOCUMENTO, com `NULL AS coluna` no lugar das que o
+    card não usa: _row_para_documento lê por índice e as lacunas viram os defaults do modelo."""
+    nomes = [c.strip() for c in COLUNAS_DOCUMENTO.split(",")]
+    return ", ".join(n if n in _COLUNAS_DO_CARD else f"NULL AS {n}" for n in nomes)
+
+
 _SELECT_BY_IDS = f"""
-SELECT {COLUNAS_DOCUMENTO}
+SELECT {{colunas}}
 FROM documentos
 WHERE id = ANY(%s::uuid[])
 """
@@ -33,9 +48,11 @@ class DocRetriever:
         """
         self.database_url = database_url
 
-    def fetch(self, documento_ids: list[str]) -> dict[str, DocumentoJuridico]:
+    def fetch(self, documento_ids: list[str], completo: bool = True) -> dict[str, DocumentoJuridico]:
         """Busca os documentos pelos UUIDs e devolve um mapa id -> documento.
 
+        completo=False traz só o que o card e a reordenação usam (o resto fica no default do
+        modelo): para o /query, que descarta o texto integral dos ~30 candidatos.
 
         Input:  documento_ids — lista de UUIDs.
         Returns: {documento_id: DocumentoJuridico} apenas dos ids encontrados (não vem ordenado).
@@ -45,7 +62,8 @@ class DocRetriever:
 
         # Conexão local: a instância é compartilhada entre threads.
         with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
-            cur.execute(_SELECT_BY_IDS, (documento_ids,))
+            colunas = COLUNAS_DOCUMENTO if completo else _colunas_enxutas()
+            cur.execute(_SELECT_BY_IDS.format(colunas=colunas), (documento_ids,))
             rows = cur.fetchall()
 
         return {str(row[0]): _row_para_documento(row) for row in rows}

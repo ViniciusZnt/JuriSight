@@ -32,7 +32,7 @@ def _doc(ementa: str) -> DocumentoJuridico:
 
 
 class _FakeRetriever:
-    def fetch(self, ids):
+    def fetch(self, ids, completo=True):
         return {i: _doc(f"EMENTA {n}") for n, i in enumerate(IDS, start=1) if i in ids}
 
 
