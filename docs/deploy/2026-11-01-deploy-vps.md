@@ -94,7 +94,7 @@ o Caddy publica portas.
 | `deploy/Caddyfile` | `{$DOMINIO}`: `handle_path /api/*` → `api:8000`, o resto → `web:3000`, cabeçalhos de segurança (HSTS, `X-Content-Type-Options`, `Referrer-Policy`). |
 | `.env.production.example` | Lista das variáveis de produção, sem valores. |
 | `deploy/backup.sh` | `pg_dump` diário, guarda 7 dias em `/opt/backups`. |
-| `.github/workflows/ci.yml` | Em todo PR e push: `pytest` do backend (sem `tests/test_api_stress.py`), `jest` e `next build` do front. Em push na `main`, com os dois verdes, o job `deploy` entra na VPS por SSH e roda `git pull --ff-only` e `docker compose -f docker-compose.prod.yml up -d --build`. |
+| `.github/workflows/ci.yml` | Em todo PR e push: `pytest` do backend, `jest` e `next build` do front. Em push na `main`, com os dois verdes, o job `deploy` entra na VPS por SSH e roda `git pull --ff-only` e `docker compose -f docker-compose.prod.yml up -d --build`. |
 
 Pronto quando: `docker compose -f docker-compose.prod.yml up --build` sobe tudo nesta máquina e
 `https://localhost` abre o app (o teste local usa o certificado interno do Caddy).

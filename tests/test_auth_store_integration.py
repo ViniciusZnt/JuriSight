@@ -15,9 +15,7 @@ e limpa só as linhas que ele mesmo inseriu ao final (nunca faz DROP/TRUNCATE �
 essa tabela pode ter dados de outros testes/uso manual rodando em paralelo).
 
 Pulado automaticamente se DATABASE_URL não estiver definida ou o Postgres não
-responder — mesmo espírito de tests/test_api_stress.py (só roda contra infra
-real, sob demanda), não faz parte do `uv run pytest` "padrão" que o resto da
-suíte espera rodar sem nenhuma infra.
+responder, então o `uv run pytest` padrão continua rodando sem nenhuma infra.
 """
 from __future__ import annotations
 

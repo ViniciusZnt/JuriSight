@@ -298,7 +298,7 @@ pull request e em todo push na `main`:
 
 | Job | O que faz |
 |-----|-----------|
-| `backend` | Instala com `uv sync --frozen` e roda `uv run pytest`, sem `tests/test_api_stress.py`, que faz requisições ao portal da Justiça do Trabalho |
+| `backend` | Instala com `uv sync --frozen` e roda `uv run pytest -q` |
 | `frontend` | `pnpm install --frozen-lockfile`, `pnpm test` (Jest) e `pnpm build` |
 | `deploy` | Só em push na `main`, com os dois jobs verdes: atualiza a VPS por SSH (ver `docs/deploy/2026-11-01-deploy-vps.md`) |
 
