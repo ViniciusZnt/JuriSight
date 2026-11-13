@@ -8,7 +8,8 @@ exigem sessão (cookie httpOnly, `auth_routes.get_current_user`), exceto /health
   - POST /query           — busca híbrida; com dispositivos ou expressões, só devolve
                             decisões que cumprem todos (faixa "restrita").
   - POST /query/livre     — a mesma busca sem os filtros restritos (faixa "livre").
-  - POST /query/explicacao, POST /resposta — explicação e resposta curta (OpenAI).
+  - POST /query/explicacao — os textos que a busca usa (só monta, sem OpenAI).
+  - POST /resposta        — resposta curta sobre as ementas (OpenAI).
   - GET  /document/{id}   — detalhe completo de um documento.
   - GET  /health          — liveness (público).
 Os routers de /auth, /conversas, /provimento e /filtros vêm de seus próprios módulos.
