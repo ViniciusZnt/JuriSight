@@ -35,6 +35,12 @@ NOME_TESE_ID = "tese_id"
 COL_PAR, COL_NUM, COL_PROCESSO, COL_LINK, COL_EMENTA, COL_FUND, COL_NOTA, COL_STANCE, COL_COMENT = range(1, 10)
 LINHA_CABECALHO = 8
 LINHA_INICIAL = LINHA_CABECALHO + 1
+# Planilha de coleta (avaliacao/planilha_coleta.py): uma tese diferente por linha, sem a
+# fundamentação; o e-mail fica em B2 da aba de instruções.
+ABA_COLETA = "Julgamento"
+ABA_INSTRUCOES_COLETA = "Instruções"
+LINHA_CABECALHO_COLETA = 1
+COL_NOTA_COLETA, COL_STANCE_COLETA = 6, 7
 CHARS_DISPOSITIVO = 1500
 CHARS_FUNDAMENTACAO = 3000
 
@@ -216,25 +222,31 @@ def _nota(v) -> int | None:
 
 
 def _ler(caminho):
-    """(email, tese_id, validas, puladas[(linha, motivo)]) de um lote."""
+    """(email, tese_id, validas, puladas[(linha, motivo)]) de um arquivo. Na planilha de coleta,
+    cada linha é de uma tese e `tese_id` é None."""
     wb = load_workbook(caminho, data_only=True)
     try:
-        email = str(wb["Avaliador"]["B2"].value or "").strip().lower()
-        ws = wb["Avaliação"]
+        coleta = ABA_COLETA in wb.sheetnames
+        email = str(wb[ABA_INSTRUCOES_COLETA if coleta else "Avaliador"]["B2"].value or "").strip().lower()
+        ws = wb[ABA_COLETA if coleta else "Avaliação"]
     except KeyError as e:
         raise ValueError(f"{Path(caminho).name}: não parece um lote de julgamento (falta a aba {e}).") from e
     if not email or "@" not in email:
-        raise ValueError(f"{Path(caminho).name}: e-mail do avaliador ausente ou inválido (aba Avaliador, célula B2).")
-    nome = wb.defined_names.get(NOME_TESE_ID)
-    try:
-        tese_id = uuid.UUID((nome.attr_text or "").strip('"'))
-    except (AttributeError, ValueError) as e:
-        raise ValueError(f"{Path(caminho).name}: o arquivo não identifica a tese do lote.") from e
+        aba = ABA_INSTRUCOES_COLETA if coleta else "Avaliador"
+        raise ValueError(f"{Path(caminho).name}: e-mail do avaliador ausente ou inválido (aba {aba}, célula B2).")
+    tese_id = None
+    if not coleta:
+        nome = wb.defined_names.get(NOME_TESE_ID)
+        try:
+            tese_id = uuid.UUID((nome.attr_text or "").strip('"'))
+        except (AttributeError, ValueError) as e:
+            raise ValueError(f"{Path(caminho).name}: o arquivo não identifica a tese do lote.") from e
 
     validas, puladas, vistos, com_nota = [], [], set(), 0
-    for row in ws.iter_rows(min_row=LINHA_INICIAL):
+    for row in ws.iter_rows(min_row=(LINHA_CABECALHO_COLETA if coleta else LINHA_CABECALHO) + 1):
         linha = row[0].row
-        bruto_par, bruto_nota, bruto_stance = (row[c - 1].value for c in (COL_PAR, COL_NOTA, COL_STANCE))
+        colunas = (COL_PAR, COL_NOTA_COLETA, COL_STANCE_COLETA) if coleta else (COL_PAR, COL_NOTA, COL_STANCE)
+        bruto_par, bruto_nota, bruto_stance = (row[c - 1].value for c in colunas)
         if _vazio(bruto_par) and _vazio(bruto_nota):
             continue
         if _vazio(bruto_nota):
@@ -294,9 +306,10 @@ def importar_arquivo(store, caminho, rodada: int = 1, adjudicador: str | None = 
             f"({adjudicador or 'não definido'}); o arquivo é de {email}."
         )
     _avisar(caminho, puladas)
-    if not any(t.id == tese_id for t in store.listar_teses()):
+    teses = store.listar_teses()
+    if tese_id is not None and not any(t.id == tese_id for t in teses):
         raise ValueError(f"{Path(caminho).name}: a tese {tese_id} não existe no banco.")
-    pares_da_tese = {p.id for p in store.pares_da_tese(tese_id)}
+    pares_da_tese = {p.id for t in teses if tese_id in (None, t.id) for p in store.pares_da_tese(t.id)}
     motivos = Counter(m for _, m in puladas)
     gravadas = 0
     for par_id, nota, stance in validas:

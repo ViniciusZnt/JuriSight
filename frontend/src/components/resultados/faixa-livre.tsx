@@ -13,7 +13,7 @@ interface Props {
   passa: (d: ResultCard) => boolean;
 }
 
-/** Faixa "Busca livre (semântica)": fechada, busca só na primeira abertura. Não entra em
+/** Faixa "Busca livre (sem o filtro)": fechada, busca só na primeira abertura. Não entra em
  *  `resultados`, na conversa salva nem na resposta gerada. */
 export function FaixaLivre({ estrutura, excluir, passa }: Props) {
   const [aberta, setAberta] = useState(false);
