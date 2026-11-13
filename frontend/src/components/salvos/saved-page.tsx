@@ -4,15 +4,13 @@ import { useRouter } from "next/navigation";
 import { Bookmark, Scale, Calendar, FileText, Search, X } from "lucide-react";
 import { MetaItem } from "@/components/ui/meta-item";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
+import { formatarData } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
 
 /** Salvos — decisões marcadas pelo usuário (botão "Salvar" nos resultados e no detalhe do acórdão). */
 export function SavedPage() {
   const router = useRouter();
   const { saved, toggle } = useSaved();
-
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
     <div className="min-h-full bg-[#F7F7F9] dark:bg-[#0E0E11]">
@@ -68,7 +66,7 @@ export function SavedPage() {
                       <span>{d.court} — {d.chamber}</span>
                     </MetaItem>
                     <MetaItem icon={Calendar} compacto>
-                      <span>{formatDate(d.date)}</span>
+                      <span>{formatarData(d.date, "short")}</span>
                     </MetaItem>
                     <MetaItem icon={FileText} compacto>
                       <span className="font-mono">{d.processNumber}</span>
