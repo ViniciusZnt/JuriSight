@@ -290,11 +290,19 @@ export function EntityReviewPage() {
 
   const entidadesConfirmadas = data.agente_nocivo.length + data.violacoes.length + data.normas.length + data.dispositivos.length + data.expressoes.length;
 
+  // Sair da tela com a busca em andamento cancela a requisição: a resposta não deve criar
+  // versão nem levar o usuário aos resultados depois que ele foi para outro lugar.
+  const busca = useRef<AbortController | null>(null);
+  useEffect(() => () => busca.current?.abort(), []);
+
   const buscar = async () => {
     setError(null);
     setSubmitting(true);
+    busca.current?.abort();
+    const controle = (busca.current = new AbortController());
     try {
-      const resultados = await queryJurisprudencia({ estrutura: data });
+      const resultados = await queryJurisprudencia({ estrutura: data }, controle.signal);
+      if (controle.signal.aborted) return;
       persistEstrutura(data);
       const snapshot = { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados };
       // Cada busca bem-sucedida vira uma versão NOVA (V1 na 1ª vez, V2 ao "Refinar
@@ -306,6 +314,7 @@ export function EntityReviewPage() {
       loadVersion(versao);
       router.push("/resultados");
     } catch (err) {
+      if (controle.signal.aborted) return;
       console.error("Falha em /query:", err);
       setError(
         err instanceof ApiError

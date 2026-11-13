@@ -188,9 +188,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** Chamada com corpo JSON (POST ou PATCH). */
-function enviarJson<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+function enviarJson<T>(path: string, method: "POST" | "PATCH", body: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(path, {
     method,
+    signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -206,13 +207,13 @@ export async function enrich(params: { pdf?: File | null; intencao?: string | nu
 }
 
 /** POST /query — busca híbrida (RRF) sobre a EstruturaArgumentativa revisada. */
-export async function queryJurisprudencia(body: QueryRequestBody): Promise<ResultCard[]> {
-  return enviarJson<ResultCard[]>("/query", "POST", body);
+export async function queryJurisprudencia(body: QueryRequestBody, signal?: AbortSignal): Promise<ResultCard[]> {
+  return enviarJson<ResultCard[]>("/query", "POST", body, signal);
 }
 
 /** POST /query/livre — a mesma busca, sem o filtro restrito (faixa "livre"). */
-export async function queryLivre(body: QueryRequestBody): Promise<ResultCard[]> {
-  return enviarJson<ResultCard[]>("/query/livre", "POST", body);
+export async function queryLivre(body: QueryRequestBody, signal?: AbortSignal): Promise<ResultCard[]> {
+  return enviarJson<ResultCard[]>("/query/livre", "POST", body, signal);
 }
 
 export interface SugestaoDispositivo {
