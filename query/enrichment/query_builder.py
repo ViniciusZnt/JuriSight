@@ -19,8 +19,7 @@ from query.enrichment.schema import EstruturaArgumentativa
 def termos_bm25(estrutura: EstruturaArgumentativa) -> list[str]:
     """Os termos exatos do caso que vão para o BM25, na ordem, sem vazios.
 
-    Exclui tese_central (frase natural, não agrega termo exato) e setor/cargo
-    (baixo valor discriminativo para achar jurisprudência alinhada). A tela de
+    Exclui tese_central (frase natural, não agrega termo exato). A tela de
     resultados mostra esta lista em "Como esta busca foi feita".
 
     Input:  estrutura — EstruturaArgumentativa revisada pelo usuário.

@@ -10,10 +10,8 @@ import {
   ArrowRight,
   Sparkles,
   FileText,
-  Check,
   Pencil,
   AlertTriangle,
-  HelpCircle,
   PencilLine,
   Loader2,
 } from "lucide-react";
@@ -279,55 +277,6 @@ function InlineEdit({
   );
 }
 
-function BooleanToggle({ value, onChange }: { value: boolean | null; onChange: (v: boolean | null) => void }) {
-  const options: {
-    label: string;
-    val: boolean | null;
-    active: string;
-    icon: React.ReactNode;
-  }[] = [
-    {
-      label: "Sim",
-      val: true,
-      active: "bg-[#EDF7F2] dark:bg-[#122A1E] border-[#BDE0CF] dark:border-[#1E4A34] text-[#1A5C3A] dark:text-[#6FCB9A]",
-      icon: <Check style={{ width: "10px", height: "10px" }} strokeWidth={2.5} />,
-    },
-    {
-      label: "Não",
-      val: false,
-      active: "bg-[#FBF0F0] dark:bg-[#2A1517] border-[#E8C2C2] dark:border-[#4A2529] text-[#7A1A1A] dark:text-[#E08A93]",
-      icon: <X style={{ width: "10px", height: "10px" }} strokeWidth={2.5} />,
-    },
-    {
-      label: "Não identificado",
-      val: null,
-      active: "bg-[#F5F5F8] dark:bg-[#1C1C21] border-[#DCDCE8] dark:border-[#2A2A32] text-[#6A6A7A] dark:text-[#9494A2]",
-      icon: <HelpCircle style={{ width: "10px", height: "10px" }} strokeWidth={2} />,
-    },
-  ];
-
-  return (
-    <div className="flex gap-1.5 flex-wrap">
-      {options.map((opt) => {
-        const active = value === opt.val;
-        return (
-          <button
-            key={String(opt.val)}
-            onClick={() => onChange(opt.val)}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-all ${
-              active ? opt.active : "border-[#DCDCE8] dark:border-[#2A2A32] text-[#9090A8] dark:text-[#7C7C88]"
-            }`}
-            style={{ fontWeight: active ? 600 : 400, fontSize: "13.8px" }}
-          >
-            {opt.icon}
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function FieldCard({ children }: { children: React.ReactNode }) {
   return <div className="p-4 rounded-xl border border-[#E8E8F0] dark:border-[#26262C] bg-[#FAFBFF] dark:bg-[#15191F]">{children}</div>;
 }
@@ -501,20 +450,6 @@ export function EntityReviewPage() {
               <TagList items={data.violacoes} onChange={set("violacoes")} colorScheme={colors.green} placeholder="Nova conduta…" />
             </FieldCard>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <FieldCard>
-                <FieldLabel label="Setor da empresa" description="Ramo de atividade" />
-                <InlineEdit value={data.setor} onChange={set("setor")} placeholder="Ex: metalurgia" />
-              </FieldCard>
-              <FieldCard>
-                <FieldLabel label="Função do trabalhador" description="Cargo ou atividade exercida" />
-                <InlineEdit value={data.cargo} onChange={set("cargo")} placeholder="Ex: operador de prensa" />
-              </FieldCard>
-              <FieldCard>
-                <FieldLabel label="A empresa sabia?" description="Ciência da empresa sobre o fato ou o risco" />
-                <BooleanToggle value={data.empresa_ciente} onChange={set("empresa_ciente")} />
-              </FieldCard>
-            </div>
 
             <div>
               <FieldLabel label="Tese central" description="Frase que resume o argumento principal" />

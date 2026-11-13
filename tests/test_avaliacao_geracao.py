@@ -22,9 +22,6 @@ TESE_JSON = {
     "agente_nocivo": ["ruído"],
     "violacoes": ["EPI sem fiscalização"],
     "normas": ["NR-15"],
-    "empresa_ciente": True,
-    "setor": "indústria",
-    "cargo": "operador",
     "tese_central": "O fornecimento de EPI não elide a insalubridade sem fiscalização.",
 }
 
