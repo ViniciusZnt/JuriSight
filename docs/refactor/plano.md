@@ -239,19 +239,19 @@ Cada uma com teste quando o comportamento puder ser observado. Nenhuma muda resu
 
 ## Otimizações encontradas
 
-| O quê | Onde | Faço? |
+| O quê | Onde | Status (13/11) |
 |---|---|---|
-| A conexão Postgres nunca é fechada | `indexing/doc_source.py` | **sim** (Lote 4) |
-| O FlashRank é carregado sem uso | `avaliacao/contexto.py` | **sim** (Lote 4) |
-| Um modelo de centenas de MB é baixado à toa | `run.sh` (`nomic-embed-text`) | **sim** (Lote 1) |
-| Um `ThreadPoolExecutor` é criado a cada busca | `query/search/reranker.py` | não: ganho de ms e mexe no caminho da busca às vésperas da review |
-| As consultas de expressões e dispositivos do `/enrich` rodam em sequência | `query/api/app.py` | não: ganho de ~0,3 s, e mexer com `asyncio.gather` complica a explicação |
-| A `/query` busca o documento completo para montar o card | `doc_retriever.fetch` | não agora: muda a consulta principal; anotar como melhoria |
-| O Jev abre uma conexão por acórdão | `provimento_jev_db.py` | não: só roda no Dagster, fora do horário |
-| `resumoTopo` e `filteredResults` são recalculados a cada render | `search-results-page.tsx` | não: imperceptível com ≤ 150 cards |
-| `key={idx}` em `TagList` | `entity-review-page.tsx` | **é bug, não otimização**. Pode reaproveitar o estado do item errado ao remover. Proponho corrigir à parte, com teste. |
-| `/query` sem `AbortController` | `lib/api.ts` | anotar: uma busca antiga pode sobrescrever a nova se o usuário disparar duas seguidas |
-| Remoção de acentos com NFKD em 5 cópias | `bm25_builder`, `provimento`, `html_extractor`, `dispositivos`, `expressoes` | não: mexe na tokenização do BM25, que precisa ser idêntica ao indexar e ao buscar |
+| A conexão Postgres nunca é fechada | `indexing/doc_source.py` | aprovado: Lote 4 |
+| O FlashRank é carregado sem uso | `avaliacao/contexto.py` | aprovado: Lote 4 |
+| Um modelo de centenas de MB é baixado à toa | `run.sh` (`nomic-embed-text`) | aprovado: Lote 1 |
+| Um `ThreadPoolExecutor` é criado a cada busca | `query/search/reranker.py` | aprovado: Lote 9 |
+| As consultas de expressões e dispositivos do `/enrich` rodam em sequência | `query/api/app.py` | aprovado: Lote 9 |
+| A `/query` busca o documento completo para montar o card | `doc_retriever.fetch` | aprovado: Lote 9 |
+| O Jev abre uma conexão por acórdão | `provimento_jev_db.py` | aprovado: Lote 9 |
+| `resumoTopo` e `filteredResults` são recalculados a cada render | `search-results-page.tsx` | aprovado: Lote 9 |
+| `key={idx}` em `TagList` | `entity-review-page.tsx` | aprovado: Lote 9 |
+| `/query` sem `AbortController` | `lib/api.ts` | aprovado: Lote 9 |
+| Remoção de acentos com NFKD em 5 cópias | `bm25_builder`, `provimento`, `html_extractor`, `dispositivos`, `expressoes` | aprovado: Lote 9 (o BM25 fica fora; ver Task 9) |
 
 ## Achados fora da redução, que valem saber para a review
 
