@@ -15,9 +15,6 @@ def _estrutura(**kwargs) -> EstruturaArgumentativa:
         agente_nocivo=["benzeno"],
         violacoes=["ausência de EPI eficaz"],
         normas=["NR-15", "CLT art. 192"],
-        empresa_ciente=True,
-        setor="metalurgia",
-        cargo="operador de prensa",
         tese_central="A empresa tinha ciência do risco e não forneceu proteção adequada.",
     )
     base.update(kwargs)
@@ -41,11 +38,9 @@ def test_bm25_query_inclui_rotulos_e_expressoes():
     assert "CLT art. 192" in q and "adicional noturno" in q
 
 
-def test_build_bm25_query_exclui_tese_central_e_setor_cargo():
+def test_build_bm25_query_exclui_tese_central():
     q = build_bm25_query(_estrutura())
     assert "tinha ciência do risco" not in q
-    assert "metalurgia" not in q
-    assert "operador de prensa" not in q
 
 
 def test_build_bm25_query_estrutura_vazia_devolve_string_vazia():

@@ -41,8 +41,7 @@ def _enricher(respostas: list[str]) -> tuple[QueryEnricher, _FakeOllamaClient]:
 _JSON_COMPLETO = (
     '{"pedido_principal": "adicional de insalubridade grau máximo", '
     '"agente_nocivo": ["benzeno"], "violacoes": ["ausência de EPI eficaz"], '
-    '"normas": ["NR-15"], "empresa_ciente": true, "setor": "metalurgia", '
-    '"cargo": "operador de prensa", '
+    '"normas": ["NR-15"], '
     '"tese_central": "A empresa tinha ciência do risco."}'
 )
 
@@ -80,7 +79,6 @@ def test_extract_estrutura_retorna_estrutura_validada():
     assert isinstance(estrutura, EstruturaArgumentativa)
     assert estrutura.pedido_principal == "adicional de insalubridade grau máximo"
     assert estrutura.agente_nocivo == ["benzeno"]
-    assert estrutura.empresa_ciente is True
 
 
 def test_extract_estrutura_pede_schema_sem_campos_de_filtro_restrito():
@@ -113,8 +111,6 @@ def test_extract_estrutura_campos_ausentes_caem_no_default_rn05():
 
     assert estrutura.pedido_principal == "algo"
     assert estrutura.agente_nocivo == []
-    assert estrutura.empresa_ciente is None
-    assert estrutura.setor is None
 
 
 def test_extract_estrutura_propaga_erro_sem_chamar_llm_quando_nada_a_enriquecer():
@@ -168,3 +164,18 @@ def test_ia_nao_preenche_tribunal_nem_fase():
     propriedades = fake.calls[0]["format"]["properties"]
     assert "tribunais" not in propriedades and "fase" not in propriedades
     assert extracao.estrutura.tribunais == [] and extracao.estrutura.fase is None
+
+
+def test_estrutura_ignora_campos_removidos():
+    """Setor, cargo e empresa_ciente foram removidos: conversas antigas que ainda os têm
+    abrem sem erro, e o llama não é mais pedido a preenchê-los."""
+    from query.enrichment.query_enrichment import _SaidaLLM
+
+    e = EstruturaArgumentativa.model_validate(
+        {"tese_central": "x", "setor": "metalurgia", "cargo": "operador", "empresa_ciente": True}
+    )
+    assert e.tese_central == "x"
+    assert not any(hasattr(e, c) for c in ("setor", "cargo", "empresa_ciente"))
+    assert "setor" not in e.model_dump()
+    props = _SaidaLLM.model_json_schema()["properties"]
+    assert not {"setor", "cargo", "empresa_ciente"} & set(props)

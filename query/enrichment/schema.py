@@ -18,6 +18,11 @@ class EstruturaArgumentativa(BaseModel):
 
     Todo campo tem default (string vazia, lista vazia ou None) — se o LLM não
     encontrar um valor no texto, o campo fica no default, nunca inventado (RN05).
+
+    Setor, cargo e empresa_ciente (previstos no RF02) foram removidos: não ajudam a achar
+    jurisprudência, e a ciência da empresa é questão de mérito, que o advogado avalia na
+    decisão. Conversas antigas que ainda os trazem abrem normalmente (chaves extras são
+    ignoradas).
     """
 
     pedido_principal: str = ""
@@ -28,7 +33,4 @@ class EstruturaArgumentativa(BaseModel):
     expressoes: list[str] = Field(default_factory=list)  # expressões obrigatórias — filtro restrito
     tribunais: list[str] = Field(default_factory=list)  # ex.: TRT4 (OU entre eles) — filtro restrito
     fase: Literal["conhecimento", "execucao", "outras"] | None = None  # filtro restrito
-    empresa_ciente: bool | None = None
-    setor: str | None = None
-    cargo: str | None = None
     tese_central: str = ""

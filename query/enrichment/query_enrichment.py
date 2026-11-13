@@ -8,7 +8,7 @@ que chama um LLM para ENTENDER o caso; o Query Builder, depois, só monta string
 deterministicamente a partir do resultado.
 
 RN05: o LLM é instruído a nunca alucinar — campos não encontrados no texto devem
-vir null/lista vazia. A validação Pydantic de EstruturaArgumentativa (todo campo
+vir vazios. A validação Pydantic de EstruturaArgumentativa (todo campo
 com default) é a segunda camada de defesa disso.
 """
 from __future__ import annotations
@@ -40,9 +40,6 @@ _EXEMPLO_JSON = (
     '"agente_nocivo": ["benzeno"], '
     '"violacoes": ["ausência de EPI eficaz"], '
     '"normas": ["NR-15", "CLT art. 192"], '
-    '"empresa_ciente": true, '
-    '"setor": "metalurgia", '
-    '"cargo": "operador de prensa", '
     '"tese_central": "A empresa tinha ciência do risco e não forneceu proteção adequada.", '
     '"expressoes_chave": ["adicional de insalubridade", "equipamento de proteção individual"], '
     '"dispositivos_relacionados": ["CLT art. 189", "CLT art. 191"]}'
@@ -59,9 +56,6 @@ Responda SEMPRE em JSON válido, com exatamente estes campos:
 - normas (lista de strings): normas jurídicas citadas no texto, sempre com a lei ou o \
 tribunal (ex.: "NR-15", "CLT art. 192", "ADCT art. 10, II, b", "Súmula 85 do TST"). \
 Só as que aparecem no texto.
-- empresa_ciente (true, false ou null): há evidência de que a empresa sabia do fato ou do risco?
-- setor (string ou null): ramo de atividade da empresa.
-- cargo (string ou null): cargo ou função do trabalhador.
 - tese_central (string): uma frase que resume o argumento principal do caso.
 - expressoes_chave (lista de strings): de 1 a 3 expressões jurídicas curtas (2 a 4 palavras) \
 que nomeiam o tema do caso como os tribunais escrevem nas ementas (ex.: "horas extras", \
@@ -74,9 +68,9 @@ que você tem certeza; senão, lista vazia.
 
 REGRAS IMPORTANTES:
 - NUNCA invente informação que não esteja no texto.
-- Se um campo não puder ser determinado a partir do texto, use null (para \
-empresa_ciente/setor/cargo) ou lista vazia (para agente_nocivo/violacoes/normas). \
-expressoes_chave NUNCA fica vazia: ela nomeia o tema, não é um fato do caso. Não deixe de responder um campo — na dúvida, prefira null/lista vazia a adivinhar.
+- Se um campo não puder ser determinado a partir do texto, use string vazia (para \
+pedido_principal/tese_central) ou lista vazia (para agente_nocivo/violacoes/normas). \
+expressoes_chave NUNCA fica vazia: ela nomeia o tema, não é um fato do caso. Não deixe de responder um campo — na dúvida, prefira vazio a adivinhar.
 
 Exemplo:
 Texto: {_EXEMPLO_CASO}

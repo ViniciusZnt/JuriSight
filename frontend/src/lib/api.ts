@@ -37,9 +37,6 @@ export interface EstruturaArgumentativa {
   agente_nocivo: string[];
   violacoes: string[];
   normas: string[];
-  empresa_ciente: boolean | null;
-  setor: string | null;
-  cargo: string | null;
   tese_central: string;
   /** Filtro restrito: códigos de dispositivos legais e expressões que a decisão TEM de ter. */
   dispositivos: string[];
@@ -61,9 +58,6 @@ export function emptyEstrutura(): EstruturaArgumentativa {
     agente_nocivo: [],
     violacoes: [],
     normas: [],
-    empresa_ciente: null,
-    setor: null,
-    cargo: null,
     tese_central: "",
     dispositivos: [],
     expressoes: [],
