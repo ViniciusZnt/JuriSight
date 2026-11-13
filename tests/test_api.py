@@ -14,8 +14,6 @@ autenticação (isso é tests/test_auth_routes.py), a autouse fixture abaixo
 substitui get_current_user por um usuário fake em TODO teste, sem precisar
 repetir isso em cada um.
 """
-import uuid
-
 import pytest
 from fastapi.testclient import TestClient
 
