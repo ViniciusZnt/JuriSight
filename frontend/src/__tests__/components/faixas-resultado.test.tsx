@@ -79,8 +79,8 @@ describe("faixas de resultado", () => {
     sessao.resultados = [card("a")];
     sessao.estrutura = emptyEstrutura();
     render(<SearchResultsPage />);
-    expect(screen.getByText(/Busca só semântica\. Para restringir, informe normas, expressões, tribunal ou fase na Revisão de Contexto\./)).toBeInTheDocument();
-    expect(screen.queryByText("Busca livre (semântica)")).not.toBeInTheDocument();
+    expect(screen.getByText(/Sem filtro restrito: a busca semântica e a por termos olharam o acervo inteiro\. Para restringir, informe normas, expressões, tribunal ou fase na Revisão de Contexto\./)).toBeInTheDocument();
+    expect(screen.queryByText("Busca livre (sem o filtro)")).not.toBeInTheDocument();
     expect(contarFiltros).not.toHaveBeenCalled();
   });
 
@@ -108,7 +108,7 @@ describe("faixas de resultado", () => {
     expect(within(resumo).getByText("Panorama da decisão mais relevante")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Filtro restrito" })).toBeInTheDocument();
     expect(screen.getByText(/Só entram decisões que citam todos os dispositivos/)).toBeInTheDocument();
-    expect(screen.queryByText(/Busca só semântica/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sem filtro restrito:/)).not.toBeInTheDocument();
   });
 
   it("sem contagem do acervo mostra o número de cards e o aviso, sem total antigo", async () => {
@@ -134,7 +134,7 @@ describe("faixas de resultado", () => {
     (queryLivre as jest.Mock).mockResolvedValue([card("z", { faixa: "livre" })]);
     render(<SearchResultsPage />);
     expect(queryLivre).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: /Busca livre \(semântica\)/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Busca livre \(sem o filtro\)/ }));
     expect(await screen.findByText("Ementa da decisão z")).toBeInTheDocument();
     expect(screen.getByText("Decisões parecidas, sem garantia de citar os dispositivos ou conter as expressões.")).toBeInTheDocument();
     expect(queryLivre).toHaveBeenCalledTimes(1);
@@ -146,7 +146,7 @@ describe("faixas de resultado", () => {
     sessao.estrutura = restrita;
     (queryLivre as jest.Mock).mockResolvedValue([card("a", { faixa: "livre" }), card("z", { faixa: "livre" })]);
     render(<SearchResultsPage />);
-    await userEvent.click(screen.getByRole("button", { name: /Busca livre \(semântica\)/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Busca livre \(sem o filtro\)/ }));
     await screen.findByText("Ementa da decisão z");
     expect(screen.getAllByText("Ementa da decisão a")).toHaveLength(1);
   });
@@ -167,7 +167,7 @@ describe("faixas de resultado", () => {
     (queryLivre as jest.Mock).mockResolvedValue([card("z", { faixa: "livre" })]);
     render(<SearchResultsPage />);
     await userEvent.click(screen.getByRole("button", { name: /Súmula 85 do TST/ }));
-    await userEvent.click(screen.getByRole("button", { name: /Busca livre \(semântica\)/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Busca livre \(sem o filtro\)/ }));
     expect(await screen.findByText("Ementa da decisão z")).toBeInTheDocument();
   });
 

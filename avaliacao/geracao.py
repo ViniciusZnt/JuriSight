@@ -12,6 +12,7 @@ from typing import Literal
 
 import psycopg
 from openai import OpenAI
+from pydantic import BaseModel
 
 from query.enrichment.schema import EstruturaArgumentativa
 from query.search.doc_retriever import COLUNAS_DOCUMENTO, _row_para_documento
@@ -118,6 +119,49 @@ def gerar_tese(
     if tese is None:
         raise RuntimeError("o modelo não devolveu uma tese válida (recusa ou saída inválida)")
     return tese
+
+
+class _TextoDaTese(BaseModel):
+    texto: str
+
+
+def gerar_tese_inspirada(
+    real: str, tema: str, lado: str, exemplos: list[str], client: OpenAI | None = None,
+) -> str:
+    """Escreve, em texto livre, uma tese NOVA do mesmo tema de uma tese real.
+
+    Não parte de um acórdão (a tese herdaria as palavras dele, o que favorece o BM25): a tese real
+    dá o tipo de problema, e `exemplos` (as outras teses reais) dão o jeito de escrever. `lado` é o
+    texto da lista da planilha ("A favor do reclamante (trabalhador)")."""
+    client = client or OpenAI()
+    amostra = "\n".join(f"- {e}" for e in exemplos)
+    limite = max(250, min(len(real), 500))  # as teses reais são anotações curtas, não petições
+    sistema = (
+        "Você é advogado trabalhista brasileiro e vai digitar em uma ferramenta de busca de "
+        "jurisprudência a tese de um caso seu. Recebe a tese de um colega, que só mostra o tema e o "
+        "tipo de dúvida que surge na prática, e escreve a tese de OUTRO caso. Regras:\n"
+        "- O caso tem de ser outro: outra profissão ou atividade e outro fato decisivo. Não basta "
+        "responder ao colega pelo lado contrário nem repetir o agente, o objeto ou a situação dele.\n"
+        f"- No máximo {limite} caracteres, em frases diretas, como uma anotação. Não é petição: nada de "
+        "\"Ademais\", \"Diante do exposto\", \"requer\" nem lista de verbas.\n"
+        "- Vocabulário da Justiça do Trabalho: a parte \"recorre\" (recurso ordinário), nunca "
+        "\"apela\" nem \"apelação\".\n"
+        "- Mantenha o gênero coerente do começo ao fim (Autor ou Autora); gestante é sempre a Autora.\n"
+        "- Só cite número de norma se for artigo da CLT que trata exatamente do ponto, ou se ela "
+        "estiver na tese do colega. Nunca cite anexo de NR, súmula ou OJ por conta própria.\n\n"
+        f"Jeito de escrever (teses de profissionais de verdade; imite o tom, não o conteúdo):\n{amostra}"
+    )
+    usuario = f"Tema: {tema}\nTese do colega:\n{real}\n\nEscreva a nova tese, {lado.lower()}."
+    resposta = client.chat.completions.parse(
+        model=os.getenv("OPENAI_GEN_MODEL", MODELO_GERACAO_PADRAO),
+        messages=[{"role": "system", "content": sistema}, {"role": "user", "content": usuario}],
+        response_format=_TextoDaTese,
+        temperature=0.7,
+    )
+    parsed = resposta.choices[0].message.parsed
+    if parsed is None or not parsed.texto.strip():
+        raise RuntimeError("o modelo não devolveu uma tese válida (recusa ou saída inválida)")
+    return parsed.texto.strip()
 
 
 def uuids_origem(database_url: str, docs) -> dict[str, str]:

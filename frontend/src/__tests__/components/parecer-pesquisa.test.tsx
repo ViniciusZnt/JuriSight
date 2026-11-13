@@ -56,6 +56,14 @@ describe("ParecerPesquisa", () => {
     expect(within(faixa).getByText("ausência de remuneração")).toBeInTheDocument();
   });
 
+  it("marcadores de semântica e termos nas cores da paleta", async () => {
+    renderParecer();
+    const sem = await screen.findByText("Busca semântica");
+    const ter = screen.getByText("Busca por termos");
+    expect(sem.querySelector("span")?.className).toContain("#B6A5F0");
+    expect(ter.querySelector("span")?.className).toContain("#5FCFC4");
+  });
+
   it("sem filtro restrito não mostra a coluna do filtro", async () => {
     renderParecer({ filtro: null });
     await screen.findByText("Busca semântica");

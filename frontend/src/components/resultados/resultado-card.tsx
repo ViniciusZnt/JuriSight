@@ -13,6 +13,7 @@ import { assuntoDoCard, ementaComCitacao, formatarData, matchedEntities, titleFr
 import { useSaved } from "@/lib/saved";
 import { copiarTexto } from "@/lib/utils";
 import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
+import { BUSCA } from "@/lib/cores-busca";
 
 interface Props {
   decision: ResultCard;
@@ -111,7 +112,7 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
               {decision.canais && decision.canais.length > 0 && (
                 <p className="mt-1.5 flex items-center gap-1.5 text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "12.6px" }}>
                   {decision.canais.map((c) => (
-                    <span key={c} className={`w-2 h-2 rounded-sm ${c === "semantica" ? "bg-[#6E8FB5]" : "bg-[#C47A2D]"}`} />
+                    <span key={c} className={`w-2 h-2 rounded-sm ${c === "semantica" ? BUSCA.semantica.ponto : BUSCA.termos.ponto}`} />
                   ))}
                   {origemDoCard(decision.canais)}
                 </p>

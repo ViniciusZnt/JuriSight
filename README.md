@@ -627,6 +627,24 @@ ssh -L 3001:localhost:3000 deploy@IP   # depois abra http://localhost:3001
 
 ---
 
+## Guia de uso
+
+A página `/guia` (botão **Como usar** no topo da tela inicial) explica, para quem nunca usou,
+o caminho de uma busca, o que cada campo da Revisão de Contexto faz e os limites do acervo.
+As três buscas têm cor própria em todo o app (guia, Revisão, painel "Como esta busca foi
+feita" e cartões), definida num lugar só, `frontend/src/lib/cores-busca.ts`:
+
+| Busca | Cor | Usa |
+|---|---|---|
+| Filtro restrito | marinho `#1A3A5C` | normas da lista, expressões obrigatórias, tribunal, fase |
+| Busca semântica | violeta `#6D4FC2` | Tese central (também ordena o resultado) |
+| Busca por termos | verde-água `#0E8A80` | Pedido, Fatos, Condutas, normas "só busca livre" |
+
+Os números do guia (69.349 acórdãos, 96% de 2025, 25 tribunais) são fixos no texto; se o
+acervo crescer, atualize `TOTAL_ACERVO` e as frases do guia.
+
+---
+
 ## Stack
 
 | Tecnologia         | Função                                      |

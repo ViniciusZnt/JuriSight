@@ -13,7 +13,7 @@ interface Props {
   passa: (d: ResultCard) => boolean;
 }
 
-/** Faixa "Busca livre (semântica)": fechada, busca só na primeira abertura. Não entra em
+/** Faixa "Busca livre (sem o filtro)": fechada, busca só na primeira abertura. Não entra em
  *  `resultados`, na conversa salva nem na resposta gerada. */
 export function FaixaLivre({ estrutura, excluir, passa }: Props) {
   const [aberta, setAberta] = useState(false);
@@ -42,7 +42,7 @@ export function FaixaLivre({ estrutura, excluir, passa }: Props) {
         className="flex items-center gap-2 text-[#1A3A5C] dark:text-[#8AB0DC]"
         style={{ fontSize: "16.7px", fontWeight: 600 }}
       >
-        Busca livre (semântica)
+        Busca livre (sem o filtro)
         <ChevronDown className={`w-4 h-4 transition-transform ${aberta ? "rotate-180" : ""}`} strokeWidth={2} />
       </button>
       <p className="text-[#8A8A9A] dark:text-[#9494A2] mb-3" style={{ fontSize: "13.8px" }}>

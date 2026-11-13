@@ -2,13 +2,15 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, X, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowRight, X, Loader2 } from "lucide-react";
 import { SearchInput, type SearchInputHandle, type SearchSubmitPayload } from "@/components/home/search-input";
 import { Fa02Alert } from "@/components/home/fa02-alert";
 import { Fa05Processing } from "@/components/home/fa05-processing";
 import { useConversations, type ConversationSnapshot } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 import { enrich, ApiError, type ExpressaoSugerida, type SugestaoDispositivo } from "@/lib/api";
+import Link from "next/link";
+import { ComoUsarLink } from "@/components/home/como-usar-link";
 
 // Proxy simples para "documento extenso" (RFC FA05/RNF05): acima de 8MB, mais provável ser uma
 // petição longa com muitas páginas — mostra o modal de processamento enquanto aguarda o /enrich
@@ -146,7 +148,7 @@ export function HomePage() {
         <span className="text-[#C0C0CE] dark:text-[#5E5E6A] truncate" style={{ fontSize: "14.4px" }}>
           Início
         </span>
-
+        <ComoUsarLink />
       </header>
 
       {/* Hero */}
@@ -180,6 +182,10 @@ export function HomePage() {
           Encontre decisões alinhadas à sua tese argumentativa entre cerca de 69 mil acórdãos
           de TRTs, com busca por palavras e por significado.
         </p>
+        <Link href="/guia" className="mt-3 inline-flex items-center gap-1 text-[#1A3A5C] dark:text-[#8AB0DC] hover:underline underline-offset-4" style={{ fontSize: "14.4px", fontWeight: 600 }}>
+          Primeira vez? Veja como tirar o melhor da busca
+          <ArrowRight aria-hidden="true" className="w-4 h-4" strokeWidth={2} />
+        </Link>
 
         <div className="w-full max-w-[720px] mt-8 sm:mt-10">
           <SearchInput ref={searchInputRef} onSubmit={handleSubmit} disabled={loading} />
