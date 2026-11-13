@@ -22,20 +22,13 @@ from scraper.schema import Provimento
 
 # Top-N final devolvido por /query (RFC: RRF Fusion "retorna os top-20").
 N_RESULTS_FINAL = 20
-# Pool fundido pelo RRF antes do re-ranking (query/search/reranker.py) — maior
-# que N_RESULTS_FINAL de propósito: a prática de 2026 é "funde um pool maior
-# via RRF, depois um cross-encoder reordena esse pool", não só reordenar os
-# mesmos 20 que já seriam devolvidos. 50 (o número usual na literatura) media
-# ~14s nesta infra — o hybrid_search pede 5x isso por canal (ver
-# CANDIDATOS_POR_CANAL em hybrid_search.py), então o pool maior também pesa na
-# BUSCA, não só no re-ranking. 30 é o equilíbrio medido: ~50% de folga sobre
-# os 20 finais, latência total ficando ~2x o baseline sem re-ranking.
+# Pool fundido pelo RRF antes do re-ranking: maior que os 20 finais, para o cross-encoder
+# ter o que reordenar, mas pequeno porque o hybrid_search pede 5x isso por canal
+# (CANDIDATOS_POR_CANAL) e a latência cresce junto.
 N_CANDIDATOS_PARA_RERANK = 30
-# Pool de candidatos maior quando há filtro de período: ele é aplicado em Python
-# DEPOIS da busca (ver aplicar_filtros), então um pool maior evita perder recall.
-# O provimento e a lista de documentos do filtro restrito entram nos canais, já
-# devolvem só candidatos válidos e dispensam: pontuar 80 ementas no re-ranking
-# custa ~3 s a mais.
+# Pool maior quando há filtro de período, aplicado em Python DEPOIS da busca (ver
+# aplicar_filtros): evita perder recall. Provimento e filtro restrito já chegam filtrados
+# dos canais e dispensam o pool maior, que custa no re-ranking.
 N_CANDIDATOS_COM_FILTRO = 80
 
 
@@ -64,19 +57,10 @@ def aplicar_filtros(
 
 
 def normalizar_scores(scores: list[float]) -> list[float]:
-    """Min-max normaliza os scores do re-ranking pro intervalo [0, 1].
+    """Min-max dos scores do re-ranking para [0, 1]; todos 1.0 se não houver variação.
 
-    Por quê: o cross-encoder (query/search/reranker.py) devolve scores muito
-    comprimidos pra esse domínio (ex.: 0.97–0.999 — ver o módulo) — ótimo pra
-    REORDENAR (é só a ordem relativa que importa), péssimo pro "% de
-    relevância" exibido no frontend, que já divide pelo score máximo do lote
-    (relevancePercent): sem normalizar, todo resultado apareceria como
-    "~99% relevante". Esticar pro intervalo [0, 1] aqui resolve os dois usos
-    com a MESMA métrica, sem precisar de um campo novo no ResultCard.
-
-    Input:  scores — um por candidato, em qualquer ordem.
-    Returns: mesma lista, normalizada; todos 1.0 se não houver variação
-    (evita divisão por zero quando só 1 candidato, ou scores empatados).
+    O cross-encoder devolve scores comprimidos neste domínio (ex.: 0.97-0.999): serve
+    para ordenar, mas o "% de relevância" do frontend mostraria tudo como ~99%.
     """
     if not scores:
         return []
@@ -131,12 +115,8 @@ def buscar(
     if tem_filtro:
         triplos = aplicar_filtros(triplos, provimento, data_inicio, data_fim)
 
-    # Re-ranking: o RRF funde bem os RANKS de cada canal, mas não lê o
-    # conteúdo — um cross-encoder pontua tese+ementa juntas e reordena por
-    # relevância de verdade (ver query/search/reranker.py). Ordena pelo score
-    # BRUTO do cross-encoder (reordenar por score bruto ou normalizado dá a
-    # MESMA ordem — min-max é uma transformação monótona — então normalizar
-    # antes não muda quem entra no corte, só a escala).
+    # Re-ranking: o RRF funde os ranks mas não lê o conteúdo; o cross-encoder pontua tese
+    # e ementa juntas (query/search/reranker.py). Ordena pelo score bruto.
     # reranker=None: sem reordenar, mantém a ordem do RRF (benchmark, sistema S2).
     if triplos and reranker is not None:
         scores_rerank = reranker.rerank_scores(frase_tese, [doc.ementa for _, doc, _ in triplos])
@@ -148,14 +128,9 @@ def buscar(
 
     triplos = triplos[:N_RESULTS_FINAL]
 
-    # Normaliza DEPOIS do corte — só sobre os 20 exibidos, não o pool de 30.
-    # Por quê: o cross-encoder devolve scores comprimidos nesse domínio (ex.:
-    # 0.997-0.999); normalizar ANTES do corte usava os candidatos descartados
-    # (os piores do pool) para ancorar o "0%", deixando os top-20 — que são os
-    # melhores, logo os mais parecidos entre si — todos espremidos perto de
-    # 100% (o bug visto em produção: toda carta mostrando "100% relevante").
-    # Normalizar só os 20 exibidos espalha o score pelo intervalo completo
-    # 0-100% de novo, sem mudar a ordem (a mesma transformação monótona).
+    # Normaliza DEPOIS do corte, só sobre os exibidos: com os descartados (os piores do
+    # pool) ancorando o "0%", os melhores, parecidos entre si, apareciam todos perto de
+    # 100% (o bug de "100% relevante" em toda carta). A ordem não muda (min-max é monótono).
     if triplos:
         scores_normalizados = normalizar_scores([t[2] for t in triplos])
         triplos = [

@@ -1,26 +1,16 @@
 """
-Qdrant Vector Store — substitui indexing/vector_store/chroma_store.py (README §Escalabilidade).
+Qdrant Vector Store — substituiu o Chroma (README §Escalabilidade; ver também
+docs/Backup_Indices.md).
 
-Por quê: o Chroma exige vetores E grafo HNSW inteiros em RAM. Com ~69k acórdãos
-(~400k chunks) isso já é pesado demais numa máquina com RAM limitada — ver
-docs/Backup_Indices.md e a medição real: só abrir a coleção via PersistentClient
-levou minutos, puro I/O de disco carregando tudo pra RAM na subida. O Qdrant
-separa as duas coisas: os VETORES brutos (a parte grande, ~2.4GB pra 400k pontos
-de 1536 dims) ficam em disco via mmap (`VectorParams.on_disk=True`); o GRAFO HNSW
-em si (só os links entre vizinhos, dezenas de MB) fica em RAM (`HnswConfigDiff.
-on_disk=False`, o default do Qdrant) — colocar o grafo em disco também parecia
-"mais econômico" mas media 80-125s por busca nesta infra (cada salto no grafo
-vira I/O de disco); em RAM ele é pequeno o bastante pra não custar quase nada e
-elimina esse gargalo.
+Por quê: o Chroma exigia vetores E grafo HNSW inteiros em RAM, pesado demais para
+~69k acórdãos (~400k chunks) numa máquina limitada; só abrir a coleção levava minutos.
+O Qdrant mantém os vetores brutos (~2.4GB) em disco via mmap (`on_disk=True`) e o grafo
+HNSW (dezenas de MB) em RAM: com o grafo em disco, cada salto virava I/O e a busca
+levava 80-125s.
 
-Mesmo modelo Poly-Vector do Chroma, duas coleções:
+Modelo Poly-Vector, duas coleções:
   - COLLECTION_COMPLETO -> um ponto por CHUNK  (id = uuid5 determinístico do chunk_id);
   - COLLECTION_EMENTA   -> um ponto por DOCUMENTO (id = documento_id, já é UUID).
-
-Interface pública idêntica a ChromaStore (add_chunks/query/documento_ids_indexados/
-reset) de propósito — é a "troca localizada" que o README já previa: só quem
-constrói o client muda (indexing/run.py e query/api/app.py); HybridSearch e o
-resto do pipeline não sabem qual vector store está por trás.
 """
 from __future__ import annotations
 
@@ -30,40 +20,23 @@ import uuid
 from qdrant_client import QdrantClient, models
 
 from processing.chunking.sac_chunker import Chunk
+from processing.embeddings.poly_vector import EMBED_DIM
 
 logger = logging.getLogger(__name__)
 
 COLLECTION_COMPLETO = "chunks_completo"
 COLLECTION_EMENTA = "chunks_ementa"
 
-# Timeout DO SERVIDOR pra uma operação de busca, em segundos — repassado por
-# request via query_points(timeout=...), não é o mesmo timeout de conexão do
-# client (esse já é configurado por quem injeta o QdrantClient). Sem isto, o
-# Qdrant aplica um timeout interno próprio (~60s) e devolve 500 se a busca no
-# disco (mmap, on_disk=True) demorar mais — o que acontece nesta infra sob
-# concorrência de CPU com o Ollama.
+# Timeout do SERVIDOR por busca (repassado em query_points), não o de conexão do client.
+# Sem ele o Qdrant aplica ~60s e devolve 500 se a busca no disco demorar mais, o que
+# acontece sob concorrência de CPU com o Ollama.
 _SEARCH_TIMEOUT_S = 180
 
-# text-embedding-3-small (processing/embeddings/poly_vector.py) — os dois canais
-# Poly-Vector usam o mesmo modelo, logo a mesma dimensão.
-EMBED_DIM = 1536
-
-# Vetores em disco (VectorParams.on_disk=True abaixo), mas o GRAFO HNSW em si
-# fica em RAM (on_disk=False, o default do Qdrant) — são coisas bem diferentes
-# de tamanho: o grafo de ~400k pontos custa dezenas de MB (só os links entre
-# vizinhos), enquanto os vetores brutos custam ~2.4GB (400k × 1536 dims × 4
-# bytes). Medido nesta infra: com o grafo em disco, cada busca nova (que
-# percorre o grafo fazendo I/O a cada salto) levava 80-125s; o grafo é pequeno
-# o bastante pra caber em RAM sem reintroduzir o problema original do Chroma
-# (que forçava vetores E grafo, ~14GB, inteiros em RAM).
+# Grafo HNSW em RAM (o default): é pequeno perto dos vetores, que ficam em disco.
 _HNSW_CONFIG = models.HnswConfigDiff(on_disk=False)
 
-# Quantização escalar (int8): guarda uma versão comprimida (~4x menor) de cada
-# vetor em RAM (always_ram=True) para a busca inicial no grafo HNSW; só os poucos
-# candidatos finais (não o corpus inteiro) são re-pontuados com o vetor original
-# em disco. Isso reduz drasticamente o I/O de disco por busca — a mesma economia
-# de "grafo em RAM" acima, mas para os próprios vetores. Custo: ~600MB de RAM
-# pra chunks_completo (400k × 1536 bytes) — pouco perto do que precisa caber.
+# Quantização escalar int8: uma cópia ~4x menor dos vetores em RAM (~600MB em chunks_completo)
+# faz a busca inicial no grafo; só os candidatos finais são re-pontuados com o vetor em disco.
 _QUANTIZATION_CONFIG = models.ScalarQuantization(
     scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, quantile=0.99, always_ram=True)
 )
@@ -86,8 +59,7 @@ def chunk_point_id(chunk_id: str) -> str:
 
 
 def _to_payload(chunk: Chunk) -> dict:
-    """Monta o payload por-CHUNK para COLLECTION_COMPLETO (mesmos campos do
-    ChromaStore._to_metadata, + chunk_id para introspecção/debug)."""
+    """Monta o payload por-CHUNK para COLLECTION_COMPLETO (inclui chunk_id, para debug)."""
     return {
         "chunk_id":             chunk.chunk_id,
         "documento_id":         chunk.documento_id,
@@ -161,7 +133,7 @@ class QdrantStore:
         emb_completo: list[list[float]],
         emb_ementa: list[list[float]],
     ) -> None:
-        """Indexa (upsert) um lote nas duas coleções — mesma assinatura do ChromaStore.
+        """Indexa (upsert) um lote nas duas coleções.
 
         Input:  chunks, (emb_completo, emb_ementa) — vetores na mesma ordem dos chunks.
         Returns: None.
@@ -205,8 +177,7 @@ class QdrantStore:
         Input:  embedding — vetor da query; n_results; where — filtro de igualdade
                 (ex.: {"provimento": "APROVADO"}); collection — qual coleção usar.
         Returns: lista de {id, documento_id, distance, metadata}, mais próximos
-                 primeiro — mesmo formato do ChromaStore.query() (nenhum chamador
-                 lê "distance" hoje, mas o campo é mantido por paridade).
+                 primeiro (nenhum chamador lê "distance" hoje).
         """
         res = self._client.query_points(
             collection_name=collection,

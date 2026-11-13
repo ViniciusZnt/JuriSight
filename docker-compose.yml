@@ -30,9 +30,8 @@ services:
     volumes:
       - ollama_models:/root/.ollama
 
-  # Banco vetorial (substitui o ChromaDB embedded — ver README §Escalabilidade).
-  # Vetores e grafo HNSW ficam em disco (mmap, on_disk=True em indexing/vector_store/
-  # qdrant_store.py) em vez de forçar o índice inteiro em RAM.
+  # Banco vetorial (substituiu o ChromaDB — ver README §Escalabilidade). Os vetores ficam
+  # em disco (mmap) e o grafo HNSW em RAM (indexing/vector_store/qdrant_store.py).
   qdrant:
     image: qdrant/qdrant:v1.19.1
     container_name: jurisight_qdrant

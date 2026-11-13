@@ -33,7 +33,7 @@ class Chunk(BaseModel):
     """Fragmento de um documento jurídico.
 
     Os campos de metadado são duplicados aqui para serem
-    gravados no ChromaDB e permitir filtragem sem consultar o PostgreSQL.
+    gravados no Qdrant e permitir filtragem sem consultar o PostgreSQL.
     """
 
     chunk_id:     str = ""       # Ver gerar_chunk_id()
@@ -55,7 +55,7 @@ class Chunk(BaseModel):
         """Gera o chunk_id determinístico (documento_id:posicao) se ainda não foi criado.
 
         Input:  self, com documento_id e posicao já preenchidos.
-        Returns: Self — checa o campo em memória, não consulta o Chroma.
+        Returns: Self — checa o campo em memória, não consulta o Qdrant.
         """
         if not self.chunk_id:
             self.chunk_id = f"{self.documento_id}:{self.posicao}"
@@ -122,7 +122,7 @@ class SACChunker:
     def chunk_document(self, doc: DocumentoJuridico, documento_id: str) -> list[Chunk]:
         """Gera os chunks SAC de um documento (acórdão em janelas; súmula/OJ em chunk único).
 
-        Input:  doc — DocumentoJuridico; documento_id — UUID do Postgres (FK do Chroma,
+        Input:  doc — DocumentoJuridico; documento_id — UUID do Postgres (FK no Qdrant,
                 não confundir com doc.id_documento).
         Returns: list[Chunk], vazia se o documento não tem conteúdo indexável.
         """

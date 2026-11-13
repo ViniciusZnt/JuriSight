@@ -4,7 +4,7 @@ DB Writer.
 Persiste o `DocumentoJuridico` validado no PostgreSQL (source of truth, RFC §5.2).
 Recebe o documento bruto da API, delega a montagem/validação ao Doc Builder e
 faz upsert em lote. A chave natural `id_documento` garante idempotência; o `id`
-UUID é a referência usada como FK (`documento_id`) pelos chunks no ChromaDB.
+UUID é a referência usada como FK (`documento_id`) pelos chunks no Qdrant.
 """
 import logging
 from datetime import datetime, timezone

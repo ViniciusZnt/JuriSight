@@ -1,32 +1,11 @@
 """
-Endpoints de autenticação real de usuários — registro, login, logout e "quem
-sou eu" — mais a dependency `get_current_user` reutilizável por qualquer
-outra rota deste app que venha a precisar exigir um usuário autenticado.
+Endpoints de autenticação (registro, login, logout, "quem sou eu", perfil e
+redefinição de senha) e a dependency `get_current_user`, reutilizável por qualquer
+rota que exija usuário autenticado.
 
-Vive em `query/api/` (não em `auth/`) porque é a camada HTTP: usa FastAPI
-(`APIRouter`, `Depends`, `Request`/`Response`, `HTTPException`) e Pydantic —
-exatamente a mesma mistura que `query/api/app.py` já usa para `/enrich` e
-`/query`. `auth/` (password.py, tokens.py, store.py) é deliberadamente cego a
-HTTP — só primitivas de segurança e acesso a dados — para poder ser
-importado/testado sem subir nenhum servidor. Este módulo é o único ponto do
-projeto que conhece as duas pontas (FastAPI de um lado, `auth.*` do outro).
-
-Cookie httpOnly em vez de token no corpo/localStorage
-------------------------------------------------------
-O template de referência (tiangolo/full-stack-fastapi-template) devolve o
-JWT no corpo da resposta (`{"access_token": ..., "token_type": "bearer"}`)
-para o frontend guardar em localStorage. localStorage é legível por
-QUALQUER JavaScript rodando na página — uma única vulnerabilidade de XSS em
-qualquer lugar do frontend (uma lib de terceiros, um campo mal sanitizado)
-rouba o token de todo mundo. Aqui o access token nunca aparece no corpo da
-resposta nem é acessível via `document.cookie`: ele só existe como um cookie
-`HttpOnly`, que o navegador anexa automaticamente às requisições e que
-JavaScript não consegue ler. Isso não elimina XSS como classe de risco (um
-XSS ainda pode fazer requisições autenticadas *a partir* da página, "confused
-deputy"), mas elimina a exfiltração direta do token — a melhoria real que
-este desvio do template busca. Detalhes de cookie (nome, Secure, SameSite,
-Max-Age) e a escolha JSON-vs-form-data do login estão documentados em
-`query/api/AUTH_ROUTES_DESIGN_NOTES.md`.
+O JWT vai num cookie HttpOnly, nunca no corpo da resposta, para que um XSS não
+leia o token (diferente do template de referência, que usa localStorage). Cookie,
+Secure, SameSite, login em JSON e demais decisões estão em `auth/DESIGN.md`.
 """
 from __future__ import annotations
 
@@ -50,21 +29,14 @@ from auth.tokens import DEFAULT_EXPIRES_DELTA, create_access_token, decode_acces
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
-# Proteção contra CSRF: cookie SameSite=Lax (ver _set_access_cookie) + a
-# allowlist explícita de CORS_ORIGINS em query/api/app.py (nunca "*" com
-# allow_credentials=True — o app falha ao subir se isso acontecer). Isso já
-# barra um POST cross-site de terceiro mandando o cookie; não há uma segunda
-# camada de header aqui de propósito (mantém o cliente simples).
+# CSRF: cookie SameSite=Lax (ver _set_access_cookie) + allowlist explícita de
+# CORS_ORIGINS em query/api/app.py (nunca "*" com allow_credentials=True; o app
+# não sobe assim). Sem segunda camada de header, de propósito.
 
-# Nome do cookie: prefixado com o nome do produto para não colidir com
-# nenhum outro cookie que um domínio futuro compartilhado venha a usar.
 ACCESS_TOKEN_COOKIE_NAME = "jurisight_access_token"
 
-# Secure=True exige HTTPS para o navegador enviar o cookie de volta — obrigatório
-# em produção. Por isso é o padrão: esquecer a variável no deploy não pode deixar
-# o cookie de sessão sem a flag (issue #17), assim como faltar JWT_SECRET_KEY não
-# deixa a API subir. Só o ambiente local em HTTP puro desliga, explicitamente, com
-# COOKIE_SECURE=false (.env.example). Ver AUTH_ROUTES_DESIGN_NOTES.md.
+# Secure é o padrão: esquecer a variável no deploy não pode deixar o cookie sem a flag
+# (issue #17). Só o dev local em HTTP desliga, com COOKIE_SECURE=false (.env.example).
 def _cookie_secure(valor: str | None) -> bool:
     """Só `false` (sem diferenciar maiúsculas) desliga; ausente ou qualquer outro valor liga."""
     return (valor or "true").strip().lower() != "false"
@@ -72,12 +44,7 @@ def _cookie_secure(valor: str | None) -> bool:
 
 COOKIE_SECURE = _cookie_secure(os.getenv("COOKIE_SECURE"))
 
-# Minutos que o cookie deve viver — igual à expiração do próprio JWT
-# (`DEFAULT_EXPIRES_DELTA`, hoje 30 min). Deriva do MESMO valor que
-# `create_access_token` usa (em vez de um número mágico duplicado aqui) para
-# nunca poderem dessincronizar: um cookie que dura mais que o token só
-# guardaria um JWT já expirado; um cookie mais curto que o token derrubaria a
-# sessão antes do token realmente expirar.
+# Mesma duração do JWT (`DEFAULT_EXPIRES_DELTA`), para cookie e token não dessincronizarem.
 _COOKIE_MAX_AGE_SECONDS = int(DEFAULT_EXPIRES_DELTA.total_seconds())
 
 
@@ -86,11 +53,8 @@ _COOKIE_MAX_AGE_SECONDS = int(DEFAULT_EXPIRES_DELTA.total_seconds())
 # --------------------------------------------------------------------------- #
 
 def _validar_email_basico(v: str) -> str:
-    """Validação mínima de formato — o `email-validator` do Pydantic
-    (`EmailStr`) não está instalado neste projeto (não é dependência hoje) e
-    não vale adicionar só por isto. Mantém consistência com o CHECK
-    `usuarios_email_trimmed` de `auth/db.py` (trim + não-vazio) e acrescenta
-    a checagem mínima de "parece um e-mail" (`@`, sem espaços)."""
+    """Validação mínima (sem `EmailStr`, que exigiria `email-validator`): trim e não vazio,
+    como o CHECK `usuarios_email_trimmed` de `auth/db.py`, mais `@` e sem espaços."""
     v = v.strip()
     if not v or " " in v or "@" not in v or v.startswith("@") or v.endswith("@"):
         raise ValueError("e-mail inválido")
@@ -99,10 +63,7 @@ def _validar_email_basico(v: str) -> str:
 
 class RegistroRequest(BaseModel):
     email: str
-    # Mínimo de 8 caracteres: não é "gold-plating" (sem regras de
-    # complexidade/composição, que a NIST 800-63B recomenda evitar — elas
-    # incentivam senhas previsíveis tipo "Senha123!"), mas um sistema real
-    # não pode aceitar senha vazia ou de 1 caractere.
+    # Só o tamanho mínimo: regras de composição incentivam "Senha123!" (NIST 800-63B).
     password: str = Field(min_length=8, max_length=128)
     nome: str | None = Field(default=None, max_length=255)
 
@@ -121,11 +82,7 @@ class RegistroRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """JSON (não `OAuth2PasswordRequestForm`/multipart) — ver
-    AUTH_ROUTES_DESIGN_NOTES.md para o porquê. O frontend deve enviar
-    `POST /auth/login` com `Content-Type: application/json` e corpo
-    `{"email": ..., "password": ...}`, igual a todo outro POST deste app
-    (`/query` em query/api/app.py já usa um `BaseModel` JSON)."""
+    """JSON, não `OAuth2PasswordRequestForm` (ver auth/DESIGN.md)."""
 
     email: str
     password: str
@@ -133,11 +90,8 @@ class LoginRequest(BaseModel):
     @field_validator("email")
     @classmethod
     def _limpa_email(cls, v: str) -> str:
-        # Deliberadamente SEM validar formato aqui (diferente de
-        # RegistroRequest): um e-mail malformado no login deve seguir o
-        # MESMO caminho de "credenciais inválidas" que um e-mail bem
-        # formado mas inexistente — nunca um 422 diferenciado, que vazaria
-        # informação sobre formato antes mesmo de checar existência.
+        # Sem validar o formato (ao contrário do cadastro): e-mail malformado segue o mesmo
+        # caminho de "credenciais inválidas", sem um 422 que o diferencie.
         return v.strip()
 
 
@@ -185,10 +139,8 @@ class PerfilRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 
 def get_usuario_store(request: Request) -> UsuarioStore:
-    """Mesmo padrão de `get_hybrid`/`get_doc_retriever`/`get_enricher` em
-    query/api/app.py: o singleton vive em `request.app.state`, construído uma
-    vez no lifespan (ver o snippet de integração no design notes) — em teste,
-    substituído via `app.dependency_overrides[get_usuario_store] = ...`."""
+    """O singleton vive em `request.app.state` (criado no lifespan de app.py); em teste,
+    é trocado por `app.dependency_overrides[get_usuario_store]`."""
     return request.app.state.usuario_store
 
 
@@ -204,14 +156,9 @@ def _set_access_cookie(response: Response, token: str) -> None:
         path="/",
         httponly=True,
         secure=COOKIE_SECURE,
-        # "Lax": frontend (localhost:3000) e backend (localhost:8000) são
-        # portas diferentes do MESMO host — mesmo "site" no sentido do
-        # SameSite (que ignora porta, só olha esquema+domínio registrável),
-        # então isto não é uma requisição cross-site e o cookie É enviado
-        # normalmente em toda chamada fetch/XHR com `credentials: "include"`.
-        # "Lax" (em vez de "None") ainda barra o cookie em navegações
-        # cross-site de terceiros (CSRF), sem exigir Secure — importante
-        # porque no dev local COOKIE_SECURE=false. Ver AUTH_ROUTES_DESIGN_NOTES.md.
+        # Lax: localhost:3000 e :8000 são o mesmo "site" (SameSite ignora a porta), então o
+        # cookie segue nos fetch com credentials. Barra navegação cross-site de terceiros
+        # (CSRF) sem exigir Secure, desligado no dev local. Ver auth/DESIGN.md.
         samesite="lax",
     )
 
@@ -233,10 +180,7 @@ def registrar(
     try:
         usuario = store.create(email=body.email, hashed_password=hashed, nome=body.nome)
     except EmailJaCadastradoError:
-        # Mesma mensagem independente de o e-mail já existir "antes" ou ter
-        # sido inserido por uma requisição concorrente entre nosso pré-check
-        # (que nem existe, ver UsuarioStore.create) e agora — não há dois
-        # caminhos de erro para diferenciar.
+        # Mesma mensagem se já existia ou se uma requisição concorrente inseriu antes.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="E-mail já cadastrado.")
     return UsuarioPublico.de_usuario(usuario)
 
@@ -258,8 +202,7 @@ def login(
 ) -> UsuarioPublico:
     usuario = store.get_by_email(body.email)
     if usuario is None:
-        # Paga o mesmo custo de CPU do Argon2id que um verify real pagaria,
-        # para não vazar por timing se o e-mail existe (auth/password.py).
+        # Gasta o mesmo tempo de uma verificação real, para o timing não revelar se o e-mail existe.
         verify_password(body.password, DUMMY_HASH)
         raise _CREDENCIAIS_INVALIDAS
 
@@ -270,8 +213,7 @@ def login(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuário inativo.")
 
     if novo_hash is not None:
-        # Rehash-on-verify: o hash armazenado usava algoritmo/parâmetros
-        # antigos (ex.: bcrypt herdado) — atualiza silenciosamente.
+        # O hash guardado tinha parâmetros antigos: atualiza em silêncio.
         store.update_hashed_password(usuario.id, novo_hash)
 
     token = create_access_token(str(usuario.id))
@@ -296,18 +238,9 @@ def get_current_user(
     request: Request,
     store: UsuarioStore = Depends(get_usuario_store),
 ) -> Usuario:
-    """Lê o cookie httpOnly, decodifica o JWT e busca o usuário no Postgres.
-
-    Reutilizável por QUALQUER rota futura deste app que precise exigir um
-    usuário autenticado — basta `Depends(get_current_user)` (ou, para pegar
-    só os campos públicos, `Depends(get_current_user_publico)` abaixo).
-    Levanta 401 em qualquer cenário de falha (cookie ausente, token
-    adulterado/expirado, usuário não existe mais) — nunca deixa
-    `MissingSecretKeyError`/`jwt.InvalidTokenError` vazarem como 500 opaco
-    nem, ao contrário, engole um erro de configuração (`JWT_SECRET_KEY`
-    ausente no ambiente) como se fosse "não autenticado": esse caso continua
-    subindo como 500, de propósito — é um bug de deploy, não do cliente.
-    """
+    """Lê o cookie httpOnly, decodifica o JWT e busca o usuário. Levanta 401 se o cookie
+    faltar, o token for inválido ou expirado, ou o usuário não existir mais.
+    `MissingSecretKeyError` (JWT_SECRET_KEY ausente) sobe como 500 de propósito: é erro de deploy."""
     token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Não autenticado.")
@@ -329,9 +262,7 @@ def get_current_user(
 
 
 def get_current_user_publico(usuario: Usuario = Depends(get_current_user)) -> UsuarioPublico:
-    """Mesma dependency acima, mas já projetada para os campos públicos —
-    conveniente para outra rota que só precisa exibir/serializar o usuário,
-    sem tocar `hashed_password`."""
+    """`get_current_user` já projetado nos campos públicos (sem `hashed_password`)."""
     return UsuarioPublico.de_usuario(usuario)
 
 

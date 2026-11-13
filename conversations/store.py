@@ -1,22 +1,11 @@
 """
-Acesso a `public.conversas` (CRUD do histórico de busca) — camada de
-persistência para a peça de endpoints FastAPI
-(`query/api/conversa_routes.py`).
+Acesso a `public.conversas` (CRUD do histórico de busca), em psycopg puro, como
+`auth/store.py`. Sem FastAPI: a camada HTTP mapeia `ConversaNaoEncontradaError`.
 
-Mesma convenção de `auth/store.py` e `query/search/doc_retriever.py`:
-psycopg puro, sem ORM, conecta/cursora/fecha a cada chamada. Deliberadamente
-sem import de FastAPI/Pydantic — a camada HTTP decide o mapeamento de
-`ConversaNaoEncontradaError` para um HTTPException.
-
-Toda operação (get/rename/delete/add_versao) filtra por
-`id = %s AND usuario_id = %s` — nunca só por `id`. Isso é o que impede um
-usuário autenticado de ler/alterar a conversa de outro só adivinhando um
-UUID: a query simplesmente não encontra a linha (mesmo efeito de um 404),
-em vez de precisar de uma checagem de autorização separada que alguém
-poderia esquecer de chamar.
-
-Cada busca (a original + cada "Refinar consulta") vira uma VERSÃO própria no
-array `versoes`, não sobrescreve a anterior — ver conversations/db.py.
+Toda operação filtra por `id = %s AND usuario_id = %s`, nunca só por `id`: quem
+adivinha o UUID de outra pessoa simplesmente não encontra a linha, sem depender de
+uma checagem de autorização separada que alguém possa esquecer. O formato de
+`versoes` está em conversations/db.py.
 """
 from __future__ import annotations
 

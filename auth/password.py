@@ -1,17 +1,7 @@
 """
-Hashing e verificação de senha.
-
-Algoritmo: Argon2id (via `pwdlib[argon2]`) — o KDF memory-hard recomendado
-atualmente pela OWASP, resistente a ataques por GPU/ASIC muito melhor que
-bcrypt/PBKDF2. Sistema novo, sem usuários herdados de outro backend: não há
-hash em outro algoritmo pra verificar, então só Argon2id existe aqui (nada de
-fallback de verificação para um formato que nunca vai aparecer).
-
-Este módulo não faz lookup de usuário nem toca banco — isso é responsabilidade
-de uma peça futura (endpoints). O único acoplamento esperado é: o caller passa
-uma senha em texto puro e um hash armazenado, e recebe de volta se bateu (e,
-opcionalmente, um novo hash para persistir, se os parâmetros de custo do
-Argon2 mudarem no futuro — "rehash on verify" via `verify_and_update`).
+Hashing e verificação de senha com Argon2id (`pwdlib`). Não toca o banco: recebe a
+senha em texto puro e o hash guardado, e devolve se bateu e, se os parâmetros de
+custo mudaram, um novo hash para o chamador gravar (rehash ao verificar).
 """
 from __future__ import annotations
 
@@ -68,26 +58,8 @@ def verify_password(plain_password: str, hashed_password: str) -> PasswordVerifi
     return PasswordVerification(*_password_hash.verify_and_update(plain_password, hashed_password))
 
 
-# Hash Argon2id válido de uma senha aleatória e descartada — NÃO é a senha de
-# nenhum usuário real. Existe só para mitigar enumeração de usuários por
-# timing attack: a lógica de autenticação (peça futura, quando o lookup no
-# Postgres existir) deve seguir o padrão:
-#
-#     user = lookup_by_email(email)
-#     if user is None:
-#         verify_password(password, DUMMY_HASH)   # paga o mesmo custo de CPU
-#         raise InvalidCredentials()               # mesma mensagem/latência
-#     ok, novo_hash = verify_password(password, user.hashed_password)
-#     if not ok:
-#         raise InvalidCredentials()               # mesma mensagem/latência
-#
-# Sem isso, um endpoint de login que só faz "senha errada" quando o usuário
-# EXISTE (pulando o hash quando não existe) vaza, pelo tempo de resposta,
-# se um e-mail está cadastrado ou não.
-#
-# Calculado em import-time (em vez de hardcoded como string) para garantir
-# que o custo pago aqui seja sempre o mesmo custo do Argon2Hasher atual —
-# uma string fixa corre o risco de ficar com parâmetros (m/t/p) diferentes
-# dos usados por `hash_password` se a lib for atualizada, o que quebraria a
-# propriedade de "mesmo custo" que essa mitigação depende.
+# Hash de uma senha descartada. O login o verifica quando o e-mail não existe, para
+# gastar o mesmo tempo de uma verificação real e não revelar por timing quais e-mails
+# estão cadastrados. Calculado ao importar (não é string fixa) para o custo acompanhar
+# os parâmetros atuais do Argon2.
 DUMMY_HASH = _password_hash.hash("dummy-password-for-timing-attack-mitigation-only")

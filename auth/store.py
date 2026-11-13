@@ -1,16 +1,7 @@
 """
-Acesso a `auth.usuarios` (CRUD de usuários) — camada de persistência para a
-peça de endpoints FastAPI (`query/api/auth_routes.py`).
-
-Continua a mesma convenção de `query/search/doc_retriever.py`: psycopg puro,
-sem ORM, conecta/cursora/fecha a cada chamada (nenhuma conexão persistente
-mantida entre requisições). `auth/db.py` já é quem cria o schema; este módulo
-só lê/escreve linhas nele.
-
-Deliberadamente sem nenhum import de FastAPI/Pydantic — mesma fronteira que
-`auth/password.py` e `auth/tokens.py` já seguem (funções/classes puras,
-importáveis por qualquer camada HTTP que exista por cima). A camada HTTP
-decide o mapeamento de `EmailJaCadastradoError` para um HTTPException.
+Acesso a `auth.usuarios` e `auth.redefinicoes_senha`, em psycopg puro (conecta,
+usa e fecha a cada chamada), sem FastAPI/Pydantic. A camada HTTP mapeia
+`EmailJaCadastradoError` para 409.
 """
 from __future__ import annotations
 
@@ -40,13 +31,7 @@ class Usuario:
 
 
 class EmailJaCadastradoError(Exception):
-    """Levantado por `UsuarioStore.create` quando o e-mail já existe.
-
-    Não distingue "já existia antes do INSERT" de "outra requisição inseriu o
-    mesmo e-mail entre nosso pré-check e nosso INSERT" — de propósito: ver
-    docstring de `UsuarioStore.create` para o porquê disso importar (evitar
-    condição de corrida).
-    """
+    """Levantado por `UsuarioStore.create` quando o e-mail já existe (ver o porquê em `create`)."""
 
 
 _SELECT_COLUNAS = "id, email, hashed_password, nome, is_active, criado_em, telefone, oab, papel"
@@ -110,25 +95,18 @@ def _row_para_usuario(row) -> Usuario:
 
 
 class UsuarioStore:
-    """CRUD de `auth.usuarios` via psycopg. Uma conexão nova por chamada,
-    igual a `DocRetriever` — este é um serviço de baixo tráfego (registro/
-    login/me), não vale a complexidade de um pool aqui."""
+    """CRUD de `auth.usuarios`. Uma conexão por chamada: o tráfego é baixo demais para um pool."""
 
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
 
     def create(self, *, email: str, hashed_password: str, nome: str | None) -> Usuario:
-        """Insere um novo usuário. Levanta `EmailJaCadastradoError` se o
-        e-mail (case-insensitive) já existir.
+        """Insere um novo usuário. Levanta `EmailJaCadastradoError` se o e-mail
+        (sem diferenciar maiúsculas) já existir.
 
-        Deliberadamente NÃO faz um SELECT de pré-checagem antes do INSERT:
-        duas requisições de registro simultâneas com o mesmo e-mail
-        passariam ambas por um pré-check "não existe" antes que qualquer uma
-        tivesse commitado (TOCTOU) — o índice único `usuarios_email_lower_idx`
-        (auth/db.py) só é verificado pelo Postgres no INSERT em si, então
-        confiamos NELE como a fonte de verdade: tentamos o INSERT direto e
-        traduzimos a `UniqueViolation` que o Postgres levanta (atomicamente,
-        sem essa janela de corrida) para `EmailJaCadastradoError`.
+        Sem `SELECT` de pré-checagem: duas requisições simultâneas passariam as
+        duas por ela (TOCTOU). A fonte de verdade é o índice único
+        `usuarios_email_lower_idx`; tentamos o INSERT e traduzimos a `UniqueViolation`.
         """
         email = email.strip()
         conn = psycopg.connect(self.database_url)

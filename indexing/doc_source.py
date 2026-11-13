@@ -4,7 +4,7 @@ Document Source — leitura do PostgreSQL para a etapa de Indexação.
 O PostgreSQL é a source of truth. A Indexação NÃO faz scraping; ela
 lê os `DocumentoJuridico` já persistidos pelo Pipeline de Ingestão (scraper/) e os
 entrega ao SAC Chunker. Importante: devolve também o UUID `id` da linha, que é a FK
-`documento_id` referenciada no ChromaDB (não confundir com `id_documento` natural).
+`documento_id` referenciada no Qdrant (não confundir com `id_documento` natural).
 """
 
 from collections.abc import Iterator

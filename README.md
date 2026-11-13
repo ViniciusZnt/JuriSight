@@ -55,52 +55,24 @@ para indexar todo o corpus; por consulta, o custo é desprezível.
 
 ```
 jurisight/
-├── auth/                    ← autenticação real (hash de senha, JWT, acesso a auth.usuarios)
-├── conversations/           ← histórico de busca persistido (public.conversas, ver §Conformidade)
-├── avaliacao/               ← harness de avaliação da busca (conjunto-ouro, pooling, planilha de julgamento, consenso, benchmark S0–S6; ver §Avaliação da busca)
-│
-├── scraper/
-│   ├── run.py              ← ponto de entrada da coleta
-│   ├── api.py              ← cliente HTTP (requests.Session)
-│   ├── core.py             ← loop de coleta com delay adaptativo
-│   ├── db_writer.py        ← PostgresStore + estado da coleta (scraper_state)
-│   ├── html_parser.py      ← extração de seções do HTML dos acórdãos
-│   ├── provimento_jev*.py  ← provimento com o Jev: classificador, store e CLI (ver §Provimento com o Jev)
-│   ├── items/
-│   ├── pipelines/
-│   └── settings.py         ← configurações Scrapy (uso futuro)
-│
-├── processing/
-│   ├── chunking/
-│   ├── ner/
-│   └── embeddings/
-│
-├── indexing/
-│   ├── vector_store/
-│   └── graph/
-│
-├── query/
-│   ├── enrichment/          ← PDF Extractor, Query Enrichment (LLM), Query Builder
-│   ├── search/              ← Hybrid Search (RRF), Doc Retriever, Reranker, Result Formatter
-│   └── api/                 ← FastAPI: /enrich, /query, /document/{id}, /health, /auth/*, /conversas
-│
-├── frontend/                ← interface Next.js (App Router)
-│   ├── src/
-│   │   ├── app/              ← rotas (home, resultados, decisão, revisão, salvos, login)
-│   │   ├── components/
-│   │   └── lib/
-│   └── package.json
-│
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── index/
-│
-├── docs/
-├── tests/
-├── .env.example
-├── pyproject.toml
-└── README.md
+├── scraper/        ← coleta no portal do TST, estado da coleta e classificação de provimento (regex e Jev)
+├── processing/     ← SAC Chunking e embeddings (Poly-Vector)
+├── indexing/       ← vector_store (Qdrant), lexical (BM25) e a CLI de indexação
+├── query/          ← enrichment (PDF, LLM, Query Builder), search (RRF, reranker), filtros e api (FastAPI)
+├── auth/           ← autenticação (senha, JWT, schema; decisões em auth/DESIGN.md)
+├── conversations/  ← histórico de busca persistido (public.conversas, ver §Conformidade)
+├── avaliacao/      ← harness de avaliação da busca (ver §Avaliação da busca)
+├── pipeline/       ← jobs do Dagster (coleta, indexação, filtros, Jev)
+├── utils/          ← reclassificação de provimento
+├── deploy/         ← Caddyfile e scripts de backup da VPS
+├── frontend/       ← interface Next.js (App Router)
+├── tests/          ← testes do backend
+├── docs/           ← RFCs, diagramas, backup, deploy e avaliação
+├── data/           ← índices locais (data/index) e saídas da avaliação (data/eval)
+├── main.py         ← sobe a API
+├── run.sh          ← sobe infra, backend e frontend de uma vez
+├── Dockerfile, docker-compose.yml, docker-compose.prod.yml
+└── .env.example, pyproject.toml
 ```
 
 ---
@@ -175,18 +147,14 @@ Observações:
 cp .env.example .env
 ```
 
-| Variável            | Padrão                                              | Descrição                        |
-|---------------------|-----------------------------------------------------|----------------------------------|
-| `DATABASE_URL`      | `postgresql://postgres:postgres@localhost:5432/jurisight` | Conexão com o PostgreSQL   |
-| `OPENAI_API_KEY`    | —                                                   | Chave da OpenAI (embeddings) — **obrigatória**, exige crédito pré-pago |
-| `OPENAI_EMBED_MODEL`| `text-embedding-3-small`                            | Modelo de embeddings (1536d)     |
-| `QDRANT_URL`        | `http://localhost:6333`                             | Endpoint do Qdrant (banco vetorial, sobe via `docker compose`) |
-| `BM25_INDEX_PATH`   | `./data/index/bm25s_index`                          | Índice lexical BM25 (diretório — matriz esparsa `bm25s`, carregada via mmap) |
-| `OLLAMA_HOST`       | `http://localhost:11434`                            | Endpoint do Ollama (Query Enrichment) |
-| `OLLAMA_MODEL`      | `llama3.2:3b`                                       | Modelo usado no enriquecimento de query e na sumarização de PDFs longos |
-| `API_HOST` / `API_PORT` | `0.0.0.0` / `8000`                              | Endereço do backend FastAPI      |
-| `API_RELOAD`        | `true`                                              | Reload automático do Uvicorn em dev |
-| `CORS_ORIGINS`      | `http://localhost:3000`                             | Origens permitidas (a interface web em dev) |
+| Variável            | Descrição                        |
+|---------------------|----------------------------------|
+| `DATABASE_URL`      | Conexão com o PostgreSQL (padrão do `.env.example`: `postgresql://postgres:postgres@localhost:5432/jurisight`) |
+| `OPENAI_API_KEY`    | Chave da OpenAI (embeddings) — **obrigatória**, exige crédito pré-pago |
+| `JWT_SECRET_KEY`    | Segredo dos tokens de sessão — **obrigatória**, sem valor padrão (gere com `openssl rand -hex 32`) |
+
+As demais (`QDRANT_URL`, `BM25_INDEX_PATH`, `OLLAMA_*`, `API_*`, `CORS_ORIGINS`, `COOKIE_SECURE`, SMTP,
+Typesafe, avaliação) têm padrão para dev local e estão comentadas no `.env.example`.
 
 > A chave da OpenAI vai só no `.env` (gitignored) — **nunca** commitada. Sem crédito
 > pré-pago na conta, a API responde `429 insufficient_quota`.
@@ -297,12 +265,8 @@ Abre em [http://localhost:3000](http://localhost:3000).
 
 ## Testes (frontend)
 
-O frontend tem dois níveis de teste, ambos em `frontend/`:
-
-| Tipo                  | Ferramenta                          | O que cobre                                                        |
-|------------------------|--------------------------------------|---------------------------------------------------------------------|
-| Unitário / componente | Jest + React Testing Library         | Lógica pura (`initialsOf`, `groupByRecency`, `findDecision`, `OUTCOME_CONFIG`) e componentes (`OutcomeBadge`, `Chip`, `StepIndicator`, `ActionButton`), além do contexto `useSaved` (salvar, remover, persistir) |
-| End-to-end             | Cypress                              | Login/cadastro e proteção de rotas, fluxo de consulta (com e sem PDF → revisão → resultados), filtros/ordenação/exportar resultados, e os fluxos alternativos do RFC (FA02, FA03, FA04, FA05) |
+O frontend tem testes unitários e de componente (Jest + React Testing Library) e end-to-end (Cypress),
+ambos em `frontend/`:
 
 ```bash
 cd frontend
@@ -327,20 +291,11 @@ Os testes de backend estão na seção seguinte; os dois rodam no CI (ver [CI](#
 uv run pytest
 ```
 
-| Módulo | O que cobre |
-|--------|-------------|
-| `scraper`/`processing`/`indexing` | Parsing HTML, chunking SAC, embeddings (OpenAI mockado), BM25 |
-| `query/enrichment` | PDF Extractor (pdfplumber mockado), Query Enrichment (Ollama mockado, RN05), Query Builder |
-| `query/search` | Hybrid Search/RRF (Qdrant/BM25 mockados), pipeline, Result Formatter |
-| `query/api` | `/enrich`, `/query`, `/document/{id}`, `/health`, `/auth/*`, `/conversas*` via `TestClient`, com `dependency_overrides` no lugar de Postgres/Qdrant/Ollama reais |
-| `auth` / `conversations` | Hashing de senha, JWT, `UsuarioStore`/`ConversaStore` (isolamento entre usuários incluso) |
-| `avaliacao` | Métricas (nDCG, Recall, kappa), geração de teses e tema com cliente OpenAI fake, pooling, `construir`; o store contra Postgres real só roda com `DATABASE_URL` |
-| `avaliacao` (benchmark) | Sistemas S0–S6 com rerankers falsos, planilha de julgamento (exportar/importar), rótulo final e concordância, teses dos advogados, métricas e estatística do `benchmark`; o que usa o banco só roda com `DATABASE_URL` |
-| `scraper/provimento_jev*` | Perguntas e mapa para o enum, classificador com cliente fake, backfill retomável, `aplicar` e `sincronizar` com store falso; o store contra Postgres real só roda com `DATABASE_URL` |
+Os testes ficam em `tests/`, um módulo por área.
 
-> Todos os testes rodam sem infraestrutura real (Postgres/Qdrant/Ollama/OpenAI) —
-> clientes externos são substituídos por fakes injetados. Um smoke test manual de
-> ponta a ponta (com a infra de verdade no ar) é o passo 8 do Quick Start.
+> Todos rodam sem infraestrutura real: Postgres, Qdrant, Ollama e OpenAI entram como fakes
+> injetados, e os testes que usam o banco de verdade só rodam com `DATABASE_URL`. O smoke
+> test de ponta a ponta, com a infra no ar, é o passo 8 do Quick Start.
 
 ---
 
@@ -363,132 +318,18 @@ de API; só o deploy usa os secrets `VPS_HOST`, `VPS_USER` e `VPS_SSH_KEY`.
 
 ## Avaliação da busca
 
-Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem
-uma régua: um **conjunto-ouro** de pares (tese × acórdão) com **relevância 0–3** e
-**stance** (fortalece / enfraquece / neutro), julgados por pessoas. O `benchmark`
-roda a busca (e o pipeline de produção, S3) para cada tese e reporta as métricas.
-Esta etapa só mede, não muda a busca.
-
-Variáveis no `.env` (ver `.env.example`):
-
-| Variável            | Padrão          | Descrição |
-|---------------------|-----------------|-----------|
-| `OPENAI_GEN_MODEL`  | `gpt-4o-mini`   | Modelo da OpenAI que escreve as teses sintéticas e atribui o tema de cada tese |
-| `AVALIACAO_SEED`    | `42`            | Seed dos sorteios (acórdãos de origem e split dev/teste) |
-| `AVALIACAO_ADJUDICADOR` | —           | E-mail do adjudicador: o julgamento dele decide os pares em que os avaliadores discordam (ver §2) |
-
-Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start, passos 5 e 7).
-
-### 1 — `construir`: o conjunto-ouro
+Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem um
+**conjunto-ouro** de pares (tese × acórdão), julgados por pessoas com relevância 0–3 e
+stance, e um `benchmark` que compara sete sistemas de busca (S0–S6, do BM25 sozinho ao
+pipeline de produção com FlashRank) por nDCG@10 e outras métricas, com testes
+estatísticos. O manual completo (construir o conjunto-ouro, exportar e importar as
+planilhas de julgamento, adjudicação, rodar e ler o relatório) está em
+[`docs/avaliacao/README.md`](docs/avaliacao/README.md).
 
 ```bash
-uv run python -m avaliacao.construir [--teses 100] [--sim]
+uv run python -m avaliacao.construir                    # monta o conjunto-ouro
+uv run python -m avaliacao.benchmark rodar              # roda S0–S6
 ```
-
-Duas etapas **idempotentes** (cada uma pula o que já existe, então dá para
-interromper e retomar de onde parou):
-
-1. **teses** — completa até `--teses` (reais das conversas + sintéticas; conversas de
-   contas `@example.com`, usadas nos testes E2E, ficam de fora). A OpenAI escreve as
-   sintéticas e atribui o tema de cada tese, que decide o split dev/teste;
-2. **pool** — para cada tese, une os 30 candidatos do híbrido (corredor `hibrido`), o top-10 do BM25 (`bm25_top10`) e o top-10 do denso (`vetorial_top10`). Pares antigos (`pipeline`, `passo_zero`) continuam no banco.
-
-A etapa de teses chama a OpenAI: mostra a estimativa e **pede confirmação**; `--sim` pula.
-
-### 2 — Etapa 2: benchmark de rerankers (S0–S6)
-
-A etapa 2 compara sete sistemas de busca sobre o mesmo conjunto de teses, com
-rótulos de duas pessoas. A ordem:
-
-1. **Teses dos advogados.** Com `docs/avaliacao/1-producao-de-teses.xlsx`
-   preenchida: `uv run python -m avaliacao.teses_advogados importar ARQUIVO...`
-   (origem `advogado`; idempotente).
-2. **`construir`** (seção 1): completa com teses sintéticas escritas no estilo dos
-   advogados e monta o pool novo.
-3. **Exportar os lotes:**
-   `uv run python -m avaliacao.planilha_julgamento exportar [--teses id,... | --todas] [--pasta data/eval/lotes] [--seed 42]`
-   gera um `.xlsx` por tese, com as linhas embaralhadas e sem pista de qual sistema
-   trouxe o acórdão. Envie cada lote a **duas pessoas**.
-4. **Importar o que voltou:**
-   `uv run python -m avaliacao.planilha_julgamento importar ARQUIVO...`
-   (grava `humano:<email>`, rodada 1; linhas inválidas são avisadas e ignoradas;
-   reimportar não duplica).
-   **Adjudicação:** os pares pendentes (ver "Rótulo final") vão para o adjudicador
-   (`AVALIACAO_ADJUDICADOR`) num lote exportado de novo; ele devolve o arquivo e você
-   importa com `... importar --adjudicacao ARQUIVO`, que grava **rodada 2**. Se o
-   e-mail do arquivo não for o do adjudicador, o comando falha sem gravar nada.
-5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos] [--saida DIR]`
-   grava `data/eval/runs/<data>_runs.json`.
-6. **Relatório:** `uv run python -m avaliacao.benchmark relatorio data/eval/runs/<data>_runs.json`
-   grava `<mesmo prefixo>_relatorio.json`.
-
-**Escala (0–3):** 0 outro problema jurídico; 1 mesmo ramo/tema, mas outro pedido ou
-fato central; 2 mesmo pedido, com fato decisivo diferente ou só em parte; 3 mesmo
-problema e mesmo fato decisivo ("eu citaria na peça"). O **stance** (fortalece,
-enfraquece, neutro) só vale para nota 2 ou 3; com 0 ou 1 grava-se `neutro`.
-
-**Rótulo final** de um par com vários humanos: se o adjudicador
-(`AVALIACAO_ADJUDICADOR`) julgou na **rodada 2** (`--adjudicacao`), vale o dele. A
-rodada 1 de todos, inclusive a do adjudicador se ele também for avaliador, segue a
-regra normal: notas iguais valem a nota; diferença de 1 fica com a **menor**;
-diferença de 2 ou mais (ou stance diferente com as duas notas >= 2) fica
-**pendente** e sai das métricas. Com um só humano, vale o dele. O relatório lista cada
-pendente (tese, par, documento, número do processo, nota e stance de cada avaliador).
-A concordância (kappa, alfa, AC2) usa só a rodada 1, com todos os avaliadores.
-**Zere os pendentes antes da medição final**, adjudicando todos.
-
-**Sistemas.** Todos devolvem o top-20. S0 e S1 consultam sempre a mesma profundidade
-(100 chunks por canal), então o top-10 usado no pool é prefixo do top-20 deles. S3 a S6 reordenam os mesmos 30 candidatos do
-S2, com a mesma entrada (tese contra a ementa cortada em 1.200 caracteres). A latência
-é a mediana/p95, em segundos, de um smoke em 5 teses; inclui a busca inteira, medida
-nesta máquina, sem GPU. **Na execução do benchmark o embedding da OpenAI é calculado
-uma vez por texto e reaproveitado** (a API não é determinística e os sistemas S2 a S6
-têm de reordenar os mesmos 30 candidatos), então a latência medida **exclui** o
-embedding repetido e é menor que a da tabela. Cada tese/sistema S2 a S6 grava
-`fora_dos_candidatos` (ids do top-20 fora dos 30 de referência; deve vir vazio) e
-falhas isoladas ficam em `teses_com_erro` sem abortar a run.
-
-| Sistema | O que é | Latência (mediana / p95) |
-|---------|---------|--------------------------|
-| S0 | BM25 sozinho | 0,01 / 0,01 |
-| S1 | Denso sozinho (2 coleções, RRF) | 0,36 / 1,48 |
-| S2 | Híbrido RRF, sem reranker | 0,43 / 0,50 |
-| S3 | S2 + FlashRank | 3,14 / 3,62 |
-| S4 | S2 + `gte-multilingual-reranker-base` | 6,85 / 10,13 |
-| S5 | S2 + `bge-reranker-v2-m3` | 5,66 / 6,71 |
-| S6 | S2 + `unicamp-dl/monoptt5-base` | 8,83 / 15,48 |
-
-O S6 precisa do PyTorch (CPU), no grupo opcional `benchmark`:
-
-```bash
-uv sync --group benchmark
-uv run --group benchmark python -m avaliacao.benchmark rodar
-```
-
-Sem o grupo, `rodar` com S6 falha logo no início (antes de carregar o índice).
-
-**Métricas.** A principal é o **nDCG@10** (ganho 2^nota − 1). As demais: MRR@10, P@5,
-P@10, Recall@10, Recall@20 e MAP@10 (relevante = nota >= 2) e **Judged@10** (fração do
-top-10 que tem rótulo; não julgado vale 0). Tese sem nenhum relevante fica fora das
-médias das métricas que dependem disso (a contagem de excluídas vai no relatório). O
-**teto** é o nDCG@10 da melhor ordem possível dos 30 candidatos: quanto um reranker
-poderia ganhar no máximo. Os **perdidos** são os relevantes que o BM25 ou o denso
-trouxeram no top-10 e o híbrido deixou fora dos 30.
-
-**Limitação: Recall@20 de S0 e S1 é enviesado para baixo.** O pool julga os 30 do
-híbrido e o top-10 de BM25 e do denso; as posições 11 a 20 de S0 e S1 só têm rótulo
-se por acaso caírem nos 30 do híbrido. O resto conta como não julgado (não relevante),
-então o Recall@20 desses dois sistemas subestima o real. Use Judged@10 e nDCG@10 para
-compará-los. O relatório mostra as médias no total e por origem (advogado, sintética,
-real) e o adjudicador em uso.
-
-**Estatística.** Diferenças pareadas por tese, nos contrastes S3×S2, S4×S3, S5×S3,
-S6×S3, S0×S2 e S1×S2: teste t pareado com correção de **Holm**, Wilcoxon (`pratt`)
-com **Benjamini-Hochberg** como checagem, e IC95% por bootstrap (10.000
-reamostragens, seed fixa). A correção depende de quantos contrastes entram
-(`m_holm` no JSON), então **só cite p ajustado de uma run com todos os sistemas**.
-A concordância entre avaliadores sai em kappa ponderado, alfa de Krippendorff e AC2
-de Gwet.
 
 ---
 
@@ -502,8 +343,8 @@ com probabilidades na tabela `provimento_jev` e, depois de uma conferência manu
 passar a usar o resultado do Jev em `documentos.provimento`. A regex continua gravada
 ao lado (`provimento_regex`). Racional e decisões: [`docs/superpowers/specs/2026-10-20-provimento-jev-design.md`](docs/superpowers/specs/2026-10-20-provimento-jev-design.md).
 
-Usa `TYPESAFE_API_KEY` e `TYPESAFE_MODEL` (padrão `jev-1.13.0`, nunca `jev-latest`) e
-precisa do Postgres no ar. Os comandos, na ordem de uso:
+Usa `TYPESAFE_API_KEY` e `TYPESAFE_MODEL` (versão fixa, padrão `jev-1.13.0`; um modelo
+terminado em `-latest` é recusado) e precisa do Postgres no ar. Os comandos, na ordem de uso:
 
 ```bash
 # 1. Classifica os acórdãos pendentes (mostra a estimativa e pede confirmação)
@@ -511,6 +352,9 @@ uv run python -m scraper.provimento_jev_cli classificar [--limite N] [--lote 500
 
 # 2. Mostra o que mudaria; só escreve em documentos.provimento com --confirmar
 uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--confirmar]
+
+# 3. Leva documentos.provimento ao Qdrant e ao BM25 (a busca filtra por ele)
+uv run python -m scraper.provimento_jev_cli sincronizar [--lote 1000] [--so-bm25 | --so-qdrant]
 ```
 
 - **Custo:** ~1.600 tokens por acórdão, cerca de **110 M tokens** para o acervo inteiro
@@ -527,8 +371,6 @@ uv run python -m scraper.provimento_jev_cli aplicar [--confianca-min 0.8] [--con
 - **Validação:** foi feita por duas conferências cegas, documentadas em
   `docs/superpowers/specs/2026-10-20-provimento-jev-conferencia.md` e
   `docs/superpowers/specs/2026-10-22-provimento-jev-conferencia-2.md`.
-- **Modelo fixo:** `TYPESAFE_MODEL` terminado em `-latest` é recusado; use uma versão
-  fixa (ex.: `jev-1.13.0`).
 
 ---
 
@@ -554,10 +396,8 @@ e as contagens. `/filtros/*` e `/query/livre` exigem login; só o `/query` conta
 **NR, Tema e Súmula Vinculante** são extraídos do texto (ementa e fundamentação) pelo preparo, com os
 códigos `nr_<n>` ("NR-15"), `tema_<n>` ("Tema 1046") e `sv_<n>` ("Súmula Vinculante 4"); Súmula Vinculante
 só quando o texto diz "vinculante" ou "SV" colado ao número. Listas ("Temas 1046 e 725", "NRs 15 e 16")
-só são lidas depois da palavra no plural. No acervo local: 33 NRs distintas (só NR 1 a 38) em 6.713 pares
-decisão-NR (NR-15: 3.378 decisões), 411 temas em 14.115 pares (Tema 1046: 1.866) e 17 súmulas vinculantes
-em 1.090 pares (SV 4: 312). O número do Tema não está ligado a um tribunal (ex.: "Tema 2" no acervo é o
-IRDR do TST), como a especificação aceitou.
+só são lidas depois da palavra no plural. O número do Tema não está ligado a um tribunal (ex.: "Tema 2"
+no acervo é o IRDR do TST), como a especificação aceitou.
 
 Os dispositivos e o índice de texto saem de tabelas que precisam ser preparadas antes do primeiro uso (rode de novo quando entrarem decisões novas):
 
@@ -569,22 +409,12 @@ uv run python -m query.filtros.preparar
 docker compose -f docker-compose.prod.yml exec api uv run --no-sync python -m query.filtros.preparar
 ```
 
-- **Tempo:** na máquina local, 2m10 para as 69 mil decisões quando o índice de texto é feito do zero;
-  rodando de novo, ~35 s (o passo dos dispositivos, que agora também extrai NR, Tema e Súmula Vinculante, é refeito
-  do zero; o índice de texto só acrescenta as decisões novas). **Depois do deploy, rode o preparo na VPS**: sem
-  isso NR, Tema e Súmula Vinculante não aparecem no autocompletar.
-- **Disco:** `documento_tsv` ocupa ~550 MB (dos quais 71 MB do índice GIN),
-  `documento_dispositivo` ~96 MB e `dispositivo` ~1,5 MB, medidos com `pg_total_relation_size`.
-  Confira o `df -h` antes de rodar na VPS.
-- **Na VPS, rode fora do horário de uso:** o preparo refaz os dispositivos com `TRUNCATE`, e o
-  autocompletar, as contagens e a busca com filtro esperam até ele terminar (~35 s local; ~2 min quando
-  o índice de texto é refeito do zero).
-- **Latência:** a busca restrita usa o mesmo pool de 30 candidatos da busca normal, então fica
-  praticamente no mesmo tempo. Medido a quente, só o `buscar` (3 execuções): sem filtro 2,8 a 2,9 s;
-  "dano moral coletivo" (137 ids) 2,1 a 2,2 s; `art_791_clt` (18.037 ids) 2,9 a 3,1 s. A consulta dos ids
-  elegíveis fica de fora (~0,1 s). A contagem roda uma consulta por expressão, em paralelo: expressão
-  rara ~0,1 s; comum ("horas extras", 13,8 mil decisões) ~0,5 s; "justiça gratuita" + "dano moral" +
-  "horas extras" juntas ~0,5 s.
+- **Depois do deploy, rode o preparo na VPS**, fora do horário de uso: sem ele NR, Tema e Súmula
+  Vinculante não aparecem no autocompletar. O preparo refaz os dispositivos com `TRUNCATE`, e o
+  autocompletar, as contagens e a busca com filtro esperam até ele terminar. Confira o `df -h` antes
+  (o índice de texto e as tabelas de dispositivos ocupam centenas de MB).
+- **Desempenho:** a busca restrita usa o mesmo pool de 30 candidatos da busca normal, então fica
+  praticamente no mesmo tempo; a contagem roda uma consulta por expressão, em paralelo.
 - **Texto indexado:** só letras sem acento e números; hífen e pontuação viram espaço e o ponto entre
   dígitos sai, então "auxílio-doença" casa "auxilio doença" e "Lei 13.467" casa "Lei 13467". Se essa
   forma mudar (`_VERSAO_TEXTO` em `query/filtros/preparar.py`), o próximo preparo refaz o índice de
@@ -619,8 +449,7 @@ ssh -L 3001:localhost:3000 deploy@IP   # depois abra http://localhost:3001
 
 - **Datas da coleta:** na config do `acervo` (`data_inicio`, `data_fim`, em `AAAA-MM-DD`; `colecao`, padrão
   `acordaos`). Em branco, a coleta continua do banco.
-- **Jev:** `limite` é o máximo de acórdãos classificados por run (padrão 500; `0` = sem limite). Custo
-  aproximado de 1.600 tokens por acórdão. O `jev` só grava em `documentos.provimento` acima de `confianca_min`
+- **Jev:** `limite` é o máximo de acórdãos classificados por run (padrão 500; `0` = sem limite). O `jev` só grava em `documentos.provimento` acima de `confianca_min`
   (0,8) e sincroniza Qdrant e BM25.
 - **Depois do `full`:** `docker compose -f docker-compose.prod.yml restart api` (recarrega o BM25).
 - **Fila:** um run por vez (`pipeline/dagster.yaml`); runs disparados durante outro ficam na fila.
@@ -720,21 +549,16 @@ que manteve o re-ranking em si consistente (~2s) sem inflar demais a busca.
 
 ## Autenticação — pendências futuras
 
-A autenticação real (`auth/`, `query/api/auth_routes.py`) cobre hoje o essencial e
-funcional: cadastro, login, logout, sessão via cookie httpOnly, senha com Argon2id,
-JWT, proteção contra timing attack e contra CSRF via `<form>`. Deliberadamente
-**não** implementado (escopo cortado a pedido — não é trabalho pela metade, é
-trabalho que ainda não começou):
+A autenticação (`auth/`, `query/api/auth_routes.py`) cobre cadastro, login, logout, sessão via
+cookie httpOnly, redefinição de senha por e-mail (`/auth/esqueci-senha` e `/auth/redefinir-senha`,
+com SMTP configurado pelo `.env`), senha com Argon2id, JWT e proteção contra timing attack e CSRF.
+Decisões em [`auth/DESIGN.md`](auth/DESIGN.md). Deliberadamente **não** implementado:
 
 - **Verificação de e-mail** — hoje qualquer e-mail digitado é aceito sem confirmação.
-- **Recuperação de senha** ("esqueci minha senha") — a tela `/esqueci-senha` existe
-  no frontend mas não fala com nenhum backend real.
 - **2FA** (segundo fator de autenticação).
 - **Rate limiting / lockout** de tentativas de login (força bruta hoje não tem
   nenhum limite além do custo do próprio Argon2id).
-
-Ver `auth/SCHEMA.md` para o que já foi propositalmente deixado de fora do schema
-(is_superuser/roles, tabela de sessões/refresh tokens) — mesma lista, mesma razão.
+- **Papéis e permissões** (`is_superuser`) e **refresh token**.
 
 ---
 

@@ -4,7 +4,7 @@ Testes de POST /enrich, POST /query, GET /document/{id} e GET /health
 
 Nenhuma infra real é usada: hybrid/doc_retriever/enricher são substituídos via
 app.dependency_overrides (por isso o TestClient NÃO é usado como context manager
-— o lifespan real, que conectaria a Postgres/Chroma/Ollama, nunca precisa rodar).
+— o lifespan real, que conectaria a Postgres/Qdrant/Ollama, nunca precisa rodar).
 pdf_extractor.extract_text é monkeypatchado quando o teste precisa controlar o
 resultado da extração sem depender de um PDF de verdade.
 
