@@ -49,46 +49,46 @@ CREATE TABLE IF NOT EXISTS documentos (
 );
 """
 
-# created_at fica de fora do DO UPDATE — preserva a data original do primeiro scrape.
-# id (UUID) também: gerado uma vez no INSERT e estável entre re-scrapes.
-_UPSERT = """
+# Colunas gravadas pelo upsert, na ordem do INSERT. A primeira é a chave natural, que não entra
+# no DO UPDATE. `id` e `created_at` ficam de fora de propósito: são gerados pelo banco no
+# primeiro INSERT e preservam o UUID e a data do primeiro scrape nos re-scrapes.
+COLUNAS = (
+    "id_documento",
+    "tipo_documento",
+    "hierarquia_categoria",
+    "data_filtro",
+    "numero_processo",
+    "tribunal",
+    "classe_processo",
+    "sigla_classe",
+    "relator",
+    "turma",
+    "gabinete",
+    "data_julgamento",
+    "data_juntada",
+    "cabecalho",
+    "ementa",
+    "relatorio",
+    "fundamentacao",
+    "acordao",
+    "votos",
+    "possui_ementa",
+    "referencia_legislativa",
+    "provimento",
+    "link_original",
+    "scraped_at",
+)
+
+_ATUALIZACOES = ",\n    ".join(f"{coluna} = EXCLUDED.{coluna}" for coluna in COLUNAS[1:])
+
+_UPSERT = f"""
 INSERT INTO documentos (
-    id_documento, tipo_documento, hierarquia_categoria, data_filtro,
-    numero_processo, tribunal, classe_processo, sigla_classe,
-    relator, turma, gabinete, data_julgamento, data_juntada,
-    cabecalho, ementa, relatorio, fundamentacao, acordao, votos,
-    possui_ementa, referencia_legislativa, provimento, link_original, scraped_at
+    {", ".join(COLUNAS)}
 ) VALUES (
-    %(id_documento)s, %(tipo_documento)s, %(hierarquia_categoria)s, %(data_filtro)s,
-    %(numero_processo)s, %(tribunal)s, %(classe_processo)s, %(sigla_classe)s,
-    %(relator)s, %(turma)s, %(gabinete)s, %(data_julgamento)s, %(data_juntada)s,
-    %(cabecalho)s, %(ementa)s, %(relatorio)s, %(fundamentacao)s, %(acordao)s, %(votos)s,
-    %(possui_ementa)s, %(referencia_legislativa)s, %(provimento)s, %(link_original)s, %(scraped_at)s
+    {", ".join(f"%({coluna})s" for coluna in COLUNAS)}
 )
 ON CONFLICT (id_documento) DO UPDATE SET
-    tipo_documento         = EXCLUDED.tipo_documento,
-    hierarquia_categoria   = EXCLUDED.hierarquia_categoria,
-    data_filtro            = EXCLUDED.data_filtro,
-    numero_processo        = EXCLUDED.numero_processo,
-    tribunal               = EXCLUDED.tribunal,
-    classe_processo        = EXCLUDED.classe_processo,
-    sigla_classe           = EXCLUDED.sigla_classe,
-    relator                = EXCLUDED.relator,
-    turma                  = EXCLUDED.turma,
-    gabinete               = EXCLUDED.gabinete,
-    data_julgamento        = EXCLUDED.data_julgamento,
-    data_juntada           = EXCLUDED.data_juntada,
-    cabecalho              = EXCLUDED.cabecalho,
-    ementa                 = EXCLUDED.ementa,
-    relatorio              = EXCLUDED.relatorio,
-    fundamentacao          = EXCLUDED.fundamentacao,
-    acordao                = EXCLUDED.acordao,
-    votos                  = EXCLUDED.votos,
-    possui_ementa          = EXCLUDED.possui_ementa,
-    referencia_legislativa = EXCLUDED.referencia_legislativa,
-    provimento             = EXCLUDED.provimento,
-    link_original          = EXCLUDED.link_original,
-    scraped_at             = EXCLUDED.scraped_at;
+    {_ATUALIZACOES};
 """
 
 # Estado retomável da coleta, por coleção — substitui o checkpoint em arquivo.
