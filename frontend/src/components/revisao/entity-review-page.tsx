@@ -22,7 +22,7 @@ import { emptyEstrutura, queryJurisprudencia, ApiError, type EstruturaArgumentat
 import { EtiquetaBusca } from "@/components/ui/etiqueta-busca";
 import { BUSCA, TAG_TERMOS, type Busca } from "@/lib/cores-busca";
 
-function TagList({
+export function TagList({
   items,
   onChange,
   placeholder,
@@ -71,6 +71,15 @@ function TagList({
     setEditVal("");
   };
 
+  // Chave estável: o texto (e a ordem entre repetidos). Com o índice, remover o 1º chip fazia o
+  // elemento de cada um dos seguintes passar a mostrar o vizinho.
+  const vistos = new Map<string, number>();
+  const chaves = items.map((item) => {
+    const n = vistos.get(item) ?? 0;
+    vistos.set(item, n + 1);
+    return `${item}#${n}`;
+  });
+
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((item, idx) => {
@@ -78,7 +87,7 @@ function TagList({
         const isEditing = editIdx === idx;
         return (
           <div
-            key={idx}
+            key={chaves[idx]}
             className={`group flex items-center rounded-lg border transition-all ${TAG_TERMOS.fundo}`}
             style={{
               opacity: isRemoving ? 0 : 1,
