@@ -21,7 +21,6 @@ suíte espera rodar sem nenhuma infra.
 """
 from __future__ import annotations
 
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -30,24 +29,9 @@ import pytest
 
 from auth.db import ensure_schema
 from auth.store import EmailJaCadastradoError, UsuarioStore
+from tests.conftest import DATABASE_URL, requer_postgres
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _postgres_disponivel() -> bool:
-    if not DATABASE_URL:
-        return False
-    try:
-        psycopg.connect(DATABASE_URL, connect_timeout=2).close()
-        return True
-    except psycopg.OperationalError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_disponivel(),
-    reason="Requer DATABASE_URL apontando para um Postgres real e acessível.",
-)
+pytestmark = requer_postgres
 
 
 @pytest.fixture(autouse=True)

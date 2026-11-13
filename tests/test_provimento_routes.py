@@ -7,16 +7,13 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from auth.store import Usuario
 from query.api.app import app, get_current_user
 from query.api.auth_routes import get_usuario_store
 from query.api.provimento_routes import get_provimento_store
 from scraper.provimento_jev_db import DocumentoNaoEncontrado
+from tests.fakes import usuario_fake
 
-_USUARIO = Usuario(
-    id=uuid.uuid4(), email="a@example.com", hashed_password="x",
-    nome="A", is_active=True, criado_em=datetime.now(timezone.utc),
-)
+_USUARIO = usuario_fake()
 DOC = str(uuid.uuid4())
 CORPO = {"resultado": "provido", "recorrente": "reclamante", "favorece": "reclamante", "comentario": "texto"}
 

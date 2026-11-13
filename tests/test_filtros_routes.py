@@ -1,18 +1,14 @@
 """Testes de GET /filtros/dispositivos e POST /filtros/contagem (query/api/filtros_routes.py)."""
-import uuid
-from datetime import datetime, timezone
-
 import pytest
 from fastapi.testclient import TestClient
 
-from auth.store import Usuario
 from query.api.app import app, get_current_user
 from query.api.auth_routes import get_usuario_store
 from query.api.filtros_routes import get_filtro_store
 from query.filtros.store import ContagemFiltros, SugestaoDispositivo
+from tests.fakes import usuario_fake
 
-_USUARIO = Usuario(id=uuid.uuid4(), email="t@example.com", hashed_password="x", nome="T", is_active=True,
-                   criado_em=datetime.now(timezone.utc))
+_USUARIO = usuario_fake("t@example.com", "T")
 
 
 class _Store:

@@ -2,7 +2,6 @@
 import json
 import os
 import uuid
-from types import SimpleNamespace
 
 import psycopg
 import pytest
@@ -16,6 +15,7 @@ from avaliacao.geracao import (
 )
 from query.enrichment.schema import EstruturaArgumentativa
 from scraper.schema import DocumentoJuridico, TipoDocumento
+from tests.fakes import FakeOpenAI
 
 TESE_JSON = {
     "pedido_principal": "adicional de insalubridade",
@@ -35,22 +35,10 @@ def _doc():
     )
 
 
-class _FakeOpenAI:
-    def __init__(self, parsed):
-        self.chamadas = []
-        self.chat = SimpleNamespace(completions=SimpleNamespace(parse=self._parse))
-        self._parsed = parsed
-
-    def _parse(self, **kwargs):
-        self.chamadas.append(kwargs)
-        msg = SimpleNamespace(parsed=self._parsed, refusal=None)
-        return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
-
-
 @pytest.mark.parametrize("lado", ["favoravel", "contrario"])
 def test_gerar_tese_valida_schema(lado, monkeypatch):
     monkeypatch.delenv("OPENAI_GEN_MODEL", raising=False)
-    fake = _FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
+    fake = FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
     tese = gerar_tese(_doc(), lado, client=fake)
     assert isinstance(tese, EstruturaArgumentativa)
     assert tese.pedido_principal == "adicional de insalubridade"
@@ -65,18 +53,18 @@ def test_gerar_tese_valida_schema(lado, monkeypatch):
 
 def test_gerar_tese_modelo_do_ambiente(monkeypatch):
     monkeypatch.setenv("OPENAI_GEN_MODEL", "gpt-x")
-    fake = _FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
+    fake = FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
     gerar_tese(_doc(), "favoravel", client=fake)
     assert fake.chamadas[0]["model"] == "gpt-x"
 
 
 def test_gerar_tese_lado_invalido():
     with pytest.raises(ValueError):
-        gerar_tese(_doc(), "talvez", client=_FakeOpenAI(None))
+        gerar_tese(_doc(), "talvez", client=FakeOpenAI(None))
 
 
 def test_gerar_tese_recusa_do_modelo():
-    fake = _FakeOpenAI(None)
+    fake = FakeOpenAI(None)
     with pytest.raises(RuntimeError):
         gerar_tese(_doc(), "favoravel", client=fake)
 
@@ -85,7 +73,7 @@ def test_atribuir_tema_devolve_tema_da_lista(monkeypatch):
     from avaliacao.temas import TEMAS, _Tema, atribuir_tema
 
     monkeypatch.delenv("OPENAI_GEN_MODEL", raising=False)
-    fake = _FakeOpenAI(_Tema(tema="dano moral"))
+    fake = FakeOpenAI(_Tema(tema="dano moral"))
     assert atribuir_tema(TESE_JSON, client=fake) == "dano moral"
     kw = fake.chamadas[0]
     assert kw["response_format"] is _Tema
@@ -97,7 +85,7 @@ def test_atribuir_tema_devolve_tema_da_lista(monkeypatch):
 def test_atribuir_tema_recusa_vira_outro():
     from avaliacao.temas import atribuir_tema
 
-    assert atribuir_tema(TESE_JSON, client=_FakeOpenAI(None)) == "outro"
+    assert atribuir_tema(TESE_JSON, client=FakeOpenAI(None)) == "outro"
 
 
 def test_split_deterministico_e_cobre_os_dois_lados():
@@ -176,14 +164,14 @@ def test_sortear_acordaos_integracao():
 
 
 def test_gerar_tese_sem_exemplos_nao_menciona_estilo():
-    fake = _FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
+    fake = FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
     gerar_tese(_doc(), "favoravel", client=fake)
     prompt = " ".join(m["content"] for m in fake.chamadas[0]["messages"])
     assert "Exemplos de estilo" not in prompt
 
 
 def test_gerar_tese_com_exemplos_limita_a_cinco_e_pede_para_nao_copiar():
-    fake = _FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
+    fake = FakeOpenAI(EstruturaArgumentativa(**TESE_JSON))
     exemplos = [f"EXEMPLO-{i}" for i in range(7)]
     gerar_tese(_doc(), "favoravel", client=fake, exemplos=exemplos)
     prompt = " ".join(m["content"] for m in fake.chamadas[0]["messages"])

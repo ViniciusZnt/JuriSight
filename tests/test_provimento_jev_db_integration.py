@@ -7,7 +7,6 @@ apaga no fim; a FK com cascade remove a linha de provimento_jev. Sempre usa
 """
 from __future__ import annotations
 
-import os
 import uuid
 
 import psycopg
@@ -15,24 +14,9 @@ import pytest
 
 from scraper.provimento_jev import ClassificacaoProvimento
 from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema
+from tests.conftest import DATABASE_URL, requer_postgres
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _postgres_disponivel() -> bool:
-    if not DATABASE_URL:
-        return False
-    try:
-        psycopg.connect(DATABASE_URL, connect_timeout=2).close()
-        return True
-    except psycopg.OperationalError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_disponivel(),
-    reason="Requer DATABASE_URL apontando para um Postgres real e acessível.",
-)
+pytestmark = requer_postgres
 
 MODELO, SHA = "jev-1.13.0", "sha1"
 
