@@ -40,10 +40,12 @@ import {
   matchedEntities,
   paragrafos,
   relevanceRanks,
+  paraSalvo,
   titleFromEmenta,
   TIPO_DOCUMENTO_LABEL,
 } from "@/lib/decision-view";
 import { copiarTexto } from "@/lib/utils";
+import { useCopiar } from "@/lib/use-copiar";
 import { useSaved } from "@/lib/saved";
 import { useSearchSession } from "@/lib/search-session";
 import { getDocument, ApiError, type DocumentoDetalhe } from "@/lib/api";
@@ -87,9 +89,9 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
   const { estrutura, resultados } = useSearchSession();
   const [doc, setDoc] = useState<DocumentoDetalhe | null>(null);
   const [error, setError] = useState<{ notFound: boolean; message: string } | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [ementaCopiada, setEmentaCopiada] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const [copied, copiarDocumento] = useCopiar();
+  const [ementaCopiada, copiarEmenta] = useCopiar();
+  const [linkCopied, copiarLink] = useCopiar();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["summary", "matches", "grounds", "decision"])
   );
@@ -119,8 +121,6 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
     };
   }, [decisionId]);
 
-  const formatDate = (dateStr: string | null) => formatarData(dateStr, "long");
-
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => {
       const next = new Set(prev);
@@ -129,8 +129,6 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
       return next;
     });
   };
-
-  const copyText = (text: string, onDone: () => void) => copiarTexto(text).then(onDone);
 
   if (error) {
     return (
@@ -184,7 +182,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
     const lines: string[] = [];
     lines.push(title, "");
     lines.push(`${doc.tribunal} — ${doc.turma}`);
-    lines.push(`Data: ${formatDate(doc.data_julgamento)}`);
+    lines.push(`Data: ${formatarData(doc.data_julgamento, "long")}`);
     lines.push(`Processo: ${doc.numero_processo}`);
     lines.push(`Relator: ${doc.relator}`);
     lines.push(`Origem: ${origin}`);
@@ -264,12 +262,12 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
                 <span>{doc.turma}</span>
               </MetaItem>
               <MetaItem icon={Calendar}>
-                <span>{formatDate(doc.data_julgamento)}</span>
+                <span>{formatarData(doc.data_julgamento, "long")}</span>
               </MetaItem>
               <MetaItem icon={FileText}>
                 <span className="font-mono text-[#4A4A5A] dark:text-[#C4C4CE]">{doc.numero_processo}</span>
                 <button
-                  onClick={() => copyText(doc.numero_processo, () => {})}
+                  onClick={() => copiarTexto(doc.numero_processo)}
                   className="ml-1 hover:text-[#1A3A5C] dark:hover:text-[#8AB0DC]"
                   title="Copiar número do processo"
                 >
@@ -291,32 +289,20 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
                 label={isSavedCtx(doc.id) ? "Salvo" : "Salvar"}
                 tone={isSavedCtx(doc.id) ? "accent" : "neutral"}
                 iconFill={isSavedCtx(doc.id)}
-                onClick={() =>
-                  toggle({
-                    id: doc.id,
-                    title,
-                    court: doc.tribunal,
-                    chamber: doc.turma,
-                    date: doc.data_julgamento ?? "",
-                    outcome,
-                    relevance: relevance ?? 0,
-                    rapporteur: doc.relator,
-                    processNumber: doc.numero_processo,
-                  })
-                }
+                onClick={() => toggle(paraSalvo(doc, outcome, relevance))}
               />
               <ActionButton
                 icon={linkCopied ? CheckCircle2 : Share2}
                 label={linkCopied ? "Link copiado!" : "Compartilhar"}
                 tone={linkCopied ? "success" : "neutral"}
-                onClick={() => copyText(window.location.href, () => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); })}
+                onClick={() => copiarLink(window.location.href)}
                 title="Copiar link desta decisão"
               />
               <ActionButton
                 icon={copied ? CheckCircle2 : Copy}
                 label={copied ? "Copiado!" : "Copiar documento"}
                 tone={copied ? "success" : "neutral"}
-                onClick={() => copyText(buildFullDocument(), () => { setCopied(true); setTimeout(() => setCopied(false), 2000); })}
+                onClick={() => copiarDocumento(buildFullDocument())}
                 title="Copiar documento completo para a área de transferência"
               />
               <ActionButton
@@ -350,7 +336,7 @@ export function DecisionDetailPage({ decisionId }: { decisionId: string }) {
                 size="sm"
                 className="mt-3"
                 title="Copiar a ementa com a linha de citação (tribunal, turma, processo, data, relator)"
-                onClick={() => copyText(ementaComCitacao(doc), () => { setEmentaCopiada(true); setTimeout(() => setEmentaCopiada(false), 2000); })}
+                onClick={() => copiarEmenta(ementaComCitacao(doc))}
               />
             )}
           </CollapsibleSection>

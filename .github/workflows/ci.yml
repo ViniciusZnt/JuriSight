@@ -21,15 +21,13 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv sync --frozen
-      - run: uv run pytest -q --ignore=tests/test_api_stress.py
+      - run: uv run pytest -q
 
   frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
-    env:
-      CYPRESS_INSTALL_BINARY: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4

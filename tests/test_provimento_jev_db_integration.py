@@ -7,7 +7,6 @@ apaga no fim; a FK com cascade remove a linha de provimento_jev. Sempre usa
 """
 from __future__ import annotations
 
-import os
 import uuid
 
 import psycopg
@@ -15,24 +14,9 @@ import pytest
 
 from scraper.provimento_jev import ClassificacaoProvimento
 from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema
+from tests.conftest import DATABASE_URL, requer_postgres
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _postgres_disponivel() -> bool:
-    if not DATABASE_URL:
-        return False
-    try:
-        psycopg.connect(DATABASE_URL, connect_timeout=2).close()
-        return True
-    except psycopg.OperationalError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_disponivel(),
-    reason="Requer DATABASE_URL apontando para um Postgres real e acessível.",
-)
+pytestmark = requer_postgres
 
 MODELO, SHA = "jev-1.13.0", "sha1"
 
@@ -258,3 +242,13 @@ def test_salvar_correcao_faz_upsert(store, criar_doc, criar_usuario):
 def test_salvar_correcao_documento_inexistente(store, criar_usuario):
     with pytest.raises(DocumentoNaoEncontrado):
         store.salvar_correcao(str(uuid.uuid4()), criar_usuario(), "provido", "reclamante", "reclamante", None)
+
+
+def test_lote_numa_conexao_so_grava_cada_linha_na_hora(store, criar_doc):
+    d1, d2 = criar_doc(), criar_doc()
+    with store.conexao_de_gravacao() as conn:
+        store.gravar(d1, _classif(), "NEGADO", MODELO, SHA, conn=conn)
+        # outra conexão já enxerga a 1ª linha: nada espera o fim do lote
+        assert [l.documento_id for l in store.linhas(MODELO, SHA) if l.documento_id in (d1, d2)] == [d1]
+        store.gravar(d2, _classif("provido"), "NEGADO", MODELO, SHA, conn=conn)
+    assert {l.documento_id for l in store.linhas(MODELO, SHA)} >= {d1, d2}

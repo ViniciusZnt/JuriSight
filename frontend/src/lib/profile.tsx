@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect } from "react";
+import { createContext, useCallback, useContext } from "react";
 import { atualizarPerfil } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -19,9 +19,6 @@ export interface Profile {
 type Extras = Pick<Profile, "phone" | "oab" | "role">;
 
 const PAPEL_PADRAO: Role = "Advogado";
-// Onde os extras ficavam antes: no primeiro acesso, sobem para a conta e saem do navegador.
-const CHAVE_SEM_DONO = "jurisight:profile";
-const chaveAntigaDe = (usuarioId: string) => `jurisight:profile:${usuarioId}`;
 
 /** Nome exibido: o nome da conta ou, se ela não tiver, a parte do e-mail antes do "@". */
 export function nomeExibido(nome: string | null | undefined, email: string | null | undefined): string {
@@ -64,30 +61,6 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     },
     [usuario, atualizarUsuario]
   );
-
-  // Migração única: o que estava salvo no navegador sobe para a conta, se a conta ainda não
-  // tiver nada, e a cópia local é apagada.
-  const usuarioId = usuario?.id;
-  const contaVazia = !usuario?.telefone && !usuario?.oab && !usuario?.papel;
-  useEffect(() => {
-    if (!usuarioId) return;
-    let antigo: Partial<Extras> | null = null;
-    try {
-      localStorage.removeItem(CHAVE_SEM_DONO);
-      const raw = localStorage.getItem(chaveAntigaDe(usuarioId));
-      if (raw) antigo = JSON.parse(raw);
-      localStorage.removeItem(chaveAntigaDe(usuarioId));
-    } catch {
-      return; // storage indisponível: não há o que migrar
-    }
-    if (antigo && contaVazia && (antigo.phone || antigo.oab || antigo.role)) {
-      update(antigo).catch(() => {
-        /* fica para a próxima vez que a pessoa salvar o perfil */
-      });
-    }
-    // só no primeiro carregamento de cada conta
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usuarioId]);
 
   return <Ctx.Provider value={{ profile, hydrated: !!usuario, update }}>{children}</Ctx.Provider>;
 }

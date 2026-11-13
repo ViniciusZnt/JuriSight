@@ -15,13 +15,10 @@ e limpa só as linhas que ele mesmo inseriu ao final (nunca faz DROP/TRUNCATE �
 essa tabela pode ter dados de outros testes/uso manual rodando em paralelo).
 
 Pulado automaticamente se DATABASE_URL não estiver definida ou o Postgres não
-responder — mesmo espírito de tests/test_api_stress.py (só roda contra infra
-real, sob demanda), não faz parte do `uv run pytest` "padrão" que o resto da
-suíte espera rodar sem nenhuma infra.
+responder, então o `uv run pytest` padrão continua rodando sem nenhuma infra.
 """
 from __future__ import annotations
 
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -30,24 +27,9 @@ import pytest
 
 from auth.db import ensure_schema
 from auth.store import EmailJaCadastradoError, UsuarioStore
+from tests.conftest import DATABASE_URL, requer_postgres
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _postgres_disponivel() -> bool:
-    if not DATABASE_URL:
-        return False
-    try:
-        psycopg.connect(DATABASE_URL, connect_timeout=2).close()
-        return True
-    except psycopg.OperationalError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_disponivel(),
-    reason="Requer DATABASE_URL apontando para um Postgres real e acessível.",
-)
+pytestmark = requer_postgres
 
 
 @pytest.fixture(autouse=True)

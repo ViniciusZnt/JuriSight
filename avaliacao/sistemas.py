@@ -10,7 +10,6 @@ from query.enrichment import query_builder
 from query.enrichment.schema import EstruturaArgumentativa
 from query.search.hybrid_search import (
     CANDIDATOS_POR_CANAL,
-    _dedup_ordenado,
     _doc_id_do_chunk,
     reciprocal_rank_fusion,
 )
@@ -27,7 +26,7 @@ def top_bm25(hybrid, estrutura: EstruturaArgumentativa, k: int) -> list[str]:
     """Top-k documentos distintos só do canal BM25."""
     texto_bm25 = query_builder.build_bm25_query(estrutura)
     hits = hybrid.bm25.search(texto_bm25, n=PROFUNDIDADE)
-    return _dedup_ordenado([_doc_id_do_chunk(cid) for cid, _ in hits])[:k]
+    return list(dict.fromkeys(_doc_id_do_chunk(cid) for cid, _ in hits))[:k]
 
 
 def top_denso(hybrid, estrutura: EstruturaArgumentativa, k: int) -> list[str]:
@@ -37,9 +36,7 @@ def top_denso(hybrid, estrutura: EstruturaArgumentativa, k: int) -> list[str]:
     vetor = hybrid.embedder.embed_text(frase_tese)
     n = PROFUNDIDADE
     rankings = [
-        _dedup_ordenado(
-            [h["documento_id"] for h in hybrid.store.query(vetor, n_results=n, collection=colecao)]
-        )
+        list(dict.fromkeys(h["documento_id"] for h in hybrid.store.query(vetor, n_results=n, collection=colecao)))
         for colecao in (COLLECTION_COMPLETO, COLLECTION_EMENTA)
     ]
     return [doc_id for doc_id, _ in reciprocal_rank_fusion(rankings)[:k]]

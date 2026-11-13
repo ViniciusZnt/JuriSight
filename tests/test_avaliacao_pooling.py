@@ -44,7 +44,7 @@ class _FakeRetriever:
         self.ausentes = set(ausentes)
         self.chamadas = []
 
-    def fetch(self, ids):
+    def fetch(self, ids, completo=True):
         self.chamadas.append(list(ids))
         out = {}
         for i in ids:

@@ -8,6 +8,7 @@ referencia `documentos(id)` com ON DELETE CASCADE.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import psycopg
@@ -117,6 +118,13 @@ class ProvimentoJevStore:
     def _conn(self) -> psycopg.Connection:
         return psycopg.connect(self._database_url)
 
+    @contextmanager
+    def conexao_de_gravacao(self):
+        """Uma conexão só para gravar um lote. Em autocommit: cada `gravar` fica salvo na hora,
+        como com uma conexão por chamada (o lote é pago e pode ser interrompido)."""
+        with psycopg.connect(self._database_url, autocommit=True) as conn:
+            yield conn
+
     def pendentes(
         self,
         modelo: str,
@@ -173,36 +181,40 @@ class ProvimentoJevStore:
         provimento_regex: str,
         modelo: str,
         perguntas_sha: str,
+        conn: psycopg.Connection | None = None,
     ) -> None:
-        """Upsert por `documento_id`; renova `criado_em`."""
-        with self._conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO public.provimento_jev
-                    (documento_id, resultado, recorrente, favorece, probs,
-                     confianca_resultado, confianca_recorrente, confianca_favorece,
-                     provimento_regex, modelo, perguntas_sha)
-                VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (documento_id) DO UPDATE SET
-                    resultado = EXCLUDED.resultado,
-                    recorrente = EXCLUDED.recorrente,
-                    favorece = EXCLUDED.favorece,
-                    probs = EXCLUDED.probs,
-                    confianca_resultado = EXCLUDED.confianca_resultado,
-                    confianca_recorrente = EXCLUDED.confianca_recorrente,
-                    confianca_favorece = EXCLUDED.confianca_favorece,
-                    provimento_regex = coalesce(
-                        public.provimento_jev.provimento_regex, EXCLUDED.provimento_regex),
-                    modelo = EXCLUDED.modelo,
-                    perguntas_sha = EXCLUDED.perguntas_sha,
-                    criado_em = NOW()
-                """,
-                (
-                    documento_id, c.resultado, c.recorrente, c.favorece, Json(c.probs),
-                    c.confianca_resultado, c.confianca_recorrente, c.confianca_favorece,
-                    provimento_regex, modelo, perguntas_sha,
-                ),
-            )
+        """Upsert por `documento_id`; renova `criado_em`. `conn`: a de `conexao_de_gravacao`
+        (sem ela, abre e fecha uma só para esta linha)."""
+        if conn is None:
+            with self._conn() as nova:
+                return self.gravar(documento_id, c, provimento_regex, modelo, perguntas_sha, conn=nova)
+        conn.execute(
+            """
+            INSERT INTO public.provimento_jev
+                (documento_id, resultado, recorrente, favorece, probs,
+                 confianca_resultado, confianca_recorrente, confianca_favorece,
+                 provimento_regex, modelo, perguntas_sha)
+            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (documento_id) DO UPDATE SET
+                resultado = EXCLUDED.resultado,
+                recorrente = EXCLUDED.recorrente,
+                favorece = EXCLUDED.favorece,
+                probs = EXCLUDED.probs,
+                confianca_resultado = EXCLUDED.confianca_resultado,
+                confianca_recorrente = EXCLUDED.confianca_recorrente,
+                confianca_favorece = EXCLUDED.confianca_favorece,
+                provimento_regex = coalesce(
+                    public.provimento_jev.provimento_regex, EXCLUDED.provimento_regex),
+                modelo = EXCLUDED.modelo,
+                perguntas_sha = EXCLUDED.perguntas_sha,
+                criado_em = NOW()
+            """,
+            (
+                documento_id, c.resultado, c.recorrente, c.favorece, Json(c.probs),
+                c.confianca_resultado, c.confianca_recorrente, c.confianca_favorece,
+                provimento_regex, modelo, perguntas_sha,
+            ),
+        )
 
     def linhas(self, modelo: str, perguntas_sha: str) -> list[LinhaClassificada]:
         """Classificações do par modelo/sha, com o `provimento` atual do documento."""

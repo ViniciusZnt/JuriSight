@@ -1,8 +1,8 @@
 """
 Testes do SAC Chunker (processing/chunking/sac_chunker.py).
 
-Unit tests puros — não dependem de PostgreSQL nem da OpenAI. Cobrem os três
-primitivos (_count_tokens, _split_into_windows, _dispositivo_summary) e a
+Unit tests puros — não dependem de PostgreSQL nem da OpenAI. Cobrem os dois
+primitivos (_split_into_windows, _dispositivo_summary) e a
 orquestração em chunk_document, incluindo os casos-limite que motivaram os
 ajustes de tamanho de janela e teto de prefixo (evitar estourar os 8191 tokens
 do text-embedding-3-small).
@@ -19,7 +19,6 @@ from processing.chunking.sac_chunker import (
     TARGET_TOKENS,
     Chunk,
     SACChunker,
-    _count_tokens,
     _dispositivo_summary,
     _split_into_windows,
 )
@@ -48,20 +47,6 @@ def _doc(**kwargs) -> DocumentoJuridico:
 
 
 # --------------------------------------------------------------------------- #
-# _count_tokens                                                                #
-# --------------------------------------------------------------------------- #
-
-def test_count_tokens_vazio_e_espacos():
-    assert _count_tokens("") == 0
-    assert _count_tokens("   \n\t ") == 0
-
-
-def test_count_tokens_conta_palavras():
-    assert _count_tokens("um dois tres") == 3
-    assert _count_tokens("  espacos   colapsam  ") == 2
-
-
-# --------------------------------------------------------------------------- #
 # _split_into_windows                                                          #
 # --------------------------------------------------------------------------- #
 
@@ -80,7 +65,7 @@ def test_split_texto_curto_uma_janela():
 def test_split_janela_exata_nao_gera_segunda():
     janelas = _split_into_windows(_words(TARGET_TOKENS))
     assert len(janelas) == 1
-    assert _count_tokens(janelas[0]) == TARGET_TOKENS
+    assert len(janelas[0].split()) == TARGET_TOKENS
 
 
 def test_split_overlap_correto():
@@ -100,13 +85,13 @@ def test_split_funde_cauda_curta():
     total = TARGET_TOKENS + 50
     janelas = _split_into_windows(_words(total))
     assert len(janelas) == 1                 # cauda de 50 fundida → janela única
-    assert _count_tokens(janelas[0]) >= TARGET_TOKENS
+    assert len(janelas[0].split()) >= TARGET_TOKENS
 
 
 def test_split_ultima_janela_nunca_menor_que_min():
     """Com várias janelas, nenhuma cauda raquítica sobra no fim."""
     janelas = _split_into_windows(_words(TARGET_TOKENS * 3 + 30))
-    assert _count_tokens(janelas[-1]) >= MIN_TOKENS
+    assert len(janelas[-1].split()) >= MIN_TOKENS
 
 
 def test_split_cobre_todo_o_texto():
@@ -136,7 +121,7 @@ def test_dispositivo_sem_marcador_usa_inicio():
 def test_dispositivo_respeita_teto_de_palavras():
     texto = "Ante o exposto, " + _words(500)
     resumo = _dispositivo_summary(texto)
-    assert _count_tokens(resumo) <= SUMMARY_MAX_WORDS
+    assert len(resumo.split()) <= SUMMARY_MAX_WORDS
 
 
 # --------------------------------------------------------------------------- #
@@ -220,10 +205,10 @@ def test_chunk_respeita_orcamento_de_tokens():
     ementa_longa = _words(1000, prefix="e")          # bem maior que o teto
     doc = _doc(ementa=ementa_longa, acordao=_words(TARGET_TOKENS * 3 + 40))
     for c in SACChunker().chunk_document(doc, "uuid-7"):
-        palavras = _count_tokens(c.texto)
+        palavras = len(c.texto.split())
         assert palavras <= TARGET_TOKENS + MIN_TOKENS + SUMMARY_MAX_WORDS
         # prefixo nunca ultrapassa o teto
-        assert _count_tokens(c.sac_summary) <= SUMMARY_MAX_WORDS
+        assert len(c.sac_summary.split()) <= SUMMARY_MAX_WORDS
 
 
 if __name__ == "__main__":

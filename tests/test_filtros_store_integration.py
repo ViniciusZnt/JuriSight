@@ -13,24 +13,9 @@ import pytest
 
 from query.filtros.preparar import preparar
 from query.filtros.store import FiltroStore
+from tests.conftest import DATABASE_URL, requer_postgres
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _postgres_disponivel() -> bool:
-    if not DATABASE_URL:
-        return False
-    try:
-        psycopg.connect(DATABASE_URL, connect_timeout=2).close()
-        return True
-    except psycopg.OperationalError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_disponivel(),
-    reason="Requer DATABASE_URL apontando para um Postgres real e acessível.",
-)
+pytestmark = requer_postgres
 
 
 @pytest.fixture(scope="module")

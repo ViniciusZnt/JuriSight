@@ -20,47 +20,15 @@ import { useSearchSession } from "@/lib/search-session";
 import { useConversations } from "@/lib/conversations";
 import { emptyEstrutura, queryJurisprudencia, ApiError, type EstruturaArgumentativa } from "@/lib/api";
 import { EtiquetaBusca } from "@/components/ui/etiqueta-busca";
-import type { Busca } from "@/lib/cores-busca";
+import { BUSCA, TAG_TERMOS, type Busca } from "@/lib/cores-busca";
 
-interface ColorScheme {
-  bg: string;
-  border: string;
-  text: string;
-  dot: string;
-  addBorder: string;
-  addHover: string;
-}
-
-const colors: Record<"blue" | "termos", ColorScheme> = {
-  blue: {
-    bg: "bg-[#EEF3FB] dark:bg-[#1A2A3C]",
-    border: "border-[#C8D9EF] dark:border-[#2A3A4C]",
-    text: "text-[#1A3A5C] dark:text-[#8AB0DC]",
-    dot: "bg-[#1A3A5C] dark:bg-[#8AB0DC]",
-    addBorder: "border-[#C8D0DC] dark:border-[#33333C]",
-    addHover:
-      "hover:border-[#1A3A5C] dark:hover:border-[#8AB0DC] hover:text-[#1A3A5C] dark:hover:text-[#8AB0DC] hover:bg-[#EEF3FB] dark:hover:bg-[#1A2A3C]",
-  },
-  termos: {
-    bg: "bg-[#E6F5F3] dark:bg-[#0F2826]",
-    border: "border-[#BFE3DE] dark:border-[#1E4A46]",
-    text: "text-[#0B5F58] dark:text-[#7FD8CE]",
-    dot: "bg-[#0E8A80] dark:bg-[#3FB8AD]",
-    addBorder: "border-[#B9D3CF] dark:border-[#24403D]",
-    addHover:
-      "hover:border-[#0E8A80] dark:hover:border-[#3FB8AD] hover:text-[#0B5F58] dark:hover:text-[#7FD8CE] hover:bg-[#E6F5F3] dark:hover:bg-[#0F2826]",
-  },
-};
-
-function TagList({
+export function TagList({
   items,
   onChange,
-  colorScheme,
   placeholder,
 }: {
   items: string[];
   onChange: (next: string[]) => void;
-  colorScheme: ColorScheme;
   placeholder: string;
 }) {
   const [adding, setAdding] = useState(false);
@@ -103,6 +71,15 @@ function TagList({
     setEditVal("");
   };
 
+  // Chave estável: o texto (e a ordem entre repetidos). Com o índice, remover o 1º chip fazia o
+  // elemento de cada um dos seguintes passar a mostrar o vizinho.
+  const vistos = new Map<string, number>();
+  const chaves = items.map((item) => {
+    const n = vistos.get(item) ?? 0;
+    vistos.set(item, n + 1);
+    return `${item}#${n}`;
+  });
+
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((item, idx) => {
@@ -110,15 +87,15 @@ function TagList({
         const isEditing = editIdx === idx;
         return (
           <div
-            key={idx}
-            className={`group flex items-center rounded-lg border transition-all ${colorScheme.bg} ${colorScheme.border}`}
+            key={chaves[idx]}
+            className={`group flex items-center rounded-lg border transition-all ${TAG_TERMOS.fundo}`}
             style={{
               opacity: isRemoving ? 0 : 1,
               transform: isRemoving ? "scale(0.9)" : "scale(1)",
               transition: "opacity 0.18s ease, transform 0.18s ease",
             }}
           >
-            <div className={`w-1.5 h-1.5 rounded-full mx-2.5 flex-shrink-0 ${colorScheme.dot}`} />
+            <div className={`w-1.5 h-1.5 rounded-full mx-2.5 flex-shrink-0 ${BUSCA.termos.ponto}`} />
             {isEditing ? (
               <input
                 ref={editRef}
@@ -132,12 +109,12 @@ function TagList({
                     setEditVal("");
                   }
                 }}
-                className={`bg-transparent outline-none py-1.5 pr-1 ${colorScheme.text}`}
+                className={`bg-transparent outline-none py-1.5 pr-1 ${TAG_TERMOS.texto}`}
                 style={{ fontSize: "13.8px", fontWeight: 500, minWidth: "80px", maxWidth: "200px" }}
               />
             ) : (
               <span
-                className={`py-1.5 cursor-default select-none ${colorScheme.text}`}
+                className={`py-1.5 cursor-default select-none ${TAG_TERMOS.texto}`}
                 style={{ fontSize: "13.8px", fontWeight: 500 }}
                 onDoubleClick={() => {
                   setEditIdx(idx);
@@ -158,7 +135,7 @@ function TagList({
                   className="flex items-center justify-center rounded hover:bg-black/8 dark:hover:bg-white/10 transition-colors"
                   style={{ width: "18px", height: "18px" }}
                 >
-                  <Pencil className={`opacity-55 ${colorScheme.text}`} style={{ width: "9px", height: "9px" }} strokeWidth={2} />
+                  <Pencil className={`opacity-55 ${TAG_TERMOS.texto}`} style={{ width: "9px", height: "9px" }} strokeWidth={2} />
                 </button>
                 <button
                   aria-label={`Remover ${item}`}
@@ -166,7 +143,7 @@ function TagList({
                   className="flex items-center justify-center rounded hover:bg-black/8 dark:hover:bg-white/10 transition-colors"
                   style={{ width: "18px", height: "18px" }}
                 >
-                  <X className={`opacity-45 ${colorScheme.text}`} style={{ width: "9px", height: "9px" }} strokeWidth={2.5} />
+                  <X className={`opacity-45 ${TAG_TERMOS.texto}`} style={{ width: "9px", height: "9px" }} strokeWidth={2.5} />
                 </button>
               </div>
             )}
@@ -175,8 +152,8 @@ function TagList({
       })}
 
       {adding ? (
-        <div className={`flex items-center rounded-lg border px-2.5 py-1.5 ${colorScheme.bg} ${colorScheme.border}`} style={{ minWidth: "110px" }}>
-          <div className={`w-1.5 h-1.5 rounded-full mr-2 flex-shrink-0 ${colorScheme.dot}`} />
+        <div className={`flex items-center rounded-lg border px-2.5 py-1.5 ${TAG_TERMOS.fundo}`} style={{ minWidth: "110px" }}>
+          <div className={`w-1.5 h-1.5 rounded-full mr-2 flex-shrink-0 ${BUSCA.termos.ponto}`} />
           <input
             ref={newRef}
             value={newVal}
@@ -190,14 +167,14 @@ function TagList({
               }
             }}
             placeholder={placeholder}
-            className={`bg-transparent outline-none ${colorScheme.text}`}
+            className={`bg-transparent outline-none ${TAG_TERMOS.texto}`}
             style={{ fontSize: "13.8px", fontWeight: 500, width: "110px" }}
           />
         </div>
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className={`flex items-center gap-1 rounded-lg border border-dashed px-2.5 py-1.5 transition-all text-[#9090A8] dark:text-[#7C7C88] ${colorScheme.addBorder} ${colorScheme.addHover}`}
+          className={`flex items-center gap-1 rounded-lg border border-dashed px-2.5 py-1.5 transition-all text-[#9090A8] dark:text-[#7C7C88] ${TAG_TERMOS.adicionar}`}
           style={{ fontSize: "13.8px" }}
         >
           <Plus style={{ width: "10px", height: "10px" }} strokeWidth={2.5} />
@@ -313,11 +290,19 @@ export function EntityReviewPage() {
 
   const entidadesConfirmadas = data.agente_nocivo.length + data.violacoes.length + data.normas.length + data.dispositivos.length + data.expressoes.length;
 
+  // Sair da tela com a busca em andamento cancela a requisição: a resposta não deve criar
+  // versão nem levar o usuário aos resultados depois que ele foi para outro lugar.
+  const busca = useRef<AbortController | null>(null);
+  useEffect(() => () => busca.current?.abort(), []);
+
   const buscar = async () => {
     setError(null);
     setSubmitting(true);
+    busca.current?.abort();
+    const controle = (busca.current = new AbortController());
     try {
-      const resultados = await queryJurisprudencia({ estrutura: data });
+      const resultados = await queryJurisprudencia({ estrutura: data }, controle.signal);
+      if (controle.signal.aborted) return;
       persistEstrutura(data);
       const snapshot = { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados };
       // Cada busca bem-sucedida vira uma versão NOVA (V1 na 1ª vez, V2 ao "Refinar
@@ -326,9 +311,11 @@ export function EntityReviewPage() {
       const versao = activeId
         ? await addVersion(activeId, snapshot)
         : { numero: 1, ...snapshot, createdAt: Date.now() }; // acesso direto à URL, sem conversa — só exibe, não persiste
+      if (controle.signal.aborted) return; // saiu da tela durante o salvamento: não navega
       loadVersion(versao);
       router.push("/resultados");
     } catch (err) {
+      if (controle.signal.aborted) return;
       console.error("Falha em /query:", err);
       setError(
         err instanceof ApiError
@@ -436,12 +423,12 @@ export function EntityReviewPage() {
 
             <FieldCard>
                 <FieldLabel label="Fatos do caso" busca="termos" description="Situações que caracterizam o caso (ex.: gravidez, ruído, jornada controlada)" />
-                <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.termos} placeholder="Novo fato…" />
+                <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} placeholder="Novo fato…" />
             </FieldCard>
 
             <FieldCard>
               <FieldLabel label="Condutas da empresa" busca="termos" description="O que a empresa fez ou deixou de fazer" />
-              <TagList items={data.violacoes} onChange={set("violacoes")} colorScheme={colors.termos} placeholder="Nova conduta…" />
+              <TagList items={data.violacoes} onChange={set("violacoes")} placeholder="Nova conduta…" />
             </FieldCard>
 
 

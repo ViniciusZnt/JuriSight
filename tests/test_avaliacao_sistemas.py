@@ -6,7 +6,7 @@ import pytest
 from avaliacao import sistemas
 from avaliacao.sistemas import candidatos_hibrido, rodar_sistema, top_denso
 from query.enrichment.schema import EstruturaArgumentativa
-from tests.test_pipeline import _doc
+from tests.fakes import documento_fake
 
 
 class _Bm25:
@@ -25,9 +25,9 @@ class _Hybrid:
 
 class _Retriever:
     def __init__(self, ids):
-        self._docs = {i: _doc(id_documento=i) for i in ids}
+        self._docs = {i: documento_fake(id_documento=i) for i in ids}
 
-    def fetch(self, ids):
+    def fetch(self, ids, completo=True):
         return {i: self._docs[i] for i in ids if i in self._docs}
 
 

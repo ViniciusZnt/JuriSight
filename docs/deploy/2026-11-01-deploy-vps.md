@@ -1,39 +1,11 @@
-# Deploy do JuriSight na VPS (MagnoHost) — plano para 01/11
+# Runbook de deploy do JuriSight na VPS (MagnoHost)
 
-O app está pronto, mas o deploy ainda não. Hoje existem o código (testes passando) e o build de
-produção do front, que passa. Falta escrever os Dockerfiles, o compose de produção, o HTTPS, o
-CI/CD e a proteção do servidor; configurar a VPS; e copiar os dados. Este documento é o roteiro, na
-ordem e com os comandos.
-
-Tempo estimado: de 4 a 6 horas. O que mais pesa é o upload de ~7 GB de dados.
-
-## Estado em 01/11, 17h35: no ar
-
-**https://16-5-6-82.sslip.io** (VPS `16.5.6.82`, usuário `deploy`, app em `/opt/jurisight`).
-
-| Fase | Estado |
-|---|---|
-| 3. VPS | feita: `deploy` com sudo, SSH só por chave e sem root, `ufw` (22/80/443), fail2ban, swap de 4 GB, Docker 29.9 |
-| 4. Código e `.env` | feitos: clonada a `feat/benchmark-etapa2` (trocar para a `main` depois do merge); senhas geradas no servidor; chave da OpenAI copiada do `.env` local sem exibir |
-| 5. Dados | feitos: hashes conferidos; 69.349 documentos e 69.340 classificações do Jev |
-| 6 e 7. App | no ar; certificado Let's Encrypt até 30/01/2027; só 22, 80 e 443 abertas |
-| 8. Backup | `pg_dump` diário às 3h em `/opt/backups` (o primeiro, de 413 MB, já existe) |
-| 9. CI/CD | chave `~/.ssh/jurisight_ci` instalada **restrita**: no servidor, ela só roda o comando de deploy. Faltam os secrets no GitHub e o merge na `main` |
-
-Latência medida de fora: enriquecimento (Llama 3B em CPU) ~27 s; busca 3,4 a 4,8 s; detalhe 0,18 s.
-
-## 0. Situação de partida (verificada em 01/11)
-
-| Item | Estado |
-|---|---|
-| Testes do backend e do front | passam (338 e 73) |
-| `next build` (produção) | passa |
-| `sincronizar` do provimento | terminou (`provimentos.json` de 25/10, Qdrant "green") |
-| Commits locais sem push | 6 (provimento no front) na `feat/benchmark-etapa2` |
-| `main` no GitHub | 121 commits atrás da `feat/benchmark-etapa2` |
-| Dockerfile do backend e do front | não existem |
-| Compose de produção | não existe. O atual expõe Postgres, Qdrant e Ollama em 0.0.0.0, e o Postgres usa a senha `postgres` |
-| HTTPS, CI/CD, proteção do servidor | não existem |
+Roteiro, na ordem e com os comandos, para colocar o JuriSight no ar numa VPS e mantê-lo
+lá. Os arquivos de deploy já estão no repositório (`Dockerfile`, `frontend/Dockerfile`,
+`docker-compose.prod.yml`, `deploy/`, `.env.production.example`, `.github/workflows/ci.yml`).
+Em produção: **https://16-5-6-82.sslip.io** (VPS `16.5.6.82`, usuário `deploy`, app em
+`/opt/jurisight`, com a `main` como branch de produção). O que mais pesa é o upload de
+~7 GB de dados, na primeira carga.
 
 Dados a levar para o servidor:
 
@@ -44,8 +16,6 @@ Dados a levar para o servidor:
 | Índice BM25 (`data/index/bm25s_index`) | 0,7 GB | `rsync` |
 | Reranker de produção (`ms-marco-MultiBERT-L-12`) | 0,16 GB | `rsync` (os outros modelos do cache são do benchmark e não vão) |
 | Modelo do Ollama (`llama3.2:3b`) | 2 GB | `ollama pull` no próprio servidor |
-
-O arquivo `data/index/bm25.pkl` (1,1 GB) é do índice antigo e não vai.
 
 ## 1. O que contratar
 
@@ -71,7 +41,7 @@ emergência) e DNS padrão.
 - Ciclo mensal.
 - Nenhum adicional.
 - Sistema: Ubuntu 24.04 LTS.
-- Se houver campo de chave SSH, cole `~/.ssh/id_ed25519.pub`. Se não houver, a Fase 3 instala a chave com `ssh-copy-id`.
+- Se houver campo de chave SSH, cole `~/.ssh/id_ed25519.pub`. Se não houver, a seção 6 instala a chave com `ssh-copy-id`.
 
 ## 2. Como a infra fica montada
 
@@ -97,24 +67,24 @@ o Caddy publica portas.
 
 ### Camadas de proteção
 
-| Camada | O que faz | Fase |
+| Camada | O que faz | Seção |
 |---|---|---|
 | Rede da MagnoHost | Anti-DDoS de até 20 Tbps (incluído) | — |
-| Firewall (`ufw`) com bloqueio por padrão | só 22, 80 e 443 | 3 |
-| SSH endurecido | só chave, sem senha, sem login de root, fail2ban | 3 |
-| Docker sem portas públicas | bancos e Ollama só na rede interna do Docker | 1 |
-| HTTPS | certificado Let's Encrypt automático pelo Caddy, com HSTS | 1 |
+| Firewall (`ufw`) com bloqueio por padrão | só 22, 80 e 443 | 6 |
+| SSH endurecido | só chave, sem senha, sem login de root, fail2ban | 6 |
+| Docker sem portas públicas | bancos e Ollama só na rede interna do Docker | 4 |
+| HTTPS | certificado Let's Encrypt automático pelo Caddy, com HSTS | 4 |
 | App | sessão em cookie `httpOnly` + `Secure`; todas as rotas exigem login | já existe |
-| Segredos | `.env` só no servidor, com permissão 600; senhas novas | 4 |
-| Atualizações | `unattended-upgrades` para correções de segurança do sistema | 3 |
-| Backup | backup da VM pela MagnoHost (fora da VPS) mais `pg_dump` diário | 8 |
+| Segredos | `.env` só no servidor, com permissão 600; senhas novas | 7 |
+| Atualizações | `unattended-upgrades` para correções de segurança do sistema | 6 |
+| Backup | backup da VM pela MagnoHost (fora da VPS) mais `pg_dump` diário | 11 |
 
 ## 3. Domínio e HTTPS
 
 - **Sem domínio próprio hoje:** use `<IP-com-hífens>.sslip.io`, por exemplo `177-12-34-56.sslip.io`. O sslip.io resolve para o seu IP sem cadastro, e o Caddy emite o certificado sozinho.
 - **Com domínio:** crie um registro A apontando para o IP da VPS e troque `DOMINIO`. O resto não muda.
 
-## 4. Fase 1 — arquivos de deploy no repositório (Claude faz, ~30 min)
+## 4. Arquivos de deploy no repositório
 
 | Arquivo | O que faz |
 |---|---|
@@ -124,18 +94,16 @@ o Caddy publica portas.
 | `deploy/Caddyfile` | `{$DOMINIO}`: `handle_path /api/*` → `api:8000`, o resto → `web:3000`, cabeçalhos de segurança (HSTS, `X-Content-Type-Options`, `Referrer-Policy`). |
 | `.env.production.example` | Lista das variáveis de produção, sem valores. |
 | `deploy/backup.sh` | `pg_dump` diário, guarda 7 dias em `/opt/backups`. |
-| `.github/workflows/ci.yml` | Em todo PR e push: `pytest` do backend (sem `tests/test_api_stress.py`), `jest` e `next build` do front. Em push na `main`, com os dois verdes, o job `deploy` entra na VPS por SSH e roda `git pull --ff-only` e `docker compose -f docker-compose.prod.yml up -d --build`. |
+| `.github/workflows/ci.yml` | Em todo PR e push: `pytest` do backend, `jest` e `next build` do front. Em push na `main`, com os dois verdes, o job `deploy` entra na VPS por SSH e roda `git pull --ff-only` e `docker compose -f docker-compose.prod.yml up -d --build`. |
 
 Pronto quando: `docker compose -f docker-compose.prod.yml up --build` sobe tudo nesta máquina e
 `https://localhost` abre o app (o teste local usa o certificado interno do Caddy).
 
-## 5. Fase 2 — Git (Vinicius, ~15 min)
+## 5. Git
 
-1. `git push` dos 6 commits da `feat/benchmark-etapa2` e dos da Fase 1.
-2. Abrir o PR `feat/benchmark-etapa2` → `main` (a descrição já está pronta) e fazer o merge.
-3. A `main` passa a ser a branch de produção: o que entra nela, com o CI verde, vai para a VPS.
+A `main` é a branch de produção: o que entra nela, com o CI verde, vai para a VPS.
 
-## 6. Fase 3 — preparar a VPS (Vinicius, ~40 min)
+## 6. Preparar a VPS
 
 Se a compra não pediu chave SSH, instale a sua primeiro, desta máquina: `ssh-copy-id root@IP` (pede a senha de root do painel uma vez).
 
@@ -172,7 +140,7 @@ usermod -aG docker deploy
 
 Pronto quando: `ssh deploy@IP` entra sem senha, `ssh root@IP` é recusado e `docker run --rm hello-world` funciona.
 
-## 7. Fase 4 — código e segredos no servidor (Vinicius, ~15 min)
+## 7. Código e segredos no servidor
 
 ```bash
 sudo mkdir -p /opt/jurisight /opt/backups && sudo chown deploy:deploy /opt/jurisight /opt/backups
@@ -197,9 +165,9 @@ cd /opt/jurisight && cp .env.production.example .env && chmod 600 .env && nano .
 
 O `.env` nunca vai para o Git; ele existe só no servidor.
 
-## 8. Fase 5 — copiar os dados (Vinicius, 1 a 2 h, quase tudo esperando upload)
+## 8. Copiar os dados (primeira carga)
 
-> Nota histórica: esta cópia local→VPS foi o caminho da primeira carga. O caminho atual é o pipeline Dagster (README, "Pipeline de dados (Dagster)").
+> Este é o caminho da primeira carga, de uma máquina local para a VPS. O caminho de atualização é o pipeline Dagster (README, "Pipeline de dados (Dagster)").
 
 Nesta máquina, em `~/JuriSight` (o WSL não tem `rsync`: instale antes com `sudo apt install -y rsync`):
 
@@ -230,7 +198,7 @@ $C up -d ollama && $C exec ollama ollama pull llama3.2:3b
 
 Pronto quando: `$C exec postgres psql -U postgres -d jurisight -c "select count(*) from documentos"` devolve 69349.
 
-## 9. Fase 6 — subir o app (~15 min)
+## 9. Subir o app
 
 ```bash
 cd /opt/jurisight
@@ -238,7 +206,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs -f api   # espere "Application startup complete" (o BM25 leva 1 a 2 min)
 ```
 
-## 10. Fase 7 — conferir o app (~20 min)
+## 10. Conferir o app
 
 - [ ] `https://<DOMINIO>` abre, com cadeado válido.
 - [ ] `curl https://<DOMINIO>/api/health` devolve `{"status":"ok"}`.
@@ -249,13 +217,13 @@ docker compose -f docker-compose.prod.yml logs -f api   # espere "Application st
 - [ ] `free -h` e `docker stats`: memória abaixo de 14 GB com uma busca rodando.
 - [ ] Anotar o tempo de uma busca completa: ele entra no TCC como latência em produção.
 
-## 11. Fase 8 — backup (~10 min)
+## 11. Backup
 
 - A MagnoHost faz o backup da VM num armazenamento fora da VPS (confirmado com o suporte em 01/11).
 - `pg_dump` diário: `crontab -e` no usuário `deploy` com `0 3 * * * /opt/jurisight/deploy/backup.sh`, que guarda 7 dias em `/opt/backups`.
 - Os índices (Qdrant e BM25) só mudam quando a coleta ou a classificação roda de novo; a cópia de `/opt/backups/inicial` serve de base até lá.
 
-## 12. Fase 9 — CI/CD no GitHub (~20 min)
+## 12. CI/CD no GitHub
 
 - **CI:** o `ci.yml` roda os testes e o `next build` em todo PR e push. O repositório é público, então o GitHub Actions é gratuito.
 - **CD:** o job `deploy` do mesmo `ci.yml` roda depois dos testes verdes num push para a `main`. Ele entra na VPS por SSH e atualiza o app.
@@ -283,16 +251,3 @@ Pronto quando: o check fica verde no PR e a alteração do teste aparece no site
 | Upload dos dados cai | Rodar o mesmo `rsync -avP` de novo: ele continua de onde parou. |
 
 A versão local continua funcionando com `./run.sh`; ela é o plano B para a banca.
-
-## 14. Ordem para hoje
-
-| # | Fase | Quem | Tempo |
-|---|---|---|---|
-| 1 | Tirar as dúvidas com o suporte e contratar (MagnoHost 9950x BR 06, Ubuntu 24.04) | Vinicius | 15 min |
-| 2 | Arquivos de deploy no repo e teste local | Claude | 30 min |
-| 3 | Preparar a VPS (em paralelo com o item 2) | Vinicius | 40 min |
-| 4 | Push, PR e merge na `main` | Vinicius | 15 min |
-| 5 | Código e `.env` no servidor | Vinicius | 15 min |
-| 6 | Dump e envio dos dados (deixar rodando) | Vinicius | 1 a 2 h |
-| 7 | Restaurar, subir e conferir o app | Vinicius | 50 min |
-| 8 | Backup e CI/CD | Vinicius + Claude | 30 min |

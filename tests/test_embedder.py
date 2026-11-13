@@ -2,13 +2,11 @@
 Testes do Poly-Vector Embedder (processing/embeddings/poly_vector.py).
 
 O cliente OpenAI é mockado — os testes validam a LÓGICA do embedder (batch,
-validação de dimensão, fallback do sac_summary vazio) sem chamar a API. Um teste
+validação de dimensão) sem chamar a API. Um teste
 de integração real vive fora daqui (rodado à mão com a OPENAI_API_KEY setada).
 """
 import pytest
 
-from scraper.schema import Provimento, TipoDocumento
-from processing.chunking.sac_chunker import Chunk
 from processing.embeddings.poly_vector import EMBED_DIM, PolyVectorEmbedder
 
 
@@ -46,18 +44,6 @@ class _FakeOpenAI:
 
 def _embedder(fake: _FakeOpenAI) -> PolyVectorEmbedder:
     return PolyVectorEmbedder(client=fake)  # injeta o mock no lugar do cliente real
-
-
-def _chunk(texto: str, sac_summary: str) -> Chunk:
-    return Chunk(
-        documento_id="uuid",
-        texto=texto,
-        texto_bruto=texto,
-        sac_summary=sac_summary,
-        posicao=0,
-        tipo_documento=TipoDocumento.ACORDAO.value,
-        provimento=Provimento.APROVADO.value,
-    )
 
 
 # --------------------------------------------------------------------------- #
@@ -108,30 +94,6 @@ def test_embed_text_unico():
     emb = _embedder(_FakeOpenAI())
     v = emb.embed_text("teste")
     assert len(v) == EMBED_DIM
-
-
-# --------------------------------------------------------------------------- #
-# embed_chunk                                                                  #
-# --------------------------------------------------------------------------- #
-
-def test_embed_chunk_usa_texto_e_sac_summary():
-    fake = _FakeOpenAI()
-    emb = _embedder(fake)
-    ch = _chunk(texto="janela com prefixo", sac_summary="a ementa")
-    completo, ementa = emb.embed_chunk(ch)
-    assert len(completo) == EMBED_DIM and len(ementa) == EMBED_DIM
-    # um único round-trip, com os dois textos na ordem certa
-    assert fake.calls == [["janela com prefixo", "a ementa"]]
-
-
-def test_embed_chunk_sac_vazio_cai_para_texto():
-    fake = _FakeOpenAI()
-    emb = _embedder(fake)
-    ch = _chunk(texto="conteudo da sumula", sac_summary="")   # súmula: sem prefixo
-    completo, ementa = emb.embed_chunk(ch)
-    # ambos os inputs viram o próprio texto → vetores coincidem
-    assert fake.calls == [["conteudo da sumula", "conteudo da sumula"]]
-    assert completo == ementa
 
 
 if __name__ == "__main__":

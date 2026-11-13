@@ -10,9 +10,8 @@ Estratégia em camadas (ver discussão do componente):
   3. casa vocabulário de resultado por família (recurso/embargos/MS/mérito),
      na ordem NEGADO → PARCIAL → APROVADO.
 
-Essa construção de logica de extração de provimento pode cometer erros, por não
-entender a semantica do contexto dos acordãos, pode acontecer de catalogar um 
-provimento erroniamente, mas terá atualizações com o passar do tempo.
+Por usar regex e não entender o contexto do acórdão, pode classificar errado; a
+reclassificação com o Jev (scraper/provimento_jev_cli.py) corrige esses casos.
 """
 from __future__ import annotations
 
@@ -20,11 +19,6 @@ import re
 import unicodedata
 
 from scraper.schema import Provimento, TipoDocumento
-
-## Essa construção de logica de extração de provimento pode cometer erros, por não
-## entender a semantica do contexto dos acordãos, pode acontecer de catalogar um
-## provimento erroniamente, mas terá atualizações com o passar do tempo.
-
 
 
 def _normalize(text: str) -> str:

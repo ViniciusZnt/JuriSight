@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { ProfileProvider, useProfile } from "@/lib/profile";
 import { atualizarPerfil, type UsuarioPublico } from "@/lib/api";
 
@@ -31,21 +31,5 @@ describe("ProfileProvider (issue #15)", () => {
     await act(() => result.current.update({ phone: "(48) 2" }));
     expect(api).toHaveBeenCalledWith({ telefone: "(48) 2", oab: "", papel: "Advogado" });
     expect(mockAtualizarUsuario).toHaveBeenCalledWith(expect.objectContaining({ telefone: "(48) 2" }));
-  });
-
-  it("o que estava no navegador sobe uma vez para a conta vazia e sai do navegador", async () => {
-    window.localStorage.setItem("jurisight:profile:u1", JSON.stringify({ phone: "(48) 3", oab: "3/SC", role: "Advogado" }));
-    api.mockResolvedValue({ ...base, telefone: "(48) 3", oab: "3/SC", papel: "Advogado" });
-    renderHook(() => useProfile(), { wrapper: ProfileProvider });
-    await waitFor(() => expect(api).toHaveBeenCalledWith({ telefone: "(48) 3", oab: "3/SC", papel: "Advogado" }));
-    expect(window.localStorage.getItem("jurisight:profile:u1")).toBeNull();
-  });
-
-  it("não sobrescreve a conta que já tem perfil com a cópia antiga do navegador", async () => {
-    mockUsuario = { ...base, telefone: "(48) 9" };
-    window.localStorage.setItem("jurisight:profile:u1", JSON.stringify({ phone: "(48) 3" }));
-    renderHook(() => useProfile(), { wrapper: ProfileProvider });
-    await waitFor(() => expect(window.localStorage.getItem("jurisight:profile:u1")).toBeNull());
-    expect(api).not.toHaveBeenCalled();
   });
 });

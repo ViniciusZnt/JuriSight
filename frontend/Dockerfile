@@ -1,6 +1,5 @@
 # Frontend do JuriSight (Next.js, saída standalone).
 FROM node:22-slim AS build
-ENV CYPRESS_INSTALL_BINARY=0
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

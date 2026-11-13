@@ -1,32 +1,28 @@
 """
 API Controller (RFC Tabela 6/Figura 10) — a aplicação FastAPI.
 
-Orquestra o pipeline completo: PDF Extractor -> Query Enrichment -> Query Builder
--> Hybrid Search (RRF) -> Doc Retriever -> Hierarchical Ranker -> Result Formatter.
-
-Endpoints (Tabela 6 / Tabela 13) — todos exigem sessão (cookie httpOnly, ver
-query/api/auth_routes.py::get_current_user), exceto /health:
+Orquestra o pipeline: PDF Extractor -> Query Enrichment -> Query Builder -> Hybrid
+Search (RRF) -> Doc Retriever -> filtros -> Reranker -> Result Formatter. Todos os endpoints
+exigem sessão (cookie httpOnly, `auth_routes.get_current_user`), exceto /health:
   - POST /enrich          — extrai a EstruturaArgumentativa do PDF e/ou da intenção.
-  - POST /query           — busca híbrida sobre a EstruturaArgumentativa revisada; com dispositivos
-                            ou expressões, só devolve decisões que cumprem todos (faixa "restrita").
-  - POST /query/livre     — a mesma busca sem os filtros restritos (faixa "livre"), sob demanda.
-  - POST /resposta        — resposta curta gerada (OpenAI) e ancorada nas ementas dos resultados.
+  - POST /query           — busca híbrida; com dispositivos ou expressões, só devolve
+                            decisões que cumprem todos (faixa "restrita").
+  - POST /query/livre     — a mesma busca sem os filtros restritos (faixa "livre").
+  - POST /query/explicacao — os textos que a busca usa (só monta, sem OpenAI).
+  - POST /resposta        — resposta curta sobre as ementas (OpenAI).
   - GET  /document/{id}   — detalhe completo de um documento.
   - GET  /health          — liveness (público).
+Os routers de /auth, /conversas, /provimento e /filtros vêm de seus próprios módulos.
 
-Autenticação (/auth/*: registro, login, logout, me) é montada via auth_router,
-definida em query/api/auth_routes.py.
+Os singletons com estado são construídos uma vez no lifespan e lidos via Depends(...)
+de request.app.state; em teste, cada Depends é trocado por app.dependency_overrides.
 
-Os singletons com estado (conexões/índices) são construídos uma vez no lifespan e
-lidos via Depends(...) a partir de request.app.state — em teste, cada Depends é
-substituído via app.dependency_overrides, sem precisar de Postgres/Qdrant/Ollama
-reais.
-
-LGPD (RFC §6.1): nada do que o usuário envia (PDF, EstruturaArgumentativa) é
-persistido — só leitura via DocRetriever sobre os documentos já coletados do TST.
+LGPD (RFC §6.1): o PDF enviado nunca é guardado. Só o que a pessoa revisou
+(EstruturaArgumentativa) e os resultados ficam nas conversas (`conversations/`).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -35,7 +31,6 @@ from datetime import date
 
 import openai
 import psycopg
-
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -45,17 +40,16 @@ from starlette.concurrency import run_in_threadpool
 from auth.db import ensure_schema
 from auth.store import Usuario, UsuarioStore
 from conversations.db import ensure_schema as ensure_conversas_schema
-from conversations.store import ConversaStore
+from conversations.store import ConversaNaoEncontradaError, ConversaStore
 from indexing.lexical.bm25_builder import BM25Builder
 from indexing.vector_store.qdrant_store import QdrantStore
 from processing.embeddings.poly_vector import PolyVectorEmbedder
-from query.api.auth_routes import get_current_user
-from query.api.auth_routes import router as auth_router
-from query.api.conversa_routes import router as conversa_router
+from query.api.auth_routes import get_current_user, router as auth_router
+from query.api.conversa_routes import router as conversa_router, tratar_conversa_nao_encontrada
 from query.api.filtros_routes import (
-    MAX_FILTROS, MAX_TEXTO, MAX_TRIBUNAIS, DispositivoView, ExpressaoView, filtro_indisponivel, get_filtro_store,
+    MAX_FILTROS, MAX_TEXTO, MAX_TRIBUNAIS, DispositivoView, ExpressaoView, get_filtro_store, tratar_filtro_indisponivel,
+    router as filtros_router,
 )
-from query.api.filtros_routes import router as filtros_router
 from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
@@ -74,9 +68,8 @@ from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados
 from query.search.reranker import Reranker
 from query.search.resposta import Resposta, chave_da_resposta, gerar_resposta
 from query.search.resposta_cache import RespostaCache, ensure_schema as ensure_resposta_cache_schema
-from query.api.provimento_routes import get_provimento_store
+from query.api.provimento_routes import get_provimento_store, router as provimento_router
 from query.api.uso_diario import LimiteDiarioExcedido, UsoDiario, ensure_schema as ensure_uso_diario_schema
-from query.api.provimento_routes import router as provimento_router
 from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
 from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema_correcoes
 from scraper.schema import Provimento
@@ -114,6 +107,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="JuriSight API", lifespan=lifespan)
+app.add_exception_handler(FiltroIndisponivel, tratar_filtro_indisponivel)
+app.add_exception_handler(ConversaNaoEncontradaError, tratar_conversa_nao_encontrada)
 
 # Falha alto na subida, não em produção sob ataque: /auth/* autentica via cookie
 # httpOnly (query/api/auth_routes.py), e a única coisa que impede qualquer site
@@ -283,9 +278,12 @@ async def enrich(
     deduzidas = [n for n in estrutura.normas if not citada_em(n, texto_do_caso)]
     estrutura = estrutura.model_copy(update={"normas": [n for n in estrutura.normas if n not in deduzidas]})
     estrutura, dispositivos_ia = await run_in_threadpool(_normas_em_dispositivos, estrutura, filtro_store)
-    expressoes_sugeridas = await run_in_threadpool(_expressoes_no_acervo, sugeridas, filtro_store)
-    dispositivos_sugeridos = await run_in_threadpool(
-        _dispositivos_no_acervo, [*deduzidas, *dispositivos_texto], estrutura.dispositivos, filtro_store
+    # As duas conferências no acervo não dependem uma da outra: rodam juntas (cada uma trata o próprio erro).
+    expressoes_sugeridas, dispositivos_sugeridos = await asyncio.gather(
+        run_in_threadpool(_expressoes_no_acervo, sugeridas, filtro_store),
+        run_in_threadpool(
+            _dispositivos_no_acervo, [*deduzidas, *dispositivos_texto], estrutura.dispositivos, filtro_store
+        ),
     )
     return EnrichResponse(
         estrutura=estrutura, pdf_extraido=pdf_extraido, aviso=aviso, dispositivos_ia=dispositivos_ia,
@@ -383,12 +381,9 @@ async def query(
     ids: list[str] | None = None
     if tem_filtro_restrito(body.estrutura):
         if filtro_store is None:
-            raise filtro_indisponivel()
-        try:
-            ids = await run_in_threadpool(filtro_store.elegiveis, body.estrutura.dispositivos, body.estrutura.expressoes,
-                                       body.estrutura.tribunais, body.estrutura.fase)
-        except FiltroIndisponivel as exc:
-            raise filtro_indisponivel() from exc
+            raise FiltroIndisponivel()
+        ids = await run_in_threadpool(filtro_store.elegiveis, body.estrutura.dispositivos, body.estrutura.expressoes,
+                                      body.estrutura.tribunais, body.estrutura.fase)
         if not ids:
             return []
     cards = await _buscar_cards(body, hybrid, retriever, reranker, ids)

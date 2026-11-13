@@ -4,7 +4,7 @@ Document Source — leitura do PostgreSQL para a etapa de Indexação.
 O PostgreSQL é a source of truth. A Indexação NÃO faz scraping; ela
 lê os `DocumentoJuridico` já persistidos pelo Pipeline de Ingestão (scraper/) e os
 entrega ao SAC Chunker. Importante: devolve também o UUID `id` da linha, que é a FK
-`documento_id` referenciada no ChromaDB (não confundir com `id_documento` natural).
+`documento_id` referenciada no Qdrant (não confundir com `id_documento` natural).
 """
 
 from collections.abc import Iterator
@@ -28,21 +28,16 @@ class DocumentSource:
 
     def __init__(self, database_url: str) -> None:
         self.database_url = database_url
-        self.conn = None
 
     def iter_documents(self, batch_size: int = 100) -> Iterator[tuple[str, DocumentoJuridico]]:
         """Gera (documento_id_uuid, DocumentoJuridico) usando server-side cursor.
         """
-        self.conn = psycopg.connect(self.database_url)
-        with self.conn.cursor(name="idx_docs") as cur:
-          cur.itersize = batch_size
-          cur.execute(_SELECT)
-          for row in cur:
-            doc_uuid = str(row[0])
-            doc = self._row_to_documento(row)
-            yield (doc_uuid, doc)
-    
-    
+        with psycopg.connect(self.database_url) as conn, conn.cursor(name="idx_docs") as cur:
+            cur.itersize = batch_size
+            cur.execute(_SELECT)
+            for row in cur:
+                yield (str(row[0]), self._row_to_documento(row))
+
     def _row_to_documento(self, row) -> DocumentoJuridico:
         """Constrói um DocumentoJuridico a partir de uma linha do _SELECT.
 

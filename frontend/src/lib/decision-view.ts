@@ -1,3 +1,5 @@
+import type { Outcome } from "@/lib/outcome";
+import type { SavedDecision } from "@/lib/saved";
 import { rotuloTribunal, type EstruturaArgumentativa, type ResultCard, type TipoDocumento } from "@/lib/api";
 
 const GENERICO = /^(ementa|direito (processual )?do trabalho( e processual do trabalho)?|recurso ordin[áa]rio( trabalhista)?)$/i;
@@ -49,6 +51,25 @@ export function formatarData(iso: string | null, mes: "2-digit" | "short" | "lon
     : "Data não informada";
 }
 
+/** A decisão no formato de "Salvos"; `rank` é a posição por relevância (sem ela, 0). */
+export function paraSalvo(
+  d: Pick<ResultCard, "id" | "ementa" | "tribunal" | "turma" | "data_julgamento" | "relator" | "numero_processo">,
+  outcome: Outcome,
+  rank?: number | null
+): Omit<SavedDecision, "savedAt"> {
+  return {
+    id: d.id,
+    title: titleFromEmenta(d.ementa),
+    court: d.tribunal,
+    chamber: d.turma,
+    date: d.data_julgamento ?? "",
+    outcome,
+    relevance: rank ?? 0,
+    rapporteur: d.relator,
+    processNumber: d.numero_processo,
+  };
+}
+
 type Citavel = Pick<ResultCard, "ementa" | "tribunal" | "turma" | "numero_processo" | "data_julgamento" | "relator">;
 
 /** "TRT2, 11ª Turma, Processo 0001, julgado em 17/12/2025, Rel. Fulana". */
@@ -68,8 +89,6 @@ export function ementaComCitacao(d: Citavel): string {
   return `${d.ementa.trim()}\n\n(${citacaoDe(d)}.)`;
 }
 
-/** Título do card: classe, identificação e data antes da verbetação, para cards de mesmo tema (e até
- *  de ementa igual, da mesma turma) não ficarem iguais ("RORSum · TRT2 · 11ª Turma · 12/05/2025 — ADICIONAL…"). */
 // Siglas que continuam em maiúsculas quando o assunto da ementa vira frase.
 const SIGLAS = new Set(["CLT", "TST", "STF", "STJ", "TRT", "TRF", "CF", "CPC", "CC", "ADCT", "OJ", "SDI", "SBDI", "EPI", "EPIS", "NR", "FGTS", "CTPS", "INSS", "PLR", "PPP", "LTCAT", "CIPA", "MPT", "ACP", "RPV", "CTVA", "COVID", "LGPD", "CNH", "PJE", "IRDR", "IAC", "ROT", "RORSUM", "AP", "AIRR", "RR"]);
 const ROMANO = /^[IVXLC]+$/;
@@ -91,6 +110,8 @@ export function assuntoDoCard(assunto: string): string {
   return frase;
 }
 
+/** Título do card: classe, identificação e data antes da verbetação, para cards de mesmo tema (e até
+ *  de ementa igual, da mesma turma) não ficarem iguais ("RORSum · TRT2 · 11ª Turma · 12/05/2025 — ADICIONAL…"). */
 export function tituloDoCard(d: Pick<ResultCard, "ementa" | "tribunal" | "turma" | "sigla_classe" | "data_julgamento">): string {
   const data = d.data_julgamento && formatarData(d.data_julgamento);
   const id = [d.sigla_classe, d.tribunal, d.turma, data].filter(Boolean).join(" · ");

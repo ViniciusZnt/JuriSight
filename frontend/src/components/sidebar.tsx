@@ -81,10 +81,7 @@ export function Sidebar() {
     <aside className="flex flex-col h-full w-[260px] bg-white dark:bg-[#17171B] border-r border-[#EBEBEF] dark:border-[#26262C]">
       {/* Logo */}
       <button
-        onClick={() => {
-          setActive(null);
-          router.push("/");
-        }}
+        onClick={novaPesquisa}
         className="flex items-center gap-2.5 px-4 py-4 border-b border-[#EBEBEF] dark:border-[#26262C] text-left hover:bg-[#F6F6F9] dark:hover:bg-[#1C1C21] transition-colors"
         title="Ir para o início"
         aria-label="Ir para o início"

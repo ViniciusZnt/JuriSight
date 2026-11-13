@@ -1,18 +1,10 @@
 """
 Backfill de reclassificação de provimento (utilitário de manutenção, uso pontual).
 
-Por que existe
---------------
-O `provimento` é um campo DERIVADO: `scraper.provimento.classify` o calcula a
-partir do texto do dispositivo (coluna `acordao`), que fica persistido no
-PostgreSQL. Como a fonte da classificação já está no banco, mudar a lógica de
-classificação NÃO exige re-coletar nada da API — basta reprocessar o texto local.
-
-Este script foi criado quando PARCIAL deixou de colapsar em APROVADO e virou uma
-categoria própria no enum `Provimento`: os documentos já coletados guardavam
-`provimento = APROVADO` para decisões que eram, juridicamente, parcialmente
-providas. O backfill relê `acordao`, reclassifica e corrige a coluna in-place.
-
+O `provimento` é derivado: `scraper.provimento.classify` o calcula do texto do dispositivo
+(coluna `acordao`), já guardado no PostgreSQL. Mudar a lógica de classificação não exige
+re-coletar nada: este script relê `acordao`, reclassifica e corrige a coluna no lugar.
+(Nasceu quando PARCIAL virou categoria própria, em vez de colapsar em APROVADO.)
 
 Uso:
     uv run python utils/reclassify.py --dry-run   # só mostra o que mudaria

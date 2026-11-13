@@ -20,22 +20,16 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from auth.store import Usuario
 from conversations.store import Conversa, ConversaNaoEncontradaError
 from query.api.app import app, get_current_user
 from query.api.conversa_routes import get_conversa_store
 from query.enrichment.schema import EstruturaArgumentativa
 from query.search.result_formatter import ResultCard
 from scraper.schema import Provimento, TipoDocumento
+from tests.fakes import usuario_fake
 
-_USUARIO_A = Usuario(
-    id=uuid.uuid4(), email="a@example.com", hashed_password="x",
-    nome="A", is_active=True, criado_em=datetime.now(timezone.utc),
-)
-_USUARIO_B = Usuario(
-    id=uuid.uuid4(), email="b@example.com", hashed_password="x",
-    nome="B", is_active=True, criado_em=datetime.now(timezone.utc),
-)
+_USUARIO_A = usuario_fake()
+_USUARIO_B = usuario_fake("b@example.com", "B")
 
 
 class _FakeConversaStore:
@@ -193,9 +187,13 @@ def test_usuario_nao_ve_conversa_de_outro(client, store):
 
 
 def test_conversa_inexistente_404(client):
-    assert client.patch(f"/conversas/{uuid.uuid4()}", json={"titulo": "x"}).status_code == 404
+    resp = client.patch(f"/conversas/{uuid.uuid4()}", json={"titulo": "x"})
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Conversa não encontrada."}
     assert client.get("/conversas").status_code == 200  # sanity: rota de leitura não quebra
 
 
 def test_id_malformado_404(client):
-    assert client.patch("/conversas/nao-eh-uuid", json={"titulo": "x"}).status_code == 404
+    resp = client.patch("/conversas/nao-eh-uuid", json={"titulo": "x"})
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Conversa não encontrada."}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { queryLivre, type EstruturaArgumentativa, type ResultCard } from "@/lib/api";
 import { ResultadoCard } from "@/components/resultados/resultado-card";
@@ -21,15 +21,20 @@ export function FaixaLivre({ estrutura, excluir, passa }: Props) {
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
+  // Fechar a tela (ou trocar a consulta, que remonta a faixa) cancela a busca em andamento.
+  const busca = useRef<AbortController | null>(null);
+  useEffect(() => () => busca.current?.abort(), []);
+
   const alternar = () => {
     setAberta((v) => !v);
     if (aberta || cards !== null || carregando) return;
     setCarregando(true);
     setErro(null);
-    queryLivre({ estrutura })
+    const controle = (busca.current = new AbortController());
+    queryLivre({ estrutura }, controle.signal)
       .then(setCards)
-      .catch((e: Error) => setErro(e.message))
-      .finally(() => setCarregando(false));
+      .catch((e: Error) => !controle.signal.aborted && setErro(e.message))
+      .finally(() => !controle.signal.aborted && setCarregando(false));
   };
 
   const visiveis = (cards ?? []).filter((d) => !excluir.has(d.id) && passa(d));

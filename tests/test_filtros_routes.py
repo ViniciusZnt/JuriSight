@@ -1,18 +1,14 @@
 """Testes de GET /filtros/dispositivos e POST /filtros/contagem (query/api/filtros_routes.py)."""
-import uuid
-from datetime import datetime, timezone
-
 import pytest
 from fastapi.testclient import TestClient
 
-from auth.store import Usuario
 from query.api.app import app, get_current_user
 from query.api.auth_routes import get_usuario_store
 from query.api.filtros_routes import get_filtro_store
 from query.filtros.store import ContagemFiltros, SugestaoDispositivo
+from tests.fakes import usuario_fake
 
-_USUARIO = Usuario(id=uuid.uuid4(), email="t@example.com", hashed_password="x", nome="T", is_active=True,
-                   criado_em=datetime.now(timezone.utc))
+_USUARIO = usuario_fake("t@example.com", "T")
 
 
 class _Store:
@@ -78,6 +74,15 @@ def test_filtros_503_sem_store(client, chamada):
     assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."  # sem comando de servidor
 
 
+def test_filtros_sem_store_valida_antes_de_dar_503(client):
+    app.dependency_overrides[get_filtro_store] = lambda: None
+    assert client.post("/filtros/contagem", json={"dispositivos": "x"}).status_code == 422
+    assert client.get("/filtros/dispositivos", params={"q": "x" * 300}).status_code == 422
+    resp = client.post("/filtros/contagem", json={"dispositivos": ["a"]})
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."
+
+
 @pytest.mark.parametrize("body", [
     {"expressoes": ["x" * 201]},
     {"dispositivos": ["x" * 201]},
@@ -108,7 +113,9 @@ def test_filtros_tribunais_sem_sessao_401(client):
 
 def test_filtros_tribunais_sem_store_503(client):
     app.dependency_overrides[get_filtro_store] = lambda: None
-    assert client.get("/filtros/tribunais").status_code == 503
+    resp = client.get("/filtros/tribunais")
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."
 
 
 def test_contagem_repassa_tribunais_e_fase(client):

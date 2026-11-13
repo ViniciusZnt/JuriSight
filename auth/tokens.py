@@ -1,22 +1,9 @@
 """
 Emissão e verificação de JWT (access tokens), via PyJWT.
 
-Algoritmo: HS256 (HMAC-SHA256), não RS256/assimétrico. JuriSight é um backend
-único (um processo FastAPI que emite e valida seus próprios tokens) — RS256
-só compensa quando um serviço EMITE tokens e outro(s) serviço(s), sem acesso
-à chave privada, precisam apenas VALIDAR (ex.: microserviços, ou validação
-por um gateway/terceiro). Não é o caso aqui: adicionar um par de chaves
-assimétricas seria complexidade sem benefício de segurança real para este
-sistema, então HS256 com um segredo forte é a escolha certa (mesma escolha
-do template de referência tiangolo/full-stack-fastapi-template).
-
-Chave secreta: OBRIGATORIAMENTE via variável de ambiente `JWT_SECRET_KEY`,
-sem fallback hardcoded. Um default tipo "changeme" é uma vulnerabilidade real
-(qualquer um lendo o código forjaria tokens válidos) — por isso este módulo
-falha alto (`MissingSecretKeyError`) no momento em que a chave é necessária,
-em vez de silenciosamente usar um segredo previsível. Gere uma chave forte
-com, por exemplo, `openssl rand -hex 32` e defina `JWT_SECRET_KEY` no `.env`
-(fora deste piece — cabe a quem for integrar isto ao restante do app).
+HS256 e não RS256: um único backend emite e valida os próprios tokens. A chave vem
+só de `JWT_SECRET_KEY`, sem valor padrão: faltando, levanta `MissingSecretKeyError`
+em vez de usar um segredo previsível. Porquês em `auth/DESIGN.md`.
 """
 from __future__ import annotations
 
@@ -28,11 +15,7 @@ import jwt
 
 ALGORITHM = "HS256"
 
-# Expiração padrão quando o caller não passa `expires_delta` explicitamente.
-# 30 minutos: um access token de vida curta é a prática recomendada (OWASP) —
-# limita a janela de uso de um token vazado/roubado. Sessões mais longas
-# devem ser feitas com um refresh token (fora do escopo deste piece), não
-# alongando o access token.
+# Vida curta limita o estrago de um token vazado; não há refresh token.
 DEFAULT_EXPIRES_DELTA = timedelta(minutes=30)
 
 

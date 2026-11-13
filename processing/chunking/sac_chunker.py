@@ -21,7 +21,6 @@ from scraper.provimento import _DISPOSITIVO_MARKERS
 # Veja os testes de test_chunker
 TARGET_TOKENS = 500
 MIN_TOKENS = 400
-MAX_TOKENS = 700
 # Sobreposição entre chunks consecutivos para não cortar contexto no limite.
 OVERLAP_TOKENS = 80
 # Teto de palavras do resumo SAC, aplicado tanto à ementaquanto ao dispositivo:
@@ -34,7 +33,7 @@ class Chunk(BaseModel):
     """Fragmento de um documento jurídico.
 
     Os campos de metadado são duplicados aqui para serem
-    gravados no ChromaDB e permitir filtragem sem consultar o PostgreSQL.
+    gravados no Qdrant e permitir filtragem sem consultar o PostgreSQL.
     """
 
     chunk_id:     str = ""       # Ver gerar_chunk_id()
@@ -56,20 +55,11 @@ class Chunk(BaseModel):
         """Gera o chunk_id determinístico (documento_id:posicao) se ainda não foi criado.
 
         Input:  self, com documento_id e posicao já preenchidos.
-        Returns: Self — checa o campo em memória, não consulta o Chroma.
+        Returns: Self — checa o campo em memória, não consulta o Qdrant.
         """
         if not self.chunk_id:
             self.chunk_id = f"{self.documento_id}:{self.posicao}"
         return self
-
-
-def _count_tokens(text: str) -> int:
-    """Mede o tamanho do texto em palavras (aproximação de tokens).
-
-    Input:  text — texto a medir.
-    Returns: número de palavras.
-    """
-    return len(text.split())
 
 
 def _dispositivo_summary(acordao: str, max_words: int = SUMMARY_MAX_WORDS) -> str:
@@ -132,7 +122,7 @@ class SACChunker:
     def chunk_document(self, doc: DocumentoJuridico, documento_id: str) -> list[Chunk]:
         """Gera os chunks SAC de um documento (acórdão em janelas; súmula/OJ em chunk único).
 
-        Input:  doc — DocumentoJuridico; documento_id — UUID do Postgres (FK do Chroma,
+        Input:  doc — DocumentoJuridico; documento_id — UUID do Postgres (FK no Qdrant,
                 não confundir com doc.id_documento).
         Returns: list[Chunk], vazia se o documento não tem conteúdo indexável.
         """

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFecharAoClicarFora } from "@/lib/use-fechar-ao-clicar-fora";
 import { Pencil, X } from "lucide-react";
 import { contarFiltros, listarTribunais, rotuloTribunal, sugerirDispositivos, ROTULO_FASE, type ContagemFiltros, type Fase, type ExpressaoSugerida, type SugestaoDispositivo } from "@/lib/api";
 
@@ -29,8 +30,6 @@ function Chip({ children, onRemove, onEdit, label, livre }: { children: React.Re
   );
 }
 
-/** Filtro restrito da Revisão: dispositivos legais (autocompletar no acervo) e expressões
- *  obrigatórias, com a contagem de decisões que cumprem cada um e todos juntos. */
 /** Sugestões da IA (já conferidas no acervo): botões "+ … · N decisões"; viram filtro só no clique. */
 function SugestoesDaIa({ itens, onEscolher }: { itens: { rotulo: string; total: number }[]; onEscolher: (i: number) => void }) {
   if (!itens.length) return null;
@@ -51,6 +50,8 @@ function SugestoesDaIa({ itens, onEscolher }: { itens: { rotulo: string; total: 
   );
 }
 
+/** Filtro restrito da Revisão: dispositivos legais (autocompletar no acervo) e expressões
+ *  obrigatórias, com a contagem de decisões que cumprem cada um e todos juntos. */
 export function FiltroRestrito({
   dispositivos,
   expressoes,
@@ -163,17 +164,7 @@ export function FiltroRestrito({
     }
   };
   // o menu fecha com Esc e com clique fora dele
-  useEffect(() => {
-    if (!menuTribunais) return;
-    const fora = (e: MouseEvent) => !blocoTribunais.current?.contains(e.target as Node) && setMenuTribunais(false);
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuTribunais(false);
-    document.addEventListener("mousedown", fora);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", fora);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [menuTribunais]);
+  useFecharAoClicarFora(blocoTribunais, menuTribunais, () => setMenuTribunais(false), true);
   const alternarTribunal = (t: string) => onChange({ tribunais: tribunais.includes(t) ? tribunais.filter((x) => x !== t) : [...tribunais, t] });
 
   const addExpr = () => {

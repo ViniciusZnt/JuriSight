@@ -1,19 +1,7 @@
 """
-Auth DB.
-
-Cria o schema `auth` e a tabela `auth.usuarios` — cadastro e credenciais dos
-usuários reais da aplicação (hoje a autenticação é toda mockada no frontend,
-ver frontend/src/lib/*; isto é a base de dados para a peça de login real).
-
-Deliberadamente isolado do schema `public`, onde vivem `documentos` e
-`scraper_state` (scraper/db_writer.py) — nenhuma operação daqui encosta em
-dados de jurisprudência, e um `DROP SCHEMA auth` futuro (ex.: testes) nunca
-arrisca a base coletada. Ver auth/SCHEMA.md para o raciocínio completo do
-desenho (schema/tabela/colunas, e-mail case-insensitive).
-
-Idempotente (CREATE SCHEMA/TABLE/INDEX IF NOT EXISTS) — seguro rodar mais de
-uma vez. Segue o mesmo estilo de scraper/db_writer.py: psycopg puro, sem
-ORM/Alembic, string(s) de DDL em módulo + função que aplica via DATABASE_URL.
+Schema `auth`: tabelas `usuarios` e `redefinicoes_senha`. Fica separado de `public`
+para que nada aqui encoste nos dados de jurisprudência. Idempotente (`IF NOT EXISTS`)
+e em psycopg puro, como `scraper/db_writer.py`. Decisões em `auth/DESIGN.md`.
 """
 import logging
 import os
@@ -26,12 +14,8 @@ _CREATE_SCHEMA = """
 CREATE SCHEMA IF NOT EXISTS auth;
 """
 
-# E-mail é armazenado como o usuário digitou (preserva capitalização para
-# exibição), mas login/unicidade são case-insensitive — ver o índice funcional
-# abaixo. Optamos por lower(email) em vez da extensão `citext` (motivo em
-# auth/SCHEMA.md): nenhuma outra parte do projeto usa extensões Postgres além
-# do gen_random_uuid() nativo (>= PG13, já usado por scraper/db_writer.py), e
-# isto evita depender de uma extensão adicional só para esta tabela.
+# O e-mail guarda a capitalização digitada; a unicidade ignora maiúsculas pelo índice
+# em lower(email) abaixo, e não pela extensão `citext` (ver auth/DESIGN.md).
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS auth.usuarios (
     id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

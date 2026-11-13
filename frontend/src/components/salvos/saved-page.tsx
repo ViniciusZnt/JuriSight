@@ -4,15 +4,13 @@ import { useRouter } from "next/navigation";
 import { Bookmark, Scale, Calendar, FileText, Search, X } from "lucide-react";
 import { MetaItem } from "@/components/ui/meta-item";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
+import { formatarData } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
 
 /** Salvos — decisões marcadas pelo usuário (botão "Salvar" nos resultados e no detalhe do acórdão). */
 export function SavedPage() {
   const router = useRouter();
   const { saved, toggle } = useSaved();
-
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
     <div className="min-h-full bg-[#F7F7F9] dark:bg-[#0E0E11]">
@@ -64,13 +62,13 @@ export function SavedPage() {
                     {d.title}
                   </h3>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
-                    <MetaItem icon={Scale} className="" iconClassName="" iconSize="w-3 h-3" fontSize="12.6px" gap="gap-1.5">
+                    <MetaItem icon={Scale} compacto>
                       <span>{d.court} — {d.chamber}</span>
                     </MetaItem>
-                    <MetaItem icon={Calendar} className="" iconClassName="" iconSize="w-3 h-3" fontSize="12.6px" gap="gap-1.5">
-                      <span>{formatDate(d.date)}</span>
+                    <MetaItem icon={Calendar} compacto>
+                      <span>{formatarData(d.date, "short")}</span>
                     </MetaItem>
-                    <MetaItem icon={FileText} className="" iconClassName="" iconSize="w-3 h-3" fontSize="12.6px" gap="gap-1.5">
+                    <MetaItem icon={FileText} compacto>
                       <span className="font-mono">{d.processNumber}</span>
                     </MetaItem>
                   </div>

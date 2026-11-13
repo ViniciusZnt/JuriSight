@@ -9,9 +9,14 @@ linha do `_SELECT_BY_IDS` para um `DocumentoJuridico` — e é exatamente aí qu
 mora o risco real: um índice de coluna errado nessa função quebra silenciosamente
 em produção sem nenhum teste pegar.
 """
+import re
+from datetime import date
+
 import pytest
 
-from query.search.doc_retriever import DocRetriever, _row_para_documento
+from query.search import doc_retriever
+from query.search.doc_retriever import COLUNAS_DOCUMENTO, _COLUNAS_ENXUTAS, DocRetriever, _row_para_documento
+from query.search.result_formatter import format_results
 from scraper.schema import Provimento, TipoDocumento
 
 # Uma linha completa, na MESMA ordem de colunas de _SELECT_BY_IDS.
@@ -154,7 +159,6 @@ def test_fetch_lista_vazia_nao_abre_conexao():
 # DocRetriever.fetch não guarda estado na instância (compartilhada entre threads)
 # --------------------------------------------------------------------------- #
 
-from query.search import doc_retriever  # noqa: E402
 
 
 class _Cursor:
@@ -178,8 +182,11 @@ class _Conn:
     def cursor(self):
         return _Cursor()
 
-    def close(self):
-        self.fechada = True
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.fechada = True  # como o psycopg: o `with` fecha a conexão
 
 
 def test_fetch_usa_conexao_local_e_fecha(monkeypatch):
@@ -198,6 +205,42 @@ def test_fetch_usa_conexao_local_e_fecha(monkeypatch):
 
     assert vars(r) == estado_antes  # nenhuma conexão pendurada na instância
     assert len(conexoes) == 2 and all(c.fechada for c in conexoes)
+
+
+# --------------------------------------------------------------------------- #
+# Modo enxuto (completo=False): o card do /query sai idêntico
+# --------------------------------------------------------------------------- #
+
+
+def _linha_como_o_select_enxuto(row):
+    """O que o banco devolveria: NULL nas colunas que o SELECT enxuto não traz."""
+    nomes = [c.strip() for c in COLUNAS_DOCUMENTO.split(",")]
+    nulas = {i for i, n in enumerate(_COLUNAS_ENXUTAS.split(", ")) if n.startswith("NULL AS")}
+    assert len(nomes) == len(row)
+    return tuple(None if i in nulas else v for i, v in enumerate(row))
+
+
+def test_select_enxuto_mantem_a_ordem_e_tira_so_o_que_o_card_nao_usa():
+    enxutas = _COLUNAS_ENXUTAS.split(", ")
+    assert [re.sub(r"^NULL AS ", "", c) for c in enxutas] == [c.strip() for c in COLUNAS_DOCUMENTO.split(",")]
+    nulas = {c.removeprefix("NULL AS ") for c in enxutas if c.startswith("NULL AS")}
+    assert {"relatorio", "fundamentacao", "acordao", "votos"} <= nulas
+    assert not nulas & {"ementa", "relator", "turma", "provimento", "link_original", "data_julgamento", "sigla_classe"}
+
+
+def test_card_da_query_e_identico_no_modo_enxuto():
+    row = list(_ROW_COMPLETA)
+    row[12] = date(2024, 3, 5)
+    row[22] = "APROVADO"
+    row[23] = "https://exemplo/doc"
+    completo = _row_para_documento(tuple(row))
+    enxuto = _row_para_documento(_linha_como_o_select_enxuto(tuple(row)))
+    card_c = format_results([(str(row[0]), completo, 0.5)])[0]
+    card_e = format_results([(str(row[0]), enxuto, 0.5)])[0]
+    assert card_e.model_dump_json() == card_c.model_dump_json()
+    assert enxuto.ementa == completo.ementa  # a reordenação lê a ementa
+    assert enxuto.acordao == "" and enxuto.referencia_legislativa == []  # defaults do modelo
+
 
 
 if __name__ == "__main__":

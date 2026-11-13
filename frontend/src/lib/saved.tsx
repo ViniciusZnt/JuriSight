@@ -26,7 +26,6 @@ export interface SavedDecision {
 
 /** Salvos ficam no navegador, separados por usuário (como o perfil): outra conta no mesmo
  *  navegador não vê a lista da anterior. */
-const CHAVE_ANTIGA = "jurisight:saved"; // lista sem dono, de antes da separação: é apagada
 const chaveDe = (usuarioId: string) => `jurisight:saved:${usuarioId}`;
 
 interface SavedCtx {
@@ -47,7 +46,6 @@ export function SavedProvider({ children }: { children: React.ReactNode }) {
     setSaved([]);
     if (!usuarioId) return;
     try {
-      localStorage.removeItem(CHAVE_ANTIGA);
       const raw = localStorage.getItem(chaveDe(usuarioId));
       if (raw) setSaved(JSON.parse(raw));
     } catch {

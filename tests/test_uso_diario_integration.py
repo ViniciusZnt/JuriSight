@@ -7,7 +7,6 @@ do banco. Pulado se DATABASE_URL não estiver definida ou o Postgres não respon
 """
 from __future__ import annotations
 
-import os
 import uuid
 
 import psycopg
@@ -16,24 +15,9 @@ import pytest
 from auth.db import ensure_schema as ensure_auth_schema
 from auth.store import UsuarioStore
 from query.api.uso_diario import LimiteDiarioExcedido, UsoDiario, ensure_schema
+from tests.conftest import DATABASE_URL, requer_postgres
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _postgres_disponivel() -> bool:
-    if not DATABASE_URL:
-        return False
-    try:
-        psycopg.connect(DATABASE_URL, connect_timeout=2).close()
-        return True
-    except psycopg.OperationalError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_disponivel(),
-    reason="Requer DATABASE_URL apontando para um Postgres real e acessível.",
-)
+pytestmark = requer_postgres
 
 
 @pytest.fixture(autouse=True)

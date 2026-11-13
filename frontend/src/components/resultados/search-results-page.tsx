@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Scale,
@@ -34,10 +34,10 @@ import {
   titleFromEmenta,
   truncate,
 } from "@/lib/decision-view";
+import { useFecharAoClicarFora } from "@/lib/use-fechar-ao-clicar-fora";
 import { useConversations } from "@/lib/conversations";
 import { useSearchSession } from "@/lib/search-session";
 
-/** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
 /** Segmentos da barra de filtros, com as cores dos selos de desfecho. */
 const SEGMENTOS: { valor: "all" | Outcome; rotulo: string; cor: string | null; ativo: string }[] = [
   { valor: "all", rotulo: "Todas", cor: null, ativo: "bg-[#1A3A5C] dark:bg-[#8AB0DC] text-white dark:text-[#0E0E11] shadow-[0_1px_6px_rgba(26,58,92,0.24)]" },
@@ -46,6 +46,7 @@ const SEGMENTOS: { valor: "all" | Outcome; rotulo: string; cor: string | null; a
   { valor: "neutral", rotulo: "Neutras", cor: "bg-[#9A9AAA] dark:bg-[#7C7C88]", ativo: "bg-[#6A6A7A] dark:bg-[#9494A2] text-white dark:text-[#0E0E11]" },
 ];
 
+/** Botão "pill" com dropdown — mesmo padrão de filtro usado pelo Jusbrasil (ex: "Em qualquer data ▾"). */
 function DropdownPill({
   label,
   active,
@@ -66,14 +67,7 @@ function DropdownPill({
     if (returnFocus) triggerRef.current?.focus();
   };
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
+  useFecharAoClicarFora(ref, open, () => setOpen(false));
 
   return (
     <div
@@ -182,7 +176,7 @@ export function SearchResultsPage() {
     return [...n].sort((a, b) => a[0].localeCompare(b[0], "pt-BR", { numeric: true }));
   }, [results]);
   const repetidas = useMemo(() => ementasRepetidas([...results].sort((a, b) => b.score_rrf - a.score_rrf)), [results]);
-  const idsCitacao = new Set(sintese?.base.find((b) => b.rotulo === citacao)?.ids ?? []);
+  const idsCitacao = useMemo(() => new Set(sintese?.base.find((b) => b.rotulo === citacao)?.ids ?? []), [sintese, citacao]);
 
   const limparFiltros = () => {
     setFilter("all");
@@ -197,20 +191,10 @@ export function SearchResultsPage() {
     setTimeout(() => document.getElementById(`decisao-${id}`)?.scrollIntoView({ block: "start" }), 0);
   };
 
-  const formatDateShort = (isoDate: string) =>
-    new Date(`${isoDate}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-
   const periodLabel =
     dateFrom || dateTo
-      ? `${dateFrom ? formatDateShort(dateFrom) : "…"} – ${dateTo ? formatDateShort(dateTo) : "…"}`
+      ? `${dateFrom ? formatarData(dateFrom) : "…"} – ${dateTo ? formatarData(dateTo) : "…"}`
       : "Data";
-
-  const inPeriod = (dateStr: string | null) => {
-    if (!dateStr) return true; // documento sem data conhecida não é excluído pelo filtro de período
-    if (dateFrom && dateStr < dateFrom) return false;
-    if (dateTo && dateStr > dateTo) return false;
-    return true;
-  };
 
   const sortedResults = useMemo(() => {
     const por = sortBy === "date" ? "data" : "relevancia";
@@ -220,14 +204,19 @@ export function SearchResultsPage() {
 
   // desfecho, período e tribunal valem também para a faixa livre; o chip da base citada não (ele
   // vem das ementas da faixa restrita e esconderia toda a livre)
-  const passaFiltrosComuns = (d: (typeof results)[number]) =>
-    (filter === "all" || outcomeDe(d) === filter) && inPeriod(d.data_julgamento) && (!tribunal || d.tribunal === tribunal);
-  const passaFiltros = (d: (typeof results)[number]) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id));
+  const passaFiltrosComuns = useCallback(
+    (d: (typeof results)[number]) => {
+      // documento sem data conhecida não é excluído pelo filtro de período
+      const noPeriodo = !d.data_julgamento || ((!dateFrom || d.data_julgamento >= dateFrom) && (!dateTo || d.data_julgamento <= dateTo));
+      return (filter === "all" || outcomeDe(d) === filter) && noPeriodo && (!tribunal || d.tribunal === tribunal);
+    },
+    [filter, dateFrom, dateTo, tribunal],
+  );
 
-  const filteredResults = sortedResults.filter(passaFiltros);
-
-  const formatDateLong = (dateStr: string | null) => formatarData(dateStr, "long");
-
+  const filteredResults = useMemo(
+    () => sortedResults.filter((d) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id))),
+    [sortedResults, passaFiltrosComuns, citacao, idsCitacao],
+  );
 
   const contagemDesfecho = contarDesfechos(results);
 
@@ -267,7 +256,7 @@ export function SearchResultsPage() {
   );
 
   // Topo do resumo: quantas decisões, o que foi exigido e uma nota (corte em 20, contagem, vazio).
-  const resumoTopo = (() => {
+  const resumoTopo = useMemo(() => {
     const grupos: { verbo: string; itens: string[] }[] = [];
     if (restrito && estrutura) {
       const varias = (contagem?.total ?? results.length) !== 1;
@@ -296,7 +285,7 @@ export function SearchResultsPage() {
       grupos,
       nota: null,
     };
-  })();
+  }, [restrito, estrutura, contagem, contagemFalhou, contando, results]);
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
@@ -306,7 +295,7 @@ export function SearchResultsPage() {
     const lines = filteredResults.map((d, idx) =>
       [
         `${idx + 1}. ${titleFromEmenta(d.ementa)}`,
-        `   ${d.tribunal} — ${d.turma} · ${formatDateLong(d.data_julgamento)}`,
+        `   ${d.tribunal} — ${d.turma} · ${formatarData(d.data_julgamento, "long")}`,
         `   Processo: ${d.numero_processo} · Rel. ${d.relator}`,
         `   Provimento: ${d.classificacao_provimento ? resumoProvimento(d.classificacao_provimento) : PROVIMENTO_LABEL[d.provimento]} · Relevância: #${ranks.get(d.id)} de ${results.length}`,
         `   ${truncate(d.ementa, 600)}`,

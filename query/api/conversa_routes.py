@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from auth.store import Usuario
@@ -90,7 +91,12 @@ def _parse_id(conversa_id: str) -> uuid.UUID:
     try:
         return uuid.UUID(conversa_id)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+        raise ConversaNaoEncontradaError(conversa_id) from None
+
+
+def tratar_conversa_nao_encontrada(request: Request, exc: ConversaNaoEncontradaError) -> JSONResponse:
+    """Registrado em app.py: conversa inexistente, de outro usuário ou com id malformado vira 404."""
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": "Conversa não encontrada."})
 
 
 # --------------------------------------------------------------------------- #
@@ -121,10 +127,7 @@ def renomear(
     usuario: Usuario = Depends(get_current_user),
     store: ConversaStore = Depends(get_conversa_store),
 ) -> ConversaResponse:
-    try:
-        return ConversaResponse.de_conversa(store.rename(_parse_id(conversa_id), usuario.id, body.titulo))
-    except ConversaNaoEncontradaError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+    return ConversaResponse.de_conversa(store.rename(_parse_id(conversa_id), usuario.id, body.titulo))
 
 
 @router.post("/{conversa_id}/versoes", response_model=ConversaResponse, status_code=status.HTTP_201_CREATED)
@@ -138,19 +141,16 @@ def adicionar_versao(
     anteriores (ver conversations/store.py::add_versao). Devolve a conversa
     inteira (todas as versões) pra o frontend já ter o dropdown V1/V2/...
     completo sem precisar de outra chamada."""
-    try:
-        conversa = store.add_versao(
-            _parse_id(conversa_id),
-            usuario.id,
-            estrutura=body.estrutura.model_dump(mode="json"),
-            has_file=body.has_file,
-            file_name=body.file_name,
-            pdf_extraido=body.pdf_extraido,
-            aviso=body.aviso,
-            resultados=[r.model_dump(mode="json") for r in body.resultados] if body.resultados is not None else None,
-        )
-    except ConversaNaoEncontradaError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+    conversa = store.add_versao(
+        _parse_id(conversa_id),
+        usuario.id,
+        estrutura=body.estrutura.model_dump(mode="json"),
+        has_file=body.has_file,
+        file_name=body.file_name,
+        pdf_extraido=body.pdf_extraido,
+        aviso=body.aviso,
+        resultados=[r.model_dump(mode="json") for r in body.resultados] if body.resultados is not None else None,
+    )
     return ConversaResponse.de_conversa(conversa)
 
 
@@ -160,7 +160,4 @@ def apagar(
     usuario: Usuario = Depends(get_current_user),
     store: ConversaStore = Depends(get_conversa_store),
 ) -> None:
-    try:
-        store.delete(_parse_id(conversa_id), usuario.id)
-    except ConversaNaoEncontradaError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversa não encontrada.")
+    store.delete(_parse_id(conversa_id), usuario.id)

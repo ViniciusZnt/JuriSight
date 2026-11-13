@@ -53,3 +53,11 @@ export const BUSCA: Record<Busca, EstiloBusca> = {
     etiqueta: "bg-[#E6F5F3] text-[#0B6F67] dark:bg-[#0F2826] dark:text-[#7FD8CE]",
   },
 };
+
+/** Etiquetas editáveis dos termos na Revisão (fato, conduta): fundo+borda, texto e o botão "+" tracejado. */
+export const TAG_TERMOS = {
+  fundo: "bg-[#E6F5F3] dark:bg-[#0F2826] border-[#BFE3DE] dark:border-[#1E4A46]",
+  texto: "text-[#0B5F58] dark:text-[#7FD8CE]",
+  adicionar:
+    "border-[#B9D3CF] dark:border-[#24403D] hover:border-[#0E8A80] dark:hover:border-[#3FB8AD] hover:text-[#0B5F58] dark:hover:text-[#7FD8CE] hover:bg-[#E6F5F3] dark:hover:bg-[#0F2826]",
+};

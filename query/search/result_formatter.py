@@ -58,6 +58,13 @@ class DocumentoDetalhe(DocumentoJuridico):
     classificacao_provimento: ClassificacaoProvimentoView | None = None
 
 
+# Campos do documento que o card repete com o mesmo nome.
+_CAMPOS_DO_DOCUMENTO = {
+    "tipo_documento", "hierarquia_categoria", "numero_processo", "tribunal", "turma", "relator",
+    "data_julgamento", "ementa", "sigla_classe", "provimento", "link_original",
+}
+
+
 def format_results(resultados: list[tuple[str, DocumentoJuridico, float]]) -> list[ResultCard]:
     """Projeta os triplos ordenados em cards de resposta.
 
@@ -67,20 +74,6 @@ def format_results(resultados: list[tuple[str, DocumentoJuridico, float]]) -> li
     Returns: lista de ResultCard, na mesma ordem de entrada.
     """
     return [
-        ResultCard(
-            id=documento_id,
-            tipo_documento=doc.tipo_documento,
-            hierarquia_categoria=doc.hierarquia_categoria,
-            numero_processo=doc.numero_processo,
-            tribunal=doc.tribunal,
-            turma=doc.turma,
-            relator=doc.relator,
-            data_julgamento=doc.data_julgamento,
-            ementa=doc.ementa,
-            sigla_classe=doc.sigla_classe,
-            provimento=doc.provimento,
-            link_original=doc.link_original,
-            score_rrf=score,
-        )
+        ResultCard(id=documento_id, score_rrf=score, **doc.model_dump(include=_CAMPOS_DO_DOCUMENTO))
         for documento_id, doc, score in resultados
     ]

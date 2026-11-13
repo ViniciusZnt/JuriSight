@@ -11,7 +11,6 @@ import math
 
 from query.search.reranker import _MAX_PASSAGE_CHARS
 
-PROMPT = "Pergunta: {query} Documento: {text} Relevante:"
 TOKEN_SIM = "▁Sim"
 TOKEN_NAO = "▁Não"
 

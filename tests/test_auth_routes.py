@@ -4,7 +4,7 @@ GET /auth/me (query/api/auth_routes.py).
 
 Mesmo espírito de tests/test_api.py: nenhuma infra real (Postgres) é usada —
 `UsuarioStore` é substituído por `_FakeUsuarioStore` (em memória) via
-`app.dependency_overrides[get_usuario_store]`, igual a `_FakeDocRetriever`
+`app.dependency_overrides[get_usuario_store]`, igual a `FakeDocRetriever` (tests/fakes.py)
 naquele arquivo. Como `auth_routes.router` não está montado no `app` de
 query/api/app.py (isso é integração futura, fora do escopo desta peça),
 criamos aqui um FastAPI() mínimo só com esse router — TestClient não precisa

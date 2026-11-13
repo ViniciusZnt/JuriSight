@@ -99,7 +99,7 @@ def test_round_trip(cenario, tmp_path):
     caminho = tmp_path / "lote.xlsx"
     pj.exportar_lote(tese, pares, docs, caminho, seed=1)
     ids = _preencher(caminho, {0: 3, 1: 1, 2: 2}, stances={0: "fortalece", 1: "enfraquece", 2: "neutro"})
-    email, linhas = pj.ler_lote(caminho)
+    email, _, linhas, _ = pj._ler(caminho)
     assert email == "ana@exemplo.com"
     assert {(str(p), n, s) for p, n, s in linhas} == {
         (ids[0], 3, "fortalece"), (ids[1], 1, "neutro"), (ids[2], 2, "neutro")}
@@ -146,7 +146,7 @@ def test_email_ausente_falha(cenario, tmp_path, email):
     pj.exportar_lote(tese, pares, docs, caminho, seed=1)
     _preencher(caminho, {0: 3}, email=email, stances={0: "neutro"})
     with pytest.raises(ValueError, match="e-mail"):
-        pj.ler_lote(caminho)
+        pj._ler(caminho)
 
 
 def test_sem_nenhuma_nota_falha(cenario, tmp_path):
@@ -155,7 +155,7 @@ def test_sem_nenhuma_nota_falha(cenario, tmp_path):
     pj.exportar_lote(tese, pares, docs, caminho, seed=1)
     _preencher(caminho, {})
     with pytest.raises(ValueError, match="nota"):
-        pj.ler_lote(caminho)
+        pj._ler(caminho)
 
 
 def test_nome_do_arquivo_e_cli_importar(cenario, tmp_path, capsys):
@@ -177,7 +177,7 @@ def test_stance_ignorado_com_nota_baixa(cenario, tmp_path):
     caminho = tmp_path / "lote.xlsx"
     pj.exportar_lote(tese, pares, docs, caminho, seed=1)
     ids = _preencher(caminho, {0: 0, 1: 1}, stances={0: "inventado", 1: "fortalece"})
-    email, linhas = pj.ler_lote(caminho)
+    email, _, linhas, _ = pj._ler(caminho)
     assert {(str(p), n, s) for p, n, s in linhas} == {(ids[0], 0, "neutro"), (ids[1], 1, "neutro")}
 
 
@@ -204,7 +204,7 @@ def test_cli_exportar_filtra_corredores_e_pula_tese_vazia(cenario, tmp_path, mon
 
     class _Ret:
         def __init__(self, url): pass
-        def fetch(self, ids):
+        def fetch(self, ids, completo=True):
             buscados.extend(ids)
             return docs
 

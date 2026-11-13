@@ -510,8 +510,7 @@ def _cmd_rodar(args) -> int:
     except RuntimeError as e:
         print(f"Erro: {e}", file=sys.stderr)
         return 1
-    deps = carregar_dependencias()  # lento: BM25, embedder e FlashRank
-    deps.reranker = None  # os rerankers são construídos um por vez em `rodar`
+    deps = carregar_dependencias()  # lento: BM25 e embedder
     teses = deps.store.listar_teses(None if args.split == "todos" else args.split)
     if not teses:
         print(f"Aviso: nenhuma tese no split '{args.split}'.", file=sys.stderr)

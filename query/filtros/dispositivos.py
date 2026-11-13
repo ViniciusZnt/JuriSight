@@ -7,7 +7,8 @@ Também são dispositivos `nr_<n>`, `tema_<n>` e `sv_<n>` (súmula vinculante): 
 codifica, então saem do texto da decisão (`codigos_do_texto`).
 """
 import re
-import unicodedata
+
+from query.filtros.expressoes import sem_acento
 
 ANCORAS = ("art", "sumula", "oj", "convencao", "lei", "nr", "tema", "sv")
 _DO_TEXTO = ("nr", "tema", "sv")
@@ -44,10 +45,6 @@ def niveis(codigo: str) -> list[str]:
         return []
     unidades, resto = _unidades(tokens[:i]), tokens[i:]
     return ["_".join(sum(unidades[k:], []) + resto) for k in range(len(unidades) + 1)]
-
-
-def eh_dispositivo(codigo: str) -> bool:
-    return bool(niveis(codigo))
 
 
 def _numero(n: str) -> str:
@@ -104,8 +101,7 @@ def rotulo(codigo: str) -> str:
 def tokens_da_busca(texto: str) -> list[str]:
     """Fichas normalizadas do texto: sem acento, `art.`/`arts.`->art, `§`->prgf, sem `nº`,
     `CF/88`->cf, `SBDI-1`->sdi1, sem conectivos (de, da, do, das, dos, e)."""
-    t = unicodedata.normalize("NFD", texto.lower())
-    t = "".join(c for c in t if not unicodedata.combining(c))
+    t = sem_acento(texto)
     t = re.sub(r"\bnorma regulamentadora\b", "nr", t)
     t = re.sub(r"\bsumulas? vinculantes?\b", "sv", t)
     t = re.sub(r"\bn\s*[º°]?\.?\s*(?=\d)", " ", t)  # "nº 85", "n. 85"

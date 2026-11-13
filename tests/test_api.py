@@ -4,7 +4,7 @@ Testes de POST /enrich, POST /query, GET /document/{id} e GET /health
 
 Nenhuma infra real é usada: hybrid/doc_retriever/enricher são substituídos via
 app.dependency_overrides (por isso o TestClient NÃO é usado como context manager
-— o lifespan real, que conectaria a Postgres/Chroma/Ollama, nunca precisa rodar).
+— o lifespan real, que conectaria a Postgres/Qdrant/Ollama, nunca precisa rodar).
 pdf_extractor.extract_text é monkeypatchado quando o teste precisa controlar o
 resultado da extração sem depender de um PDF de verdade.
 
@@ -14,14 +14,10 @@ autenticação (isso é tests/test_auth_routes.py), a autouse fixture abaixo
 substitui get_current_user por um usuário fake em TODO teste, sem precisar
 repetir isso em cada um.
 """
-import uuid
-from datetime import datetime, timezone
-
 import pytest
 from fastapi.testclient import TestClient
 
 import query.api.app as api_app
-from auth.store import Usuario
 from query.api.app import app, get_current_user, get_doc_retriever, get_enricher, get_hybrid, get_reranker, get_uso_diario
 from query.api.auth_routes import get_usuario_store
 from query.api.filtros_routes import get_filtro_store
@@ -32,16 +28,10 @@ from query.enrichment.schema import EstruturaArgumentativa
 from query.filtros.dispositivos import rotulo
 from query.filtros.store import ContagemFiltros, FiltroIndisponivel, SugestaoDispositivo
 from query.search.result_formatter import ResultCard
-from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
+from scraper.schema import Provimento
+from tests.fakes import FakeDocRetriever, FakeReranker, documento_fake, usuario_fake
 
-_USUARIO_FAKE = Usuario(
-    id=uuid.uuid4(),
-    email="teste@example.com",
-    hashed_password="hash-nao-usado-neste-teste",
-    nome="Usuário de Teste",
-    is_active=True,
-    criado_em=datetime.now(timezone.utc),
-)
+_USUARIO_FAKE = usuario_fake("teste@example.com", "Usuário de Teste")
 
 
 class _FakeHybrid:
@@ -58,24 +48,6 @@ class _FakeHybrid:
         if canais is not None:
             canais.update({doc_id: ["semantica"] for doc_id, _ in achados})
         return achados[:n_results]
-
-
-class _FakeReranker:
-    """Passthrough: devolve scores estritamente decrescentes na MESMA ordem de
-    entrada, então o sort por score em query/api/app.py não muda a ordem que
-    já veio do (fake) RRF — os testes abaixo continuam testando a lógica de
-    filtro/hierarquia/paginação sem precisar saber de re-ranking."""
-
-    def rerank_scores(self, query: str, passagens: list[str]) -> list[float]:
-        return [1.0 - i * 0.01 for i in range(len(passagens))]
-
-
-class _FakeDocRetriever:
-    def __init__(self, docs: dict[str, DocumentoJuridico]):
-        self._docs = docs
-
-    def fetch(self, ids):
-        return {i: self._docs[i] for i in ids if i in self._docs}
 
 
 class _FakeEnricher:
@@ -98,21 +70,6 @@ class _FakeEnricher:
         return Extracao(self.estrutura, self.sugeridas, self.dispositivos)
 
 
-def _doc(**kwargs) -> DocumentoJuridico:
-    base = dict(
-        id_documento="x",
-        tipo_documento=TipoDocumento.ACORDAO,
-        hierarquia_categoria=4,
-        numero_processo="RR-1-2021",
-        tribunal="TST",
-        relator="Min. Fulano",
-        ementa="Ementa.",
-        provimento=Provimento.APROVADO,
-    )
-    base.update(kwargs)
-    return DocumentoJuridico(**base)
-
-
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -133,7 +90,7 @@ def _reranker_passthrough():
     — nunca deve rodar em teste. Os testes de /query abaixo testam filtro/
     hierarquia/paginação, não a qualidade do re-ranking em si (isso é
     tests/test_reranker.py)."""
-    app.dependency_overrides[get_reranker] = lambda: _FakeReranker()
+    app.dependency_overrides[get_reranker] = lambda: FakeReranker()
     yield
 
 
@@ -331,10 +288,10 @@ def test_normalizar_scores_sem_variacao_nao_divide_por_zero():
 # --------------------------------------------------------------------------- #
 
 def test_query_fim_a_fim_ordena_e_formata(client):
-    docs = {"a-id": _doc(), "b-id": _doc()}
+    docs = {"a-id": documento_fake(), "b-id": documento_fake()}
 
     app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever(docs)
 
     resp = client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
 
@@ -368,7 +325,7 @@ def test_query_explicacao_sem_sessao_401(client):
 
 def test_query_estrutura_vazia_422(client):
     app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([])
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever({})
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever({})
 
     resp = client.post("/query", json={"estrutura": {}})
 
@@ -376,13 +333,13 @@ def test_query_estrutura_vazia_422(client):
 
 
 def test_query_filtro_provimento_reduz_resultados_e_filtra_nos_canais(client):
-    favoravel = _doc(provimento=Provimento.APROVADO)
-    desfavoravel = _doc(provimento=Provimento.NEGADO)
+    favoravel = documento_fake(provimento=Provimento.APROVADO)
+    desfavoravel = documento_fake(provimento=Provimento.NEGADO)
     docs = {"favoravel": favoravel, "desfavoravel": desfavoravel}
 
     fake_hybrid = _FakeHybrid([("favoravel", 2.0), ("desfavoravel", 1.0)])
     app.dependency_overrides[get_hybrid] = lambda: fake_hybrid
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever(docs)
 
     resp = client.post(
         "/query",
@@ -397,30 +354,16 @@ def test_query_filtro_provimento_reduz_resultados_e_filtra_nos_canais(client):
     assert fake_hybrid.calls[0]["provimento"] == "APROVADO"
 
 
-def test_query_sem_filtro_usa_pool_de_rerank(client):
-    """Sem filtro, o pool pedido ao hybrid search é N_CANDIDATOS_PARA_RERANK
-    (maior que N_RESULTS_FINAL) — o re-ranking precisa de mais candidatos que
-    o corte final pra ter o que escolher (ver query/api/app.py::query)."""
-    doc = _doc()
-    fake_hybrid = _FakeHybrid([("doc-1", 1.0)])
-    app.dependency_overrides[get_hybrid] = lambda: fake_hybrid
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever({"doc-1": doc})
-
-    client.post("/query", json={"estrutura": {"tese_central": "insalubridade"}})
-
-    assert fake_hybrid.calls[0]["n_results"] == api_app.N_CANDIDATOS_PARA_RERANK
-
-
 def test_query_reranking_promove_candidato_mal_rankeado_pelo_rrf(client):
     """O re-ranking (query/search/reranker.py) reordena por relevância real —
     um candidato que o RRF rankeou por último pode terminar primeiro, se o
     cross-encoder achar que ele é o mais relevante pro conteúdo da tese."""
-    mesma_hierarquia = {"a": _doc(), "b": _doc(), "c": _doc()}  # todos ACORDAO (default)
+    mesma_hierarquia = {"a": documento_fake(), "b": documento_fake(), "c": documento_fake()}  # todos ACORDAO (default)
 
     app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid(
         [("a", 3.0), ("b", 2.0), ("c", 1.0)]  # RRF: a > b > c
     )
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(mesma_hierarquia)
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever(mesma_hierarquia)
 
     class _RerankerInverteOrdem:
         def rerank_scores(self, query, passagens):
@@ -438,8 +381,8 @@ def test_query_reranking_promove_candidato_mal_rankeado_pelo_rrf(client):
 # --------------------------------------------------------------------------- #
 
 def test_get_document_encontrado(client):
-    doc = _doc()
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever({"uuid-1": doc})
+    doc = documento_fake()
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever({"uuid-1": doc})
 
     resp = client.get("/document/uuid-1")
 
@@ -449,7 +392,7 @@ def test_get_document_encontrado(client):
 
 
 def test_get_document_nao_encontrado_404(client):
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever({})
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever({})
 
     resp = client.get("/document/nao-existe")
 
@@ -487,9 +430,9 @@ class _FakeProvimentoStore:
 
 
 def _instalar_busca():
-    docs = {"a-id": _doc(), "b-id": _doc()}
+    docs = {"a-id": documento_fake(), "b-id": documento_fake()}
     app.dependency_overrides[get_hybrid] = lambda: _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever(docs)
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever(docs)
 
 
 def test_query_anexa_classificacao(client):
@@ -562,7 +505,7 @@ _FILTRO = {"estrutura": {"tese_central": "insalubridade", "dispositivos": ["art_
 def _busca_fake():
     hybrid = _FakeHybrid([("a-id", 9.0), ("b-id", 1.0)])
     app.dependency_overrides[get_hybrid] = lambda: hybrid
-    app.dependency_overrides[get_doc_retriever] = lambda: _FakeDocRetriever({"a-id": _doc(), "b-id": _doc()})
+    app.dependency_overrides[get_doc_retriever] = lambda: FakeDocRetriever({"a-id": documento_fake(), "b-id": documento_fake()})
     return hybrid
 
 
@@ -667,7 +610,9 @@ def test_query_com_filtro_sem_store_503(client):
 def test_query_com_filtro_e_tabelas_ausentes_503(client):
     _busca_fake()
     app.dependency_overrides[get_filtro_store] = lambda: _FakeFiltroStore(indisponivel=True)
-    assert client.post("/query", json=_FILTRO).status_code == 503
+    resp = client.post("/query", json=_FILTRO)
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "O filtro restrito está indisponível no momento."
 
 
 def test_query_sem_filtro_sem_store_funciona(client):

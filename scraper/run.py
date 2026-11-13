@@ -39,10 +39,6 @@ DATABASE_URL = os.getenv(
 )
 
 
-def resolve_dates(from_date: date | None, to_date: date | None, writer: PostgresWriter) -> tuple[date, date]:
-    return resolve_collection_window(from_date, to_date, writer.get_last_collected_date())
-
-
 class ErroConexao(Exception):
     """Falha ao conectar no PostgreSQL (o CLI sai com 1, sem traceback)."""
 
@@ -72,7 +68,7 @@ def coletar(
         raise ErroConexao(str(e)) from e
     try:
         try:
-            start, end = resolve_dates(from_date, to_date, writer)
+            start, end = resolve_collection_window(from_date, to_date, writer.get_last_collected_date())
         except Exception as e:
             raise ErroDatas(str(e)) from e
         if start > end:

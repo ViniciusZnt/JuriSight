@@ -1,5 +1,5 @@
 import pytest
-from query.filtros.dispositivos import niveis, eh_dispositivo, rotulo, codigo_de_texto, tokens_da_busca, codigos_do_texto
+from query.filtros.dispositivos import niveis, rotulo, codigo_de_texto, tokens_da_busca, codigos_do_texto
 
 @pytest.mark.parametrize("codigo,esperado", [
     ("b_ii_art_10_adct", ["b_ii_art_10_adct", "ii_art_10_adct", "art_10_adct"]),
@@ -13,10 +13,6 @@ from query.filtros.dispositivos import niveis, eh_dispositivo, rotulo, codigo_de
 ])
 def test_niveis(codigo, esperado):
     assert niveis(codigo) == esperado
-
-def test_eh_dispositivo():
-    assert eh_dispositivo("oj_394_sdi1_tst") and eh_dispositivo("lei_13467_17") and eh_dispositivo("convencao_155_oit")
-    assert not eh_dispositivo("trt9") and not eh_dispositivo("clt")
 
 @pytest.mark.parametrize("codigo,esperado", [
     ("art_15_clt", "CLT art. 15"),
@@ -147,4 +143,24 @@ def test_conversao_e_busca_dos_codigos_novos():
     assert codigo_de_texto("Súmula 4 do STF") != "sv_4"
     assert tokens_da_busca("nr 15") == ["nr", "15"]
     assert tokens_da_busca("súmula vinculante 4") == ["sv", "4"] and tokens_da_busca("vinculante 4") == ["sv", "4"]
-    assert niveis("nr_15") == ["nr_15"] and eh_dispositivo("tema_1046")
+    assert niveis("nr_15") == ["nr_15"] and niveis("tema_1046") == ["tema_1046"]
+
+
+def _sem_acento_antigo(texto):
+    """A cópia que ficava em `tokens_da_busca` antes de usar o `sem_acento` das expressões."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", texto.lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+@pytest.mark.parametrize("texto", [
+    "Súmula nº 85 do TST", "Art. 192 da CLT § 1º", "Ação rescisória", "CONDENAÇÃO em honorários",
+    "Responsabilidade subsidiária", "Orientação Jurisprudencial n. 191", "Cláusula 3ª, parágrafo único",
+    "ÇÃO ÕES ÃES", "Artigo 7º, inciso XXVI, da CF/88", "Horas extras e intervalo intrajornada",
+    "Indenização por dano moral", "Adicional de insalubridade (NR-15)", "Convenção Coletiva de Trabalho",
+    "Rescisão indireta — art. 483, \"d\"", "Pé-de-meia ÁÉÍÓÚ àèìòù âêîôû ãõ üñ", "§ 2º do art. 9º",
+    "n° 331, item IV", "SBDI-1, Tema 1046", "ªº°§ sem letras", "texto já sem acento",
+])
+def test_sem_acento_unico_igual_a_copia_antiga(texto):
+    from query.filtros.expressoes import sem_acento
+    assert sem_acento(texto) == _sem_acento_antigo(texto)

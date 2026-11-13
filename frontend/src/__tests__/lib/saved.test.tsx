@@ -96,13 +96,6 @@ describe("useSaved", () => {
     expect(Object.keys(window.localStorage)).toHaveLength(0);
   });
 
-  it("a lista antiga, sem dono, é apagada em vez de ir para quem entrar", async () => {
-    window.localStorage.setItem("jurisight:saved", JSON.stringify([{ ...sample, savedAt: 1 }]));
-    const { result } = renderHook(() => useSaved(), { wrapper: SavedProvider });
-    await waitFor(() => expect(window.localStorage.getItem("jurisight:saved")).toBeNull());
-    expect(result.current.saved).toHaveLength(0);
-  });
-
   it("lança um erro claro quando usado fora do SavedProvider", () => {
     const spy = jest.spyOn(console, "error").mockImplementation(() => {});
     expect(() => renderHook(() => useSaved())).toThrow("useSaved precisa de <SavedProvider>.");

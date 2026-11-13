@@ -283,14 +283,6 @@ def _avisar(caminho, puladas) -> None:
             print(f"{Path(caminho).name}: linha {linha} ignorada ({motivo})", file=sys.stderr)
 
 
-def ler_lote(caminho) -> tuple[str, list[tuple[uuid.UUID, int, str]]]:
-    """(e-mail normalizado, linhas válidas (par_id, nota, stance)). Linhas
-    inválidas são avisadas em stderr; e-mail ausente ou sem nota → ValueError."""
-    email, _, validas, puladas = _ler(caminho)
-    _avisar(caminho, puladas)
-    return email, validas
-
-
 def importar_arquivo(store, caminho, rodada: int = 1, adjudicador: str | None = None) -> tuple[int, dict[str, int]]:
     """Grava os julgamentos do arquivo. Devolve (gravadas, {motivo: puladas}).
     Idempotente: o store faz upsert por (par, juiz, rodada).

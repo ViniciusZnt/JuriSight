@@ -1,22 +1,11 @@
 """
-Acesso a `public.conversas` (CRUD do histórico de busca) — camada de
-persistência para a peça de endpoints FastAPI
-(`query/api/conversa_routes.py`).
+Acesso a `public.conversas` (CRUD do histórico de busca), em psycopg puro, como
+`auth/store.py`. Sem FastAPI: a camada HTTP mapeia `ConversaNaoEncontradaError`.
 
-Mesma convenção de `auth/store.py` e `query/search/doc_retriever.py`:
-psycopg puro, sem ORM, conecta/cursora/fecha a cada chamada. Deliberadamente
-sem import de FastAPI/Pydantic — a camada HTTP decide o mapeamento de
-`ConversaNaoEncontradaError` para um HTTPException.
-
-Toda operação (get/rename/delete/add_versao) filtra por
-`id = %s AND usuario_id = %s` — nunca só por `id`. Isso é o que impede um
-usuário autenticado de ler/alterar a conversa de outro só adivinhando um
-UUID: a query simplesmente não encontra a linha (mesmo efeito de um 404),
-em vez de precisar de uma checagem de autorização separada que alguém
-poderia esquecer de chamar.
-
-Cada busca (a original + cada "Refinar consulta") vira uma VERSÃO própria no
-array `versoes`, não sobrescreve a anterior — ver conversations/db.py.
+Toda operação filtra por `id = %s AND usuario_id = %s`, nunca só por `id`: quem
+adivinha o UUID de outra pessoa simplesmente não encontra a linha, sem depender de
+uma checagem de autorização separada que alguém possa esquecer. O formato de
+`versoes` está em conversations/db.py.
 """
 from __future__ import annotations
 
@@ -120,36 +109,22 @@ class ConversaStore:
     def create(self, usuario_id: uuid.UUID, titulo: str) -> Conversa:
         """Cria uma conversa nova, sem nenhuma versão ainda (criada ao
         clicar em "Nova pesquisa", antes mesmo do primeiro /enrich)."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_INSERT, (usuario_id, titulo))
-                row = cur.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_INSERT, (usuario_id, titulo))
+            row = cur.fetchone()
         return _row_para_conversa(row)
 
     def list_by_usuario(self, usuario_id: uuid.UUID) -> list[Conversa]:
         """Todas as conversas do usuário, mais recente primeiro (histórico da sidebar)."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_SELECT_BY_USUARIO, (usuario_id,))
-                rows = cur.fetchall()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_SELECT_BY_USUARIO, (usuario_id,))
+            rows = cur.fetchall()
         return [_row_para_conversa(r) for r in rows]
 
     def rename(self, conversa_id: uuid.UUID, usuario_id: uuid.UUID, titulo: str) -> Conversa:
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_UPDATE_TITULO, (titulo, conversa_id, usuario_id))
-                row = cur.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_UPDATE_TITULO, (titulo, conversa_id, usuario_id))
+            row = cur.fetchone()
         if row is None:
             raise ConversaNaoEncontradaError(conversa_id)
         return _row_para_conversa(row)
@@ -171,39 +146,29 @@ class ConversaStore:
         /query (resultados preenchido, mesma versão sendo completada). Cada
         "Refinar consulta" bem-sucedida gera uma versão nova (V2, V3, ...),
         nunca sobrescreve a anterior."""
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    _ADD_VERSAO,
-                    (
-                        Json(estrutura),
-                        has_file,
-                        file_name,
-                        pdf_extraido,
-                        aviso,
-                        Json(resultados),
-                        datetime.now(timezone.utc).isoformat(),
-                        conversa_id,
-                        usuario_id,
-                    ),
-                )
-                row = cur.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                _ADD_VERSAO,
+                (
+                    Json(estrutura),
+                    has_file,
+                    file_name,
+                    pdf_extraido,
+                    aviso,
+                    Json(resultados),
+                    datetime.now(timezone.utc).isoformat(),
+                    conversa_id,
+                    usuario_id,
+                ),
+            )
+            row = cur.fetchone()
         if row is None:
             raise ConversaNaoEncontradaError(conversa_id)
         return _row_para_conversa(row)
 
     def delete(self, conversa_id: uuid.UUID, usuario_id: uuid.UUID) -> None:
-        conn = psycopg.connect(self.database_url)
-        try:
-            with conn.cursor() as cur:
-                cur.execute(_DELETE, (conversa_id, usuario_id))
-                apagou = cur.rowcount > 0
-            conn.commit()
-        finally:
-            conn.close()
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_DELETE, (conversa_id, usuario_id))
+            apagou = cur.rowcount > 0
         if not apagou:
             raise ConversaNaoEncontradaError(conversa_id)

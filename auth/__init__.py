@@ -1,18 +1,7 @@
 """
-auth — primitivas de segurança para autenticação real de usuários.
-
-Este pacote substitui o mock client-side descrito em
-`frontend/src/lib/auth.tsx` (uma flag booleana em localStorage, sem nenhuma
-verificação de servidor) pelas duas primitivas que um backend de autenticação
-real precisa:
-
-  - `auth.password`: hashing/verificação de senha (Argon2id) e um
-    `DUMMY_HASH` para mitigar enumeração de usuários por timing attack.
-  - `auth.tokens`: emissão/verificação de JWT (HS256) para tokens de acesso.
-
-Este pacote NÃO conhece o schema do Postgres (peça de outro agente, em
-paralelo) nem os endpoints FastAPI (peça futura) — são funções puras,
-importáveis por qualquer camada que venha a existir por cima delas.
+Autenticação: hashing de senha (`auth.password`, Argon2id), JWT (`auth.tokens`, HS256),
+schema (`auth.db`) e acesso a dados (`auth.store`). Nada aqui conhece HTTP; as rotas
+ficam em `query/api/auth_routes.py`. Decisões em `auth/DESIGN.md`.
 """
 
 from auth.password import DUMMY_HASH, PasswordVerification, hash_password, verify_password

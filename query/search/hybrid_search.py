@@ -36,22 +36,6 @@ def _doc_id_do_chunk(chunk_id: str) -> str:
     return chunk_id.rsplit(":", 1)[0]
 
 
-
-def _dedup_ordenado(doc_ids: list[str]) -> list[str]:
-    """Remove duplicatas preservando a ordem.
-
-    Input:  doc_ids — lista de documento_id, melhor primeiro.
-    Returns: mesma lista sem repetições.
-    """
-    vistos: set[str] = set()
-    ordem: list[str] = []
-    for d in doc_ids:
-        if d not in vistos:
-            vistos.add(d)
-            ordem.append(d)
-    return ordem
-
-
 def reciprocal_rank_fusion(
     rankings: list[list[str]],
     k: int = RRF_K
@@ -96,23 +80,12 @@ class HybridSearch:
     ) -> list[tuple[str, float]]:
         """Busca híbrida: vetorial (2 coleções) + lexical, fundidos por RRF.
 
-        Input:  query — texto embedado para a busca vetorial (ex.: a frase-tese
-                do Query Builder); n_results — top-N documentos; where — filtro
-                de metadados do Qdrant (provimento/período — UC03/UC04), opcional;
-                bm25_query — string lexical para o BM25 (ex.: os termos exatos do
-                Query Builder), se diferente de `query`; default None usa `query`
-                nos dois canais (comportamento anterior, retrocompatível);
-                provimento — valor do enum (str); filtra os TRÊS canais (payload
-                do Qdrant e máscara do BM25). None não muda nenhuma chamada;
-                documento_ids — restringe os TRÊS canais a esses documentos (filtro
-                restrito); None não muda nenhuma chamada; canais — se vier um
-                dict, recebe {documento_id: ["semantica", "termos"]} com os
-                canais em que cada documento devolvido apareceu.
-        Returns: lista [(documento_id, score_rrf)] top-N, melhor primeiro.
-
-        Nota: o `where` filtra só as buscas do Qdrant; o BM25 só filtra por
-        `provimento`. Outros filtros rígidos devem ser aplicados depois (no Doc
-        Retriever, sobre o DocumentoJuridico recuperado).
+        `query` é embedada para o canal vetorial; `bm25_query` (se diferente) vai ao BM25.
+        `provimento` e `documento_ids` (filtro restrito) valem nos TRÊS canais. `where` filtra
+        só o Qdrant; o BM25 só filtra por provimento e documento_ids, então outros filtros
+        rígidos ficam para depois, sobre o documento recuperado. `canais`, se vier, recebe
+        {documento_id: ["semantica", "termos"]} com os canais em que cada documento apareceu.
+        Retorna [(documento_id, score_rrf)] top-N, melhor primeiro.
         """
         n_candidates = n_results * CANDIDATOS_POR_CANAL
         texto_bm25 = bm25_query if bm25_query is not None else query
@@ -121,14 +94,12 @@ class HybridSearch:
             where = {**(where or {}), "provimento": provimento}
             kwargs_bm25 = {"provimento": provimento}
         else:
-            kwargs_bm25 = {}  # índices antigos e o pooling não conhecem o kwarg
+            kwargs_bm25 = {}
         if documento_ids is not None:
             where = {**(where or {}), "documento_id": documento_ids}
             kwargs_bm25["documento_ids"] = set(documento_ids)
 
-        # Os 3 canais são independentes entre si (BM25 nem depende do embedding) —
-        # rodavam em série antes, somando os tempos de rede do Qdrant (x2) + BM25.
-        # Em paralelo, o tempo total vira ~o do canal mais lento, não a soma dos 3.
+        # Os 3 canais são independentes: em paralelo o tempo é o do mais lento, não a soma.
         with ThreadPoolExecutor(max_workers=3) as executor:
             fut_bm25 = executor.submit(self.bm25.search, texto_bm25, n=n_candidates, **kwargs_bm25)
             query_vector = self.embedder.embed_text(query)
@@ -143,9 +114,9 @@ class HybridSearch:
             hits_ementa = fut_ementa.result()
 
         # Projeta cada canal para uma lista ranqueada de documento_id, sem duplicar.
-        r_completo = _dedup_ordenado([h["documento_id"] for h in hits_completo])
-        r_ementa = _dedup_ordenado([h["documento_id"] for h in hits_ementa])
-        r_bm25 = _dedup_ordenado([_doc_id_do_chunk(cid) for cid, _ in hits_bm25])
+        r_completo = list(dict.fromkeys(h["documento_id"] for h in hits_completo))
+        r_ementa = list(dict.fromkeys(h["documento_id"] for h in hits_ementa))
+        r_bm25 = list(dict.fromkeys(_doc_id_do_chunk(cid) for cid, _ in hits_bm25))
 
         fundidos = reciprocal_rank_fusion([r_completo, r_ementa, r_bm25])
         if canais is not None:  # por onde cada documento foi achado ("Como esta busca foi feita")

@@ -5,7 +5,7 @@ Define o contrato `DocumentoJuridico` validado via Pydantic v2 antes da
 persistência no PostgreSQL.
 
 A fonte de verdade é o PostgreSQL; o UUID `id` é a chave referenciada como
-`documento_id` (FK) pelos chunks no ChromaDB.
+`documento_id` (FK) pelos chunks no Qdrant.
 """
 from __future__ import annotations
 

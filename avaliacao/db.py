@@ -59,7 +59,6 @@ _DDL = [
     );
     """,
 ]
-# A tabela avaliacao.amostra (fila de rotulação da tela web) saiu do DDL; ela continua no banco, sem uso.
 
 
 def ensure_schema(database_url: str | None = None) -> None:

@@ -1,4 +1,4 @@
-import { assuntoDoCard, orgaoDe, orgaosCitados, vereditoDe, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
+import { assuntoDoCard, orgaoDe, orgaosCitados, vereditoDe, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, paraSalvo, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -178,5 +178,36 @@ describe("vereditoDe", () => {
     expect(vereditoDe("Não, porque o EPI era eficaz.")).toEqual({ veredito: "Não", resto: "Porque o EPI era eficaz." });
     expect(vereditoDe("Depende de prova da exposição.")).toEqual({ veredito: "Depende", resto: "de prova da exposição." });
     expect(vereditoDe("Há divergência entre as turmas.")).toEqual({ veredito: null, resto: "Há divergência entre as turmas." });
+  });
+});
+
+describe("paraSalvo", () => {
+  const doc = {
+    id: "d1",
+    ementa: "ADICIONAL DE INSALUBRIDADE. RUÍDO. Mantida a sentença.",
+    tribunal: "TRT2",
+    turma: "11ª Turma",
+    data_julgamento: "2025-12-17",
+    relator: "Fulana",
+    numero_processo: "0001",
+  };
+
+  it("monta a decisão salva com o título da ementa e a posição como relevância", () => {
+    expect(paraSalvo(doc, "favorable", 3)).toEqual({
+      id: "d1",
+      title: "ADICIONAL DE INSALUBRIDADE. RUÍDO.",
+      court: "TRT2",
+      chamber: "11ª Turma",
+      date: "2025-12-17",
+      outcome: "favorable",
+      relevance: 3,
+      rapporteur: "Fulana",
+      processNumber: "0001",
+    });
+  });
+
+  it("sem posição a relevância é 0 e sem data a data é vazia", () => {
+    const salvo = paraSalvo({ ...doc, data_julgamento: null }, "neutral", null);
+    expect([salvo.relevance, salvo.date]).toEqual([0, ""]);
   });
 });
