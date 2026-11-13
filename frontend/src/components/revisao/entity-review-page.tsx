@@ -19,6 +19,8 @@ import { FiltroRestrito } from "@/components/revisao/filtro-restrito";
 import { useSearchSession } from "@/lib/search-session";
 import { useConversations } from "@/lib/conversations";
 import { emptyEstrutura, queryJurisprudencia, ApiError, type EstruturaArgumentativa } from "@/lib/api";
+import { EtiquetaBusca } from "@/components/ui/etiqueta-busca";
+import type { Busca } from "@/lib/cores-busca";
 
 interface ColorScheme {
   bg: string;
@@ -29,7 +31,7 @@ interface ColorScheme {
   addHover: string;
 }
 
-const colors: Record<"blue" | "green" | "amber", ColorScheme> = {
+const colors: Record<"blue" | "termos", ColorScheme> = {
   blue: {
     bg: "bg-[#EEF3FB] dark:bg-[#1A2A3C]",
     border: "border-[#C8D9EF] dark:border-[#2A3A4C]",
@@ -39,23 +41,14 @@ const colors: Record<"blue" | "green" | "amber", ColorScheme> = {
     addHover:
       "hover:border-[#1A3A5C] dark:hover:border-[#8AB0DC] hover:text-[#1A3A5C] dark:hover:text-[#8AB0DC] hover:bg-[#EEF3FB] dark:hover:bg-[#1A2A3C]",
   },
-  green: {
-    bg: "bg-[#EDF7F2] dark:bg-[#122A1E]",
-    border: "border-[#BDE0CF] dark:border-[#1E4A34]",
-    text: "text-[#1A5C3A] dark:text-[#6FCB9A]",
-    dot: "bg-[#2D8A5F] dark:bg-[#3DA372]",
-    addBorder: "border-[#BDC8C4] dark:border-[#2A3A32]",
+  termos: {
+    bg: "bg-[#E6F5F3] dark:bg-[#0F2826]",
+    border: "border-[#BFE3DE] dark:border-[#1E4A46]",
+    text: "text-[#0B5F58] dark:text-[#7FD8CE]",
+    dot: "bg-[#0E8A80] dark:bg-[#3FB8AD]",
+    addBorder: "border-[#B9D3CF] dark:border-[#24403D]",
     addHover:
-      "hover:border-[#2D8A5F] dark:hover:border-[#3DA372] hover:text-[#1A5C3A] dark:hover:text-[#6FCB9A] hover:bg-[#EDF7F2] dark:hover:bg-[#122A1E]",
-  },
-  amber: {
-    bg: "bg-[#FBF4EC] dark:bg-[#2A2015]",
-    border: "border-[#EDD9BC] dark:border-[#4A3A22]",
-    text: "text-[#6B3B0A] dark:text-[#E0AC6C]",
-    dot: "bg-[#C47A2D] dark:bg-[#C98A3D]",
-    addBorder: "border-[#DCCAAC] dark:border-[#3A2E1E]",
-    addHover:
-      "hover:border-[#C47A2D] dark:hover:border-[#C98A3D] hover:text-[#6B3B0A] dark:hover:text-[#E0AC6C] hover:bg-[#FBF4EC] dark:hover:bg-[#2A2015]",
+      "hover:border-[#0E8A80] dark:hover:border-[#3FB8AD] hover:text-[#0B5F58] dark:hover:text-[#7FD8CE] hover:bg-[#E6F5F3] dark:hover:bg-[#0F2826]",
   },
 };
 
@@ -281,12 +274,13 @@ function FieldCard({ children }: { children: React.ReactNode }) {
   return <div className="p-4 rounded-xl border border-[#E8E8F0] dark:border-[#26262C] bg-[#FAFBFF] dark:bg-[#15191F]">{children}</div>;
 }
 
-function FieldLabel({ label, description }: { label: string; description?: string }) {
+function FieldLabel({ label, description, busca }: { label: string; description?: string; busca?: Busca }) {
   return (
     <div className="mb-2">
       <span className="text-[#4A4A5A] dark:text-[#C4C4CE] tracking-[0.04em] uppercase" style={{ fontSize: "11.5px", fontWeight: 700 }}>
         {label}
       </span>
+      {busca && <span className="ml-2"><EtiquetaBusca busca={busca} /></span>}
       {description && (
         <span className="ml-2 text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "11.5px" }}>
           {description}
@@ -424,7 +418,7 @@ export function EntityReviewPage() {
 
           <div className="px-5 sm:px-7 pt-6 pb-5 space-y-6">
             <FieldCard>
-              <FieldLabel label="Pedido principal" description="O que se pede na ação" />
+              <FieldLabel label="Pedido principal" busca="termos" description="O que se pede na ação" />
               <InlineEdit value={data.pedido_principal} onChange={(v) => set("pedido_principal")(v ?? "")} placeholder="Ex: adicional de insalubridade grau máximo" />
             </FieldCard>
 
@@ -441,18 +435,18 @@ export function EntityReviewPage() {
             />
 
             <FieldCard>
-                <FieldLabel label="Fatos do caso" description="Situações que caracterizam o caso (ex.: gravidez, ruído, jornada controlada)" />
-                <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.amber} placeholder="Novo fato…" />
+                <FieldLabel label="Fatos do caso" busca="termos" description="Situações que caracterizam o caso (ex.: gravidez, ruído, jornada controlada)" />
+                <TagList items={data.agente_nocivo} onChange={set("agente_nocivo")} colorScheme={colors.termos} placeholder="Novo fato…" />
             </FieldCard>
 
             <FieldCard>
-              <FieldLabel label="Condutas da empresa" description="O que a empresa fez ou deixou de fazer" />
-              <TagList items={data.violacoes} onChange={set("violacoes")} colorScheme={colors.green} placeholder="Nova conduta…" />
+              <FieldLabel label="Condutas da empresa" busca="termos" description="O que a empresa fez ou deixou de fazer" />
+              <TagList items={data.violacoes} onChange={set("violacoes")} colorScheme={colors.termos} placeholder="Nova conduta…" />
             </FieldCard>
 
 
             <div>
-              <FieldLabel label="Tese central" description="Frase que resume o argumento principal" />
+              <FieldLabel label="Tese central" busca="semantica" description="Frase que resume o argumento principal" />
               <div
                 className={`relative rounded-xl border transition-all bg-[#FAFAFA] dark:bg-[#1C1C21] ${
                   teseFocused

@@ -7,9 +7,8 @@ import { explicarBusca, type EstruturaArgumentativa, type ExplicacaoBusca, type 
 import { dispositivoETexto, itensDaFrase, orgaosCitados, respostaParaCopiar, vereditoDe } from "@/lib/decision-view";
 import { copiarTexto } from "@/lib/utils";
 import { FEEDBACK_KEY, lerVotos, type useRespostaGerada } from "@/components/resultados/resposta-gerada";
+import { BUSCA, TOTAL_ACERVO } from "@/lib/cores-busca";
 
-/** Total de acórdãos do acervo (2025), para "1.104 de 69.349 decisões". */
-const TOTAL_ACERVO = 69349;
 const LIMITE_TERMOS = 4;
 const LIMITE_FUNDAMENTOS = 3; // o modelo às vezes escreve um por turma; o resto fica atrás de "Mais N"
 
@@ -170,22 +169,22 @@ export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, e
           )}
           <div className={coluna}>
             <p className={tituloColuna} style={{ fontSize: "12px", fontWeight: 600 }}>
-              <span className="w-2 h-2 rounded-sm bg-[#6E8FB5]" />Busca semântica
+              <span className={`w-2 h-2 rounded-sm ${BUSCA.semantica.pontoSobreMarinho}`} />{BUSCA.semantica.nome}
             </p>
-            <p className="pl-2.5 border-l-2 border-[#6E8FB5] leading-relaxed" style={{ fontSize: "13.6px" }}>
+            <p className="pl-2.5 border-l-2 border-[#B6A5F0] leading-relaxed" style={{ fontSize: "13.6px" }}>
               {explicacao ? explicacao.semantica : erroExplicacao ? "Não foi possível carregar." : "Carregando…"}
             </p>
           </div>
           <div className={coluna}>
             <p className={tituloColuna} style={{ fontSize: "12px", fontWeight: 600 }}>
-              <span className="w-2 h-2 rounded-sm bg-[#C47A2D]" />Busca por termos
+              <span className={`w-2 h-2 rounded-sm ${BUSCA.termos.pontoSobreMarinho}`} />{BUSCA.termos.nome}
             </p>
             {explicacao && termos.length === 0 && (
               <p className="text-[#AFC6E3]" style={{ fontSize: "13px" }}>Nenhum termo exato: só a busca semântica contou.</p>
             )}
             <div>
               {termosVisiveis.map((t) => (
-                <span key={t} className="inline-block rounded-md border border-[#E8B070]/45 bg-[#C47A2D]/15 text-[#FCE9D2] px-[7px] mr-1 mb-[5px] leading-[21px]" style={{ fontSize: "12.8px" }}>
+                <span key={t} className="inline-block rounded-md border border-[#5FCFC4]/45 bg-[#0E8A80]/25 text-[#D4F3EF] px-[7px] mr-1 mb-[5px] leading-[21px]" style={{ fontSize: "12.8px" }}>
                   {t}
                 </span>
               ))}
