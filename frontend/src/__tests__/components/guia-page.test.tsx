@@ -26,6 +26,12 @@ describe("GuiaPage", () => {
     }
   });
 
+  it("usa as palavras da própria tela: norma tracejada é 'só busca livre' e a faixa é a busca sem o filtro", () => {
+    render(<GuiaPage />);
+    expect(screen.getByText(/marcado “só busca livre”/)).toBeInTheDocument();
+    expect(screen.getByText(/a mesma busca sem o filtro fica numa faixa à parte/)).toBeInTheDocument();
+  });
+
   it("termina levando à tela inicial", () => {
     render(<GuiaPage />);
     expect(screen.getByRole("link", { name: /Ir para a tela inicial/ })).toHaveAttribute("href", "/");

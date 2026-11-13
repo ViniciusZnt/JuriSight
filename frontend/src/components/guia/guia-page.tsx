@@ -237,7 +237,7 @@ export function GuiaPage() {
               <Mini icon={Scale} titulo="Normas e dispositivos">
                 Escolha da lista: art. 10 do ADCT, NR-15, Tema 1046…
                 <div className="flex flex-wrap gap-1.5 mt-2"><Chip busca="filtro">ADCT art. 10, II, b</Chip><Chip tracejado>lei estadual 123</Chip></div>
-                <div className={`mt-1.5 ${MUT}`} style={{ fontSize: "12.5px" }}><B>Sólido</B> filtra. <B>Tracejado</B> (fora da lista) só ajuda a busca por termos.</div>
+                <div className={`mt-1.5 ${MUT}`} style={{ fontSize: "12.5px" }}><B>Sólido</B> filtra. <B>Tracejado</B> (fora da lista, marcado “só busca livre”) não filtra: só ajuda a busca por termos.</div>
               </Mini>
               <Mini icon={Type} titulo="Expressões obrigatórias">
                 O texto que a decisão <B>tem</B> de conter. Aceita plural e falta de acento.
@@ -269,7 +269,7 @@ export function GuiaPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
               <Mini icon={Sparkles} titulo="Resposta da IA">Um resumo do que as decisões dizem, citando cada uma. <B>Abra a decisão antes de citar.</B></Mini>
-              <Mini icon={Layers} titulo="Busca livre">Com filtro, as decisões que não passaram nele ficam numa faixa à parte, que você abre se quiser.</Mini>
+              <Mini icon={Layers} titulo="Busca livre">Com filtro, a mesma busca sem o filtro fica numa faixa à parte, que você abre se quiser.</Mini>
             </div>
             <Nota icon={PencilLine} tom="neutro"><B>Não achou?</B> Clique no <B>lápis</B> ao lado de “Revisão de contexto”, ajuste e busque de novo — cada ajuste vira uma nova versão da conversa.</Nota>
           </Etapa>
