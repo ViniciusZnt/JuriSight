@@ -176,7 +176,7 @@ export function SearchResultsPage() {
     return [...n].sort((a, b) => a[0].localeCompare(b[0], "pt-BR", { numeric: true }));
   }, [results]);
   const repetidas = useMemo(() => ementasRepetidas([...results].sort((a, b) => b.score_rrf - a.score_rrf)), [results]);
-  const idsCitacao = new Set(sintese?.base.find((b) => b.rotulo === citacao)?.ids ?? []);
+  const idsCitacao = useMemo(() => new Set(sintese?.base.find((b) => b.rotulo === citacao)?.ids ?? []), [sintese, citacao]);
 
   const limparFiltros = () => {
     setFilter("all");
@@ -213,9 +213,12 @@ export function SearchResultsPage() {
   // vem das ementas da faixa restrita e esconderia toda a livre)
   const passaFiltrosComuns = (d: (typeof results)[number]) =>
     (filter === "all" || outcomeDe(d) === filter) && inPeriod(d.data_julgamento) && (!tribunal || d.tribunal === tribunal);
-  const passaFiltros = (d: (typeof results)[number]) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id));
 
-  const filteredResults = sortedResults.filter(passaFiltros);
+  const filteredResults = useMemo(
+    () => sortedResults.filter((d) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- passaFiltrosComuns só lê estes estados
+    [sortedResults, filter, dateFrom, dateTo, tribunal, citacao, idsCitacao],
+  );
 
   const contagemDesfecho = contarDesfechos(results);
 
@@ -255,7 +258,7 @@ export function SearchResultsPage() {
   );
 
   // Topo do resumo: quantas decisões, o que foi exigido e uma nota (corte em 20, contagem, vazio).
-  const resumoTopo = (() => {
+  const resumoTopo = useMemo(() => {
     const grupos: { verbo: string; itens: string[] }[] = [];
     if (restrito && estrutura) {
       const varias = (contagem?.total ?? results.length) !== 1;
@@ -284,7 +287,7 @@ export function SearchResultsPage() {
       grupos,
       nota: null,
     };
-  })();
+  }, [restrito, estrutura, contagem, contagemFalhou, contando, results]);
 
   // FA04 (RFC 3.2) — filtro de provimento aplicado mas com poucos resultados.
   const lowProvimentoResults = filter !== "all" && filteredResults.length > 0 && filteredResults.length < 3;
