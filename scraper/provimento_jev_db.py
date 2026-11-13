@@ -7,7 +7,9 @@ referencia `documentos(id)` com ON DELETE CASCADE.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import psycopg
@@ -117,6 +119,13 @@ class ProvimentoJevStore:
     def _conn(self) -> psycopg.Connection:
         return psycopg.connect(self._database_url)
 
+    @contextmanager
+    def conexao_de_gravacao(self):
+        """Uma conexão só para gravar um lote. Em autocommit: cada `gravar` fica salvo na hora,
+        como com uma conexão por chamada (o lote é pago e pode ser interrompido)."""
+        with psycopg.connect(self._database_url, autocommit=True) as conn:
+            yield conn
+
     def pendentes(
         self,
         modelo: str,
@@ -173,9 +182,11 @@ class ProvimentoJevStore:
         provimento_regex: str,
         modelo: str,
         perguntas_sha: str,
+        conn: psycopg.Connection | None = None,
     ) -> None:
-        """Upsert por `documento_id`; renova `criado_em`."""
-        with self._conn() as conn:
+        """Upsert por `documento_id`; renova `criado_em`. `conn`: a de `conexao_de_gravacao`
+        (sem ela, abre e fecha uma só para esta linha)."""
+        with contextlib.nullcontext(conn) if conn is not None else self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO public.provimento_jev

@@ -48,7 +48,7 @@ def confirmar(pergunta: str) -> bool:
 def classificar_pendentes(
     store, classificador, itens: list, perguntas_sha: str, max_workers: int = 8
 ) -> tuple[int, int]:
-    """Classifica `itens` em paralelo e grava cada sucesso (na thread principal).
+    """Classifica `itens` em paralelo e grava cada sucesso (na thread principal, numa conexão só).
     Devolve `(ok, falhas)`; falha de um item não derruba o lote."""
 
     def _um(item):
@@ -58,26 +58,27 @@ def classificar_pendentes(
             return item, None, e
 
     ok = falhas = 0
-    pool = ThreadPoolExecutor(max_workers=max_workers)
-    try:
-        futuros = [pool.submit(_um, item) for item in itens]
-        # as_completed grava cada resultado pago assim que chega, sem esperar item lento.
-        for futuro in as_completed(futuros):
-            item, c, erro = futuro.result()
-            if erro is not None:
-                falhas += 1
-                logger.warning("Falha em %s: %s", item.documento_id, erro)
-                continue
-            store.gravar(
-                item.documento_id, c, item.provimento_regex,
-                modelo=classificador.model, perguntas_sha=perguntas_sha,
-            )
-            ok += 1
-    except BaseException:
-        # Não espera chamadas pagas ainda enfileiradas (inclui Ctrl-C).
-        pool.shutdown(wait=False, cancel_futures=True)
-        raise
-    pool.shutdown()
+    with store.conexao_de_gravacao() as conn:  # uma conexão para o lote todo
+        pool = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            futuros = [pool.submit(_um, item) for item in itens]
+            # as_completed grava cada resultado pago assim que chega, sem esperar item lento.
+            for futuro in as_completed(futuros):
+                item, c, erro = futuro.result()
+                if erro is not None:
+                    falhas += 1
+                    logger.warning("Falha em %s: %s", item.documento_id, erro)
+                    continue
+                store.gravar(
+                    item.documento_id, c, item.provimento_regex,
+                    modelo=classificador.model, perguntas_sha=perguntas_sha, conn=conn,
+                )
+                ok += 1
+        except BaseException:
+            # Não espera chamadas pagas ainda enfileiradas (inclui Ctrl-C).
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        pool.shutdown()
     return ok, falhas
 
 

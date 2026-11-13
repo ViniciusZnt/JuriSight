@@ -242,3 +242,13 @@ def test_salvar_correcao_faz_upsert(store, criar_doc, criar_usuario):
 def test_salvar_correcao_documento_inexistente(store, criar_usuario):
     with pytest.raises(DocumentoNaoEncontrado):
         store.salvar_correcao(str(uuid.uuid4()), criar_usuario(), "provido", "reclamante", "reclamante", None)
+
+
+def test_lote_numa_conexao_so_grava_cada_linha_na_hora(store, criar_doc):
+    d1, d2 = criar_doc(), criar_doc()
+    with store.conexao_de_gravacao() as conn:
+        store.gravar(d1, _classif(), "NEGADO", MODELO, SHA, conn=conn)
+        # outra conexão já enxerga a 1ª linha: nada espera o fim do lote
+        assert [l.documento_id for l in store.linhas(MODELO, SHA) if l.documento_id in (d1, d2)] == [d1]
+        store.gravar(d2, _classif("provido"), "NEGADO", MODELO, SHA, conn=conn)
+    assert {l.documento_id for l in store.linhas(MODELO, SHA)} >= {d1, d2}

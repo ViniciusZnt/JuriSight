@@ -1,6 +1,8 @@
 """Testes do subcomando `classificar` (store e classificador falsos)."""
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 from typesafe_sdk import TypeSafeError
 
@@ -34,7 +36,10 @@ class _FakeStore:
     def contar_sem_texto(self):
         return 0
 
-    def gravar(self, documento_id, c, provimento_regex, modelo, perguntas_sha):
+    def conexao_de_gravacao(self):
+        return contextlib.nullcontext()
+
+    def gravar(self, documento_id, c, provimento_regex, modelo, perguntas_sha, conn=None):
         self.gravados.append(documento_id)
 
 
