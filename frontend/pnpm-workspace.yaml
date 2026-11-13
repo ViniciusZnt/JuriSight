@@ -3,4 +3,3 @@ ignoredBuiltDependencies:
   - unrs-resolver
 onlyBuiltDependencies:
   - '@parcel/watcher'
-  - cypress

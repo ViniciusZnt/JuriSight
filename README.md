@@ -265,20 +265,12 @@ Abre em [http://localhost:3000](http://localhost:3000).
 
 ## Testes (frontend)
 
-O frontend tem testes unitários e de componente (Jest + React Testing Library) e end-to-end (Cypress),
-ambos em `frontend/`:
+O frontend tem testes unitários e de componente (Jest + React Testing Library), em `frontend/`:
 
 ```bash
 cd frontend
-
-# Unitário/componente
 pnpm test              # roda uma vez
 pnpm test:watch        # modo watch
-
-# End-to-end (precisa do dev server rodando em localhost:3000)
-pnpm cypress:open      # interface interativa
-pnpm cypress:run       # headless
-pnpm test:e2e          # sobe o dev server sozinho, roda o Cypress headless e derruba o server no final
 ```
 
 Os testes de backend estão na seção seguinte; os dois rodam no CI (ver [CI](#ci)).
@@ -489,7 +481,6 @@ acervo crescer, atualize `TOTAL_ACERVO` e as frases do guia.
 | FastAPI / Uvicorn  | Backend — API REST, fusão RRF dos rankings  |
 | Next.js / React    | Interface do usuário                        |
 | Jest + React Testing Library | Testes unitários e de componente (frontend) |
-| Cypress            | Testes end-to-end (frontend)                |
 
 ---
 
