@@ -9,9 +9,9 @@ import { Chip } from "@/components/ui/chip";
 import { OutcomeBadge } from "@/components/ui/outcome-badge";
 import { outcomeDe, rotuloSelo } from "@/lib/provimento";
 import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
-import { assuntoDoCard, ementaComCitacao, formatarData, matchedEntities, titleFromEmenta, truncate, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
+import { assuntoDoCard, ementaComCitacao, formatarData, matchedEntities, paraSalvo, titleFromEmenta, truncate, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
-import { copiarTexto } from "@/lib/utils";
+import { useCopiar } from "@/lib/use-copiar";
 import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
 import { BUSCA } from "@/lib/cores-busca";
 
@@ -27,35 +27,23 @@ interface Props {
   idPrefix?: string;
 }
 
-/** Card de decisão da tela de resultados, igual nas duas faixas. */
 /** "Achada pela semântica e pelos termos" — por onde a decisão entrou, antes da fusão. */
 function origemDoCard(canais: ("semantica" | "termos")[]): string {
   const nomes = { semantica: "pela semântica", termos: "pelos termos" };
   return `Achada ${canais.map((c) => nomes[c]).join(" e ")}`;
 }
 
+/** Card de decisão da tela de resultados, igual nas duas faixas. */
 export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, idPrefix = "decisao" }: Props) {
   const { isSaved, toggle } = useSaved();
   const [expandida, setExpandida] = useState(false);
-  const [copiada, setCopiada] = useState(false);
+  const [copiada, copiar] = useCopiar();
   const saved = isSaved(decision.id);
   const title = assuntoDoCard(titleFromEmenta(decision.ementa));
   const outcome = outcomeDe(decision);
   const entidades = matchedEntities(estrutura, decision.ementa);
 
-  const toggleSave = () =>
-    toggle({
-      id: decision.id,
-      title: titleFromEmenta(decision.ementa),
-      court: decision.tribunal,
-      chamber: decision.turma,
-      date: decision.data_julgamento ?? "",
-      outcome,
-      relevance: rank ?? 0,
-      rapporteur: decision.relator,
-      processNumber: decision.numero_processo,
-    });
-  const formatDate = (d: string | null) => formatarData(d, "short");
+  const toggleSave = () => toggle(paraSalvo(decision, outcome, rank));
 
   return (
           // O título é o link (Ctrl+clique, nova aba, Tab); o ::after dele cobre o card inteiro
@@ -99,13 +87,13 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.2px" }}>
-                <MetaItem icon={Scale} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
+                <MetaItem icon={Scale} compacto>
                   <span>{[decision.sigla_classe, decision.tribunal].filter(Boolean).join(" · ")} — {decision.turma}</span>
                 </MetaItem>
-                <MetaItem icon={Calendar} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
-                  <span>{formatDate(decision.data_julgamento)}</span>
+                <MetaItem icon={Calendar} compacto>
+                  <span>{formatarData(decision.data_julgamento, "short")}</span>
                 </MetaItem>
-                <MetaItem icon={FileText} className="" iconClassName="" iconSize="w-3 h-3" fontSize="13.2px" gap="gap-1.5">
+                <MetaItem icon={FileText} compacto>
                   <span className="font-mono">{decision.numero_processo}</span>
                 </MetaItem>
               </div>
@@ -180,12 +168,7 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
                   size="sm"
                   className="relative z-10"
                   title="Copiar a ementa com a linha de citação (tribunal, turma, processo, data, relator)"
-                  onClick={() =>
-                    copiarTexto(ementaComCitacao(decision)).then(() => {
-                      setCopiada(true);
-                      setTimeout(() => setCopiada(false), 2000);
-                    })
-                  }
+                  onClick={() => copiar(ementaComCitacao(decision))}
                 />
                 <ActionButton
                   icon={Bookmark}

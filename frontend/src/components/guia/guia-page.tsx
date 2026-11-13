@@ -50,7 +50,7 @@ function Mini({ icon, titulo, children }: { icon: LucideIcon; titulo: string; ch
 function Nota({ icon, tom, children }: { icon: LucideIcon; tom: "navy" | "semantica" | "neutro"; children: ReactNode }) {
   const fundo = {
     navy: "bg-[#EEF3FA] dark:bg-[#15212F] text-[#1A3A5C] dark:text-[#AFC6E3]",
-    semantica: "bg-[#F1EDFC] dark:bg-[#211A38] text-[#46308C] dark:text-[#C9BCF5]",
+    semantica: BUSCA.semantica.chip,
     neutro: `${CARD} ${TXT}`,
   }[tom];
   const icone = tom === "semantica" ? "bg-[#6D4FC2] text-white" : QUADRADO_NAVY;

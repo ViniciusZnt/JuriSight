@@ -5,7 +5,7 @@ import { AlertTriangle, BookOpen, CheckCircle2, ClipboardCheck, Copy, Info, Mess
 import { ActionButton } from "@/components/ui/action-button";
 import { explicarBusca, type EstruturaArgumentativa, type ExplicacaoBusca, type FraseResposta, type ResultCard } from "@/lib/api";
 import { dispositivoETexto, itensDaFrase, orgaosCitados, respostaParaCopiar, vereditoDe } from "@/lib/decision-view";
-import { copiarTexto } from "@/lib/utils";
+import { useCopiar } from "@/lib/use-copiar";
 import { FEEDBACK_KEY, lerVotos, type useRespostaGerada } from "@/components/resultados/resposta-gerada";
 import { BUSCA, TOTAL_ACERVO } from "@/lib/cores-busca";
 
@@ -87,7 +87,7 @@ export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, e
   const [erroExplicacao, setErroExplicacao] = useState(false);
   const [todosTermos, setTodosTermos] = useState(false);
   const [todosFundamentos, setTodosFundamentos] = useState(false);
-  const [copiada, setCopiada] = useState(false);
+  const [copiada, copiar] = useCopiar();
   const [votos, setVotos] = useState(lerVotos);
   const voto = votos[chave];
 
@@ -171,7 +171,7 @@ export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, e
             <p className={tituloColuna} style={{ fontSize: "12px", fontWeight: 600 }}>
               <span className={`w-2 h-2 rounded-sm ${BUSCA.semantica.pontoSobreMarinho}`} />{BUSCA.semantica.nome}
             </p>
-            <p className="pl-2.5 border-l-2 border-[#B6A5F0] leading-relaxed" style={{ fontSize: "13.6px" }}>
+            <p className="pl-2.5 border-l-2 leading-relaxed" style={{ fontSize: "13.6px", borderColor: BUSCA.semantica.corSobreMarinho }}>
               {explicacao ? explicacao.semantica : erroExplicacao ? "Não foi possível carregar." : "Carregando…"}
             </p>
           </div>
@@ -337,12 +337,7 @@ export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, e
             tone={copiada ? "success" : "neutral"}
             size="sm"
             title="Copiar a resposta com as citações (tribunal, turma, processo, data)"
-            onClick={() =>
-              copiarTexto(respostaParaCopiar(frases, porNumero)).then(() => {
-                setCopiada(true);
-                setTimeout(() => setCopiada(false), 2000);
-              })
-            }
+            onClick={() => copiar(respostaParaCopiar(frases, porNumero))}
           />
           {(
             [

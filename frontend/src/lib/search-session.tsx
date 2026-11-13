@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import type { EstruturaArgumentativa, ExpressaoSugerida, ResultCard, SugestaoDispositivo } from "@/lib/api";
+import { emptyEstrutura, type EstruturaArgumentativa, type ExpressaoSugerida, type ResultCard, type SugestaoDispositivo } from "@/lib/api";
 import type { ConversationVersion } from "@/lib/conversations";
 
 interface SearchSessionState {
@@ -91,7 +91,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
   const loadVersion = useCallback((version: ConversationVersion) => {
     setState({
       // versões salvas antes do filtro restrito não têm esses campos
-      estrutura: { ...version.estrutura, dispositivos: version.estrutura.dispositivos ?? [], expressoes: version.estrutura.expressoes ?? [], tribunais: version.estrutura.tribunais ?? [], fase: version.estrutura.fase ?? null },
+      estrutura: { ...emptyEstrutura(), ...version.estrutura },
       hasFile: version.hasFile,
       fileName: version.fileName,
       pdfExtraido: version.pdfExtraido,

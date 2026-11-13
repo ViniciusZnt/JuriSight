@@ -187,6 +187,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Chamada com corpo JSON (POST ou PATCH). */
+function enviarJson<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+  return request<T>(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 /** POST /enrich — extrai a EstruturaArgumentativa do PDF e/ou da intenção digitada. Precisa de
  *  ao menos um dos dois (o backend responde 422 se ambos vierem vazios). */
 export async function enrich(params: { pdf?: File | null; intencao?: string | null }): Promise<EnrichResponse> {
@@ -198,20 +207,12 @@ export async function enrich(params: { pdf?: File | null; intencao?: string | nu
 
 /** POST /query — busca híbrida (RRF) sobre a EstruturaArgumentativa revisada. */
 export async function queryJurisprudencia(body: QueryRequestBody): Promise<ResultCard[]> {
-  return request<ResultCard[]>("/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  return enviarJson<ResultCard[]>("/query", "POST", body);
 }
 
 /** POST /query/livre — a mesma busca, sem o filtro restrito (faixa "livre"). */
 export async function queryLivre(body: QueryRequestBody): Promise<ResultCard[]> {
-  return request<ResultCard[]>("/query/livre", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  return enviarJson<ResultCard[]>("/query/livre", "POST", body);
 }
 
 export interface SugestaoDispositivo {
@@ -227,11 +228,7 @@ export interface ExplicacaoBusca {
 }
 
 export async function explicarBusca(estrutura: EstruturaArgumentativa): Promise<ExplicacaoBusca> {
-  return request<ExplicacaoBusca>("/query/explicacao", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ estrutura }),
-  });
+  return enviarJson<ExplicacaoBusca>("/query/explicacao", "POST", { estrutura });
 }
 
 export interface ContagemFiltros {
@@ -256,11 +253,7 @@ export async function listarTribunais(): Promise<{ tribunal: string; rotulo: str
 
 /** POST /filtros/contagem — quantas decisões cumprem cada filtro e todos juntos (503 = índice não preparado). */
 export async function contarFiltros(f: { dispositivos: string[]; expressoes: string[]; tribunais: string[]; fase: Fase | null }): Promise<ContagemFiltros> {
-  return request<ContagemFiltros>("/filtros/contagem", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(f),
-  });
+  return enviarJson<ContagemFiltros>("/filtros/contagem", "POST", f);
 }
 
 /** Frase da resposta gerada; `citacoes` são os números dos cards (#1 = ids[0]). */
@@ -281,11 +274,7 @@ export interface RespostaIA {
 /** POST /resposta — resposta curta gerada a partir das ementas dos resultados (ids na ordem dos
  *  cards, até 20). Lista vazia = nada que desse para ancorar; 503 = IA indisponível. */
 export async function gerarResposta(estrutura: EstruturaArgumentativa, ids: string[]): Promise<RespostaIA> {
-  return request<RespostaIA>("/resposta", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ estrutura, ids: ids.slice(0, 20) }),
-  });
+  return enviarJson<RespostaIA>("/resposta", "POST", { estrutura, ids: ids.slice(0, 20) });
 }
 
 /** GET /document/{id} — detalhe completo de um documento (404 se não existir). */
@@ -298,11 +287,7 @@ export async function enviarCorrecaoProvimento(
   documentoId: string,
   body: CorrecaoProvimento
 ): Promise<CorrecaoProvimento & { documento_id: string; atualizado_em: string }> {
-  return request(`/provimento/${encodeURIComponent(documentoId)}/correcao`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  return enviarJson(`/provimento/${encodeURIComponent(documentoId)}/correcao`, "POST", body);
 }
 
 // --------------------------------------------------------------------------- //
@@ -325,21 +310,13 @@ export interface UsuarioPublico {
 /** POST /auth/registro — cria a conta. Não loga sozinho (não seta cookie); chame
  *  `loginUsuario` em seguida para entrar. */
 export async function registrarUsuario(params: { email: string; password: string; nome?: string | null }): Promise<UsuarioPublico> {
-  return request<UsuarioPublico>("/auth/registro", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
+  return enviarJson<UsuarioPublico>("/auth/registro", "POST", params);
 }
 
 /** POST /auth/login — o cookie de sessão é setado pelo backend na resposta; o
  *  token de acesso nunca aparece aqui. */
 export async function loginUsuario(params: { email: string; password: string }): Promise<UsuarioPublico> {
-  return request<UsuarioPublico>("/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
+  return enviarJson<UsuarioPublico>("/auth/login", "POST", params);
 }
 
 /** POST /auth/logout — limpa o cookie de sessão no backend. */
@@ -356,29 +333,17 @@ export async function getUsuarioAtual(): Promise<UsuarioPublico> {
 /** POST /auth/esqueci-senha — manda o link por e-mail. A resposta é a mesma exista ou não a
  *  conta; 503 quando o envio de e-mail não está configurado no servidor. */
 export async function pedirRedefinicaoSenha(email: string): Promise<void> {
-  await request<{ detail: string }>("/auth/esqueci-senha", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
+  await enviarJson<{ detail: string }>("/auth/esqueci-senha", "POST", { email });
 }
 
 /** POST /auth/redefinir-senha — troca a senha com o token do link (uso único, 30 minutos). */
 export async function redefinirSenha(token: string, password: string): Promise<void> {
-  await request<void>("/auth/redefinir-senha", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, password }),
-  });
+  await enviarJson<void>("/auth/redefinir-senha", "POST", { token, password });
 }
 
 /** PATCH /auth/me/perfil — telefone, OAB e papel ficam na conta (issue #15). */
 export async function atualizarPerfil(dados: { telefone: string; oab: string; papel: string }): Promise<UsuarioPublico> {
-  return request<UsuarioPublico>("/auth/me/perfil", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(dados),
-  });
+  return enviarJson<UsuarioPublico>("/auth/me/perfil", "PATCH", dados);
 }
 
 // --------------------------------------------------------------------------- //
@@ -425,20 +390,12 @@ export async function listarConversas(): Promise<ConversaApi[]> {
 
 /** POST /conversas — cria uma conversa nova, ainda sem snapshot. */
 export async function criarConversa(titulo: string): Promise<ConversaApi> {
-  return request<ConversaApi>("/conversas", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ titulo }),
-  });
+  return enviarJson<ConversaApi>("/conversas", "POST", { titulo });
 }
 
 /** PATCH /conversas/{id} — renomeia. */
 export async function renomearConversa(id: string, titulo: string): Promise<ConversaApi> {
-  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ titulo }),
-  });
+  return enviarJson<ConversaApi>(`/conversas/${encodeURIComponent(id)}`, "PATCH", { titulo });
 }
 
 /** DELETE /conversas/{id}. */
@@ -451,9 +408,5 @@ export async function apagarConversa(id: string): Promise<void> {
  *  vira V1, cada "Refinar consulta" bem-sucedido vira a próxima versão. Devolve a conversa
  *  inteira (todas as versões), pro dropdown V1/V2/... ficar completo sem outra chamada. */
 export async function adicionarVersaoConversa(id: string, versao: NovaVersaoBody): Promise<ConversaApi> {
-  return request<ConversaApi>(`/conversas/${encodeURIComponent(id)}/versoes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(versao),
-  });
+  return enviarJson<ConversaApi>(`/conversas/${encodeURIComponent(id)}/versoes`, "POST", versao);
 }
