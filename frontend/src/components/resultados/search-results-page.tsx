@@ -140,6 +140,7 @@ export function SearchResultsPage() {
   const [citacao, setCitacao] = useState<string | null>(null); // chip da "Base citada"
   const [tribunal, setTribunal] = useState<string | null>(null);
   const [poucoAberta, setPoucoAberta] = useState(false);
+  const [semEmentaAberta, setSemEmentaAberta] = useState(false);
   const [erroVoto, setErroVoto] = useState<{ id: string; mensagem: string } | null>(null);
   const [recebida, setRecebida] = useState<{ chave: string; dados: ContagemFiltros | null } | null>(null);
   const restrito = estrutura !== null && temFiltroRestrito(estrutura);
@@ -179,7 +180,10 @@ export function SearchResultsPage() {
   const triagem = useTriagem(estrutura, porRank, { automatica: buscaNova });
   const comTriagem = triagem.status !== "indisponivel";
   // Numeração (#N) e resposta não dependem dos votos: votar não renumera nem refaz a resposta.
-  const secoesBase = useMemo(() => organizar(porRank, triagem.avaliacoes, []), [porRank, triagem.avaliacoes]);
+  const secoesBase = useMemo(
+    () => organizar(porRank, triagem.avaliacoes, [], triagem.semEmenta),
+    [porRank, triagem.avaliacoes, triagem.semEmenta],
+  );
   // Conversa reaberta com resposta salva: usa as mesmas decisões e os mesmos #N, mesmo que o servidor
   // tenha terminado lotes depois do "Parar" — reabrir não gera (nem cobra) outra resposta.
   const usarSalva = respostaIds.length > 0 && !triagem.avaliouAqui;
@@ -190,9 +194,9 @@ export function SearchResultsPage() {
   const terminal = triagem.status === "concluida" || triagem.status === "parada";
   const idsResposta = useMemo(() => {
     if (!comTriagem || triagem.status === "avaliando") return null;
-    if (usarSalva) return respostaIds.filter((id) => numeros.has(id));
+    if (usarSalva) return respostaIds.filter((id) => numeros.has(id) && !triagem.semEmenta.has(id));
     return terminal ? idsParaResposta(secoesBase, triagem.avaliacoes) : null;
-  }, [comTriagem, triagem.status, usarSalva, respostaIds, numeros, terminal, secoesBase, triagem.avaliacoes]);
+  }, [comTriagem, triagem.status, usarSalva, respostaIds, numeros, triagem.semEmenta, terminal, secoesBase, triagem.avaliacoes]);
   // A resposta recebida para outras decisões vira a salva da versão (para reabrir igual).
   const aoReceberResposta = (ids: string[]) => {
     if (usarSalva || ids.join(",") === respostaIds.join(",")) return;
@@ -221,6 +225,7 @@ export function SearchResultsPage() {
   const irPara = (id: string) => {
     limparFiltros();
     setPoucoAberta(true);
+    setSemEmentaAberta(true);
     setTimeout(() => document.getElementById(`decisao-${id}`)?.scrollIntoView({ block: "start" }), 0);
   };
 
@@ -255,9 +260,10 @@ export function SearchResultsPage() {
   // por data, cada seção segue a ordem por data.
   const secoesTela = useMemo((): Secoes | null => {
     if (!comTriagem) return null;
-    const s = organizar(filteredResults, triagem.avaliacoes, relevantesUsuario);
+    const s = organizar(filteredResults, triagem.avaliacoes, relevantesUsuario, triagem.semEmenta);
     const reordenar = (f: (l: typeof results) => typeof results): Secoes => ({
-      relacionadas: f(s.relacionadas), naoAvaliadas: f(s.naoAvaliadas), poucoRelacionadas: f(s.poucoRelacionadas),
+      relacionadas: f(s.relacionadas), naoAvaliadas: f(s.naoAvaliadas),
+      poucoRelacionadas: f(s.poucoRelacionadas), semEmenta: f(s.semEmenta),
     });
     if (sortBy === "relevance") {
       // dentro de cada seção, a ordem do #N (nota, depois RRF; a resposta salva primeiro)
@@ -266,7 +272,7 @@ export function SearchResultsPage() {
     }
     const pos = new Map(filteredResults.map((d, i) => [d.id, i]));
     return reordenar((l) => [...l].sort((a, b) => pos.get(a.id)! - pos.get(b.id)!));
-  }, [comTriagem, filteredResults, triagem.avaliacoes, relevantesUsuario, sortBy, sortDir, numeros]);
+  }, [comTriagem, filteredResults, triagem.avaliacoes, triagem.semEmenta, relevantesUsuario, sortBy, sortDir, numeros]);
 
   // "É relevante" / "Desfazer": atualiza na hora e grava na versão; se falhar, volta atrás.
   const votar = (id: string, relevante: boolean) => {
@@ -615,6 +621,7 @@ export function SearchResultsPage() {
             avaliadas={triagem.avaliadas}
             total={triagem.total}
             erro={triagem.erro}
+            paradaAutomatica={triagem.paradaAutomatica}
             onParar={triagem.parar}
             onContinuar={triagem.continuar}
           />
@@ -678,6 +685,27 @@ export function SearchResultsPage() {
                       <ChevronDown className={`w-4 h-4 transition-transform ${poucoAberta ? "rotate-180" : ""}`} strokeWidth={2} />
                     </button>
                     {poucoAberta && secoesTela.poucoRelacionadas.map((d) => cardDe(d, true))}
+                  </>
+                )}
+                {secoesTela.semEmenta.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setSemEmentaAberta((v) => !v)}
+                      aria-expanded={semEmentaAberta}
+                      className="flex items-center gap-2 pt-2 text-[#6B6B80] dark:text-[#A6A6B4] hover:text-[#1A3A5C] dark:hover:text-[#8AB0DC]"
+                      style={{ fontSize: "14.4px", fontWeight: 600 }}
+                    >
+                      Sem ementa ({secoesTela.semEmenta.length})
+                      <ChevronDown className={`w-4 h-4 transition-transform ${semEmentaAberta ? "rotate-180" : ""}`} strokeWidth={2} />
+                    </button>
+                    {semEmentaAberta && (
+                      <>
+                        <p className="text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.8px" }}>
+                          A IA avalia pela ementa, e estas decisões não têm. A busca as achou pelo inteiro teor: abra para ler.
+                        </p>
+                        {secoesTela.semEmenta.map((d) => cardDe(d, true))}
+                      </>
+                    )}
                   </>
                 )}
               </>

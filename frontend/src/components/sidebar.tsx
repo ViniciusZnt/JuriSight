@@ -18,7 +18,6 @@ import { useConversations, groupByRecency, conversationTag, numerarRepetidas } f
 import { useSearchSession } from "@/lib/search-session";
 import { useAuth } from "@/lib/auth";
 import { useProfile, initialsOf } from "@/lib/profile";
-import { UsoDiarioIndicador } from "@/components/uso-diario";
 
 export function Sidebar() {
   const router = useRouter();
@@ -269,7 +268,6 @@ export function Sidebar() {
 
       {/* Rodapé */}
       <div className="border-t border-[#EBEBEF] dark:border-[#26262C] px-3 py-3 space-y-1">
-        <UsoDiarioIndicador />
         <NavButton icon={Bookmark} label="Salvos" active={pathname === "/salvos"} onClick={() => router.push("/salvos")} />
         <NavButton
           icon={Settings}

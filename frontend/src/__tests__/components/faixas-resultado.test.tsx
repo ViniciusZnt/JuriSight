@@ -13,7 +13,7 @@ jest.mock("@/lib/api", () => ({
   queryLivre: jest.fn(),
   gerarResposta: jest.fn(),
   explicarBusca: jest.fn().mockResolvedValue({ semantica: "tese", termos: [] }),
-  avaliarLote: jest.fn().mockResolvedValue({}),
+  avaliarLote: jest.fn().mockResolvedValue({ avaliacoes: {}, semEmenta: [] }),
 }));
 const sessao: { resultados: ResultCard[]; estrutura: ReturnType<typeof emptyEstrutura> } = { resultados: [], estrutura: emptyEstrutura() };
 jest.mock("@/lib/search-session", () => ({

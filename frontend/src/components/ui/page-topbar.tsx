@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
+import { UsoDiarioMenu } from "@/components/uso-diario";
 
 interface Crumb {
   label: string;
@@ -15,7 +16,7 @@ interface PageTopbarProps {
   hideFirstOnMobile?: boolean;
 }
 
-/** Cabeçalho padrão das telas do fluxo de consulta: breadcrumb. */
+/** Cabeçalho padrão das telas: breadcrumb à esquerda e "Uso de hoje" à direita. */
 export function PageTopbar({ crumbs, bordered = false, hideFirstOnMobile = false }: PageTopbarProps) {
   return (
     <header
@@ -59,7 +60,7 @@ export function PageTopbar({ crumbs, bordered = false, hideFirstOnMobile = false
           );
         })}
       </div>
-
+      <UsoDiarioMenu />
     </header>
   );
 }

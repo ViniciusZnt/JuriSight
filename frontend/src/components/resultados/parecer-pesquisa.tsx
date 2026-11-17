@@ -242,7 +242,7 @@ export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, e
             );
           })}
           {fundamentos.length > 0 && (
-            <Linha icone={Scale} rotulo="Por quê">
+            <Linha icone={Scale} rotulo="Fundamentos">
               <Lista>
                 {(todosFundamentos ? fundamentos : fundamentos.slice(0, LIMITE_FUNDAMENTOS)).map((f, i) => {
                   const citadas = f.citacoes.map((n) => porNumero.get(n)).filter((d): d is ResultCard => !!d);

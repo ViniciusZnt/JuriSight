@@ -31,7 +31,12 @@ jest.mock("@/lib/search-session", () => ({
   useSearchSession: () => ({ ...sessao, loadVersion: jest.fn(), setRelevantesUsuario, setRespostaIds }),
 }));
 
-type Chamada = { ids: string[]; apenasCache: boolean; resolver: (r: Record<string, Avaliacao>) => void; rejeitar: (e: unknown) => void };
+type Chamada = {
+  ids: string[];
+  apenasCache: boolean;
+  resolver: (r: Record<string, Avaliacao>, semEmenta?: string[]) => void;
+  rejeitar: (e: unknown) => void;
+};
 let chamadas: Chamada[] = [];
 let serie = 0;
 
@@ -57,7 +62,12 @@ beforeEach(() => {
   setRelevantesUsuario.mockReset();
   (avaliarLote as jest.Mock).mockReset().mockImplementation(
     (_e: unknown, ids: string[], opcoes: { apenasCache?: boolean }) =>
-      new Promise((resolver, rejeitar) => chamadas.push({ ids, apenasCache: !!opcoes.apenasCache, resolver, rejeitar })),
+      new Promise((resolve, rejeitar) =>
+        chamadas.push({
+          ids, apenasCache: !!opcoes.apenasCache, rejeitar,
+          resolver: (r, semEmenta = []) => resolve({ avaliacoes: r, semEmenta }),
+        }),
+      ),
   );
   (gerarResposta as jest.Mock).mockReset().mockResolvedValue({ frases: [{ tipo: "resposta", texto: "Sim. Há adicional.", citacoes: [1] }] });
 });
@@ -200,5 +210,41 @@ test("reaberta com decisões sem avaliação ainda mostra a resposta salva", asy
   await act(async () => chamadas[0].resolver({ [r[0].id]: av(3) }));
   await act(async () => chamadas[1].resolver({}));
   expect(screen.getByRole("button", { name: "Avaliar 11 restantes" })).toBeInTheDocument();
+  await waitFor(() => expect(gerarResposta).toHaveBeenCalledWith(sessao.estrutura, [r[0].id]));
+});
+
+test("decisão sem ementa vai para 'Sem ementa (1)', sem selo de nota e fora da resposta", async () => {
+  const r = cards(3);
+  sessao.resultados = r;
+  const { container } = render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  await act(async () => chamadas[0].resolver({ [r[0].id]: av(3), [r[2].id]: av(2) }, [r[1].id]));
+  expect(ordemNaTela(container)).toEqual([r[0].id, r[2].id]);
+  await userEvent.click(screen.getByRole("button", { name: /Sem ementa \(1\)/ }));
+  expect(ordemNaTela(container)).toEqual([r[0].id, r[2].id, r[1].id]);
+  expect(container.querySelector(`#decisao-${r[1].id} [data-nota]`)).toBeNull();
+  await waitFor(() => expect(gerarResposta).toHaveBeenCalledWith(sessao.estrutura, [r[0].id, r[2].id]));
+});
+
+test("parada automática avisa o motivo e oferece avaliar o resto", async () => {
+  const r = cards(25);
+  sessao.resultados = r;
+  render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(2));
+  await act(async () => chamadas[0].resolver(Object.fromEntries(r.slice(0, 10).map((d) => [d.id, av(3)]))));
+  await act(async () => chamadas[1].resolver(Object.fromEntries(r.slice(10, 20).map((d) => [d.id, av(1)]))));
+  expect(screen.getByText(/Parou ao encontrar 5 decisões com o mesmo problema e fato/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Avaliar 5 restantes" })).toBeInTheDocument();
+  await waitFor(() => expect(gerarResposta).toHaveBeenCalled());
+});
+
+test("resposta salva antes da correção: a decisão sem ementa sai dela", async () => {
+  const r = cards(2);
+  sessao.resultados = r;
+  sessao.buscaNova = false;
+  sessao.respostaIds = [r[0].id, r[1].id];
+  render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  await act(async () => chamadas[0].resolver({ [r[0].id]: av(3) }, [r[1].id]));
   await waitFor(() => expect(gerarResposta).toHaveBeenCalledWith(sessao.estrutura, [r[0].id]));
 });

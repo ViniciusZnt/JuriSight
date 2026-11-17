@@ -22,12 +22,13 @@ CORPO = {"estrutura": TESE, "ids": IDS}
 
 
 class _FakeRetriever:
-    def __init__(self):
+    def __init__(self, sem_ementa=()):
         self.pedidos: list[list[str]] = []
+        self._sem_ementa = set(sem_ementa)
 
     def fetch(self, ids, completo=True):
         self.pedidos.append(list(ids))
-        return {i: documento_fake(ementa=f"EMENTA {i}") for i in ids}
+        return {i: documento_fake(ementa="" if i in self._sem_ementa else f"EMENTA {i}") for i in ids}
 
 
 class _FakeCache:
@@ -68,8 +69,8 @@ def _salva(doc_id, nota=3):
 def usar():
     estado = {}
 
-    def _usar(fake, cache=None, uso=None):
-        estado.update(retriever=_FakeRetriever(), cache=cache or _FakeCache(), uso=uso or _FakeUso())
+    def _usar(fake, cache=None, uso=None, sem_ementa=()):
+        estado.update(retriever=_FakeRetriever(sem_ementa), cache=cache or _FakeCache(), uso=uso or _FakeUso())
         app.dependency_overrides[get_current_user] = lambda: usuario_fake()
         app.dependency_overrides[get_doc_retriever] = lambda: estado["retriever"]
         app.dependency_overrides[get_openai] = lambda: fake
@@ -90,7 +91,7 @@ def test_avalia_e_devolve_por_id_e_grava_no_cache(usar):
     assert resp.status_code == 200
     assert resp.json() == {"avaliacoes": [
         {"id": IDS[0], "nota": 3, "posicao": "deferiu", "motivo": "m1"},
-        {"id": IDS[1], "nota": 1, "posicao": "deferiu", "motivo": "m2"}]}
+        {"id": IDS[1], "nota": 1, "posicao": "deferiu", "motivo": "m2"}], "sem_ementa": []}
     assert len(estado["cache"].salvas) == 2
 
 
@@ -98,7 +99,7 @@ def test_so_os_ids_sem_cache_vao_a_openai(usar):
     fake = FakeOpenAI(_itens(2))
     estado = usar(fake, cache=_FakeCache(_salva(IDS[0])))
     corpo = client.post("/triagem", json=CORPO).json()
-    assert estado["retriever"].pedidos == [[IDS[1]]]
+    assert estado["retriever"].pedidos == [IDS]  # o lote inteiro vem do banco (para checar a ementa)
     assert f"EMENTA {IDS[1]}" in fake.chamadas[0]["messages"][1]["content"]
     assert f"EMENTA {IDS[0]}" not in fake.chamadas[0]["messages"][1]["content"]
     assert [a["id"] for a in corpo["avaliacoes"]] == IDS
@@ -168,3 +169,34 @@ def test_sem_sessao_401():
         assert client.post("/triagem", json=CORPO).status_code == 401
     finally:
         app.dependency_overrides.clear()
+
+
+def test_sem_ementa_vem_a_parte_sem_chamar_a_openai_nem_cobrar(usar):
+    fake = FakeOpenAI(_itens(3, 3))
+    estado = usar(fake, sem_ementa=IDS)
+    corpo = client.post("/triagem", json=CORPO).json()
+    assert corpo == {"avaliacoes": [], "sem_ementa": IDS}
+    assert fake.chamadas == [] and estado["uso"].acoes == []
+
+
+def test_sem_ementa_misturada_so_a_outra_vai_a_openai(usar):
+    fake = FakeOpenAI(_itens(2))
+    usar(fake, sem_ementa=[IDS[0]])
+    corpo = client.post("/triagem", json=CORPO).json()
+    assert corpo["sem_ementa"] == [IDS[0]] and [a["id"] for a in corpo["avaliacoes"]] == [IDS[1]]
+    assert f"EMENTA {IDS[1]}" in fake.chamadas[0]["messages"][1]["content"]
+
+
+def test_apenas_cache_tambem_lista_sem_ementa(usar):
+    usar(FakeOpenAI(_itens()), sem_ementa=[IDS[1]])
+    corpo = client.post("/triagem", json={**CORPO, "apenas_cache": True}).json()
+    assert corpo == {"avaliacoes": [], "sem_ementa": [IDS[1]]}
+
+
+def test_nota_antiga_no_cache_de_decisao_sem_ementa_e_ignorada(usar):
+    """Antes da correção a IA dava nota a decisões sem ementa, e essa nota ficou no cache."""
+    estado = usar(FakeOpenAI(_itens(2)), cache=_FakeCache(_salva(IDS[0], 3)), sem_ementa=[IDS[0]])
+    corpo = client.post("/triagem", json=CORPO).json()
+    assert corpo["sem_ementa"] == [IDS[0]]
+    assert [a["id"] for a in corpo["avaliacoes"]] == [IDS[1]]
+    assert estado["retriever"].pedidos == [IDS]
