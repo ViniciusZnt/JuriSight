@@ -128,10 +128,11 @@ def _trecho(ementa: str) -> str:
     return e if len(e) <= MAX_EMENTA else f"{e[:1300]} […] {e[-(MAX_EMENTA - 1300):]}"
 
 
-def _cabecalho(n: int, doc: DocumentoJuridico) -> str:
-    """'#3 (RORSum, TRT2, 11ª Turma, 2025-05-12)' — só metadados públicos da decisão."""
+def _cabecalho(n: int, doc: DocumentoJuridico, posicao: str | None = None) -> str:
+    """'#3 (RORSum, TRT2, 11ª Turma, 2025-05-12)' — só metadados públicos da decisão; com a
+    posição da triagem, '#3 (… · negou)'."""
     meta = [doc.sigla_classe, doc.tribunal, doc.turma, doc.data_julgamento and doc.data_julgamento.isoformat()]
-    return f"#{n} ({', '.join(m for m in meta if m)})"
+    return f"#{n} ({', '.join(m for m in meta if m)}{f' · {posicao}' if posicao else ''})"
 
 
 # Fundamento que invoca precedente de outro ramo sem dizer "analogia" (ou que a recusa) atribuiria ao
@@ -143,8 +144,13 @@ def _sem_erro_de_precedente(f: Citada | Fundamento) -> bool:
     return not getattr(f, "precedente_de_outro_ramo", "").strip() or bool(_ANALOGIA.search(f.texto))
 
 
+def posicao_de(pedido_da_tese: str, fatos_da_premissa: bool) -> PosicaoTese:
+    """Negou com fatos que contradizem a premissa = "fato_diferente" (não é contrária à tese)."""
+    return "fato_diferente" if pedido_da_tese == "negou" and not fatos_da_premissa else pedido_da_tese
+
+
 def _posicao(d: Desfecho) -> PosicaoTese:
-    return "fato_diferente" if d.pedido_da_tese == "negou" and not d.fatos_da_premissa else d.pedido_da_tese
+    return posicao_de(d.pedido_da_tese, d.fatos_da_premissa)
 
 
 def chave_da_resposta(estrutura: EstruturaArgumentativa, ids: list[str]) -> str:
