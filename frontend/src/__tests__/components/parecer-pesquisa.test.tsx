@@ -108,3 +108,9 @@ describe("ParecerPesquisa", () => {
     expect(await screen.findByText("A empresa não paga horas extras ao motorista.")).toBeInTheDocument();
   });
 });
+
+test("os fundamentos aparecem com o rótulo 'Fundamentos'", () => {
+  renderParecer({ resposta: ok });
+  expect(screen.getByText("Fundamentos")).toBeInTheDocument();
+  expect(screen.queryByText("Por quê")).not.toBeInTheDocument();
+});
