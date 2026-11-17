@@ -1,4 +1,4 @@
-import { conversationTag, groupByRecency, numerarRepetidas, type Conversation, type ConversationVersion } from "@/lib/conversations";
+import { conversationTag, groupByRecency, numerarRepetidas, versionFromApi, type Conversation, type ConversationVersion } from "@/lib/conversations";
 
 // Meio-dia de N dias atrás, evitando flakiness perto da virada da meia-noite.
 function daysAgo(n: number): number {
@@ -84,5 +84,21 @@ describe("numerarRepetidas", () => {
     const d = { ...conv("d", 2000), title: "Ruído" };
     const n = numerarRepetidas([d, c, b, a]);
     expect([n.get("a"), n.get("b"), n.get("c"), n.get("d")]).toEqual([undefined, undefined, 2, 3]);
+  });
+});
+
+describe("versionFromApi", () => {
+  const base = {
+    numero: 1, estrutura: {} as ConversationVersion["estrutura"], has_file: false, file_name: null,
+    pdf_extraido: null, aviso: null, resultados: null, criado_em: "2026-11-17T12:00:00Z",
+  };
+
+  it("versão sem relevantes_usuario nem resposta_ids vira listas vazias", () => {
+    expect(versionFromApi(base).relevantesUsuario).toEqual([]);
+    expect(versionFromApi(base).respostaIds).toEqual([]);
+  });
+
+  it("carrega relevantes_usuario quando existe", () => {
+    expect(versionFromApi({ ...base, relevantes_usuario: ["a"] }).relevantesUsuario).toEqual(["a"]);
   });
 });

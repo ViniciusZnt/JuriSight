@@ -19,7 +19,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from auth.store import Usuario
 from conversations.store import Conversa, ConversaNaoEncontradaError, ConversaStore
@@ -50,6 +50,8 @@ class VersaoResponse(BaseModel):
     aviso: str | None
     resultados: list[ResultCard] | None
     criado_em: str
+    relevantes_usuario: list[str] = []  # "É relevante" (versões antigas não têm o campo)
+    resposta_ids: list[str] = []  # decisões da resposta gerada, na ordem #1..#k: reabrir não gera outra
 
 
 class ConversaResponse(BaseModel):
@@ -152,6 +154,32 @@ def adicionar_versao(
         resultados=[r.model_dump(mode="json") for r in body.resultados] if body.resultados is not None else None,
     )
     return ConversaResponse.de_conversa(conversa)
+
+
+class AtualizarVersaoRequest(BaseModel):
+    relevantes_usuario: list[uuid.UUID] | None = Field(default=None, max_length=50)
+    resposta_ids: list[uuid.UUID] | None = Field(default=None, max_length=25)
+
+    @model_validator(mode="after")
+    def _algum_campo(self) -> "AtualizarVersaoRequest":
+        if self.relevantes_usuario is None and self.resposta_ids is None:
+            raise ValueError("Informe relevantes_usuario ou resposta_ids.")
+        return self
+
+
+@router.patch("/{conversa_id}/versoes/{numero}", response_model=ConversaResponse)
+def atualizar_versao(
+    conversa_id: str,
+    numero: int,
+    body: AtualizarVersaoRequest,
+    usuario: Usuario = Depends(get_current_user),
+    store: ConversaStore = Depends(get_conversa_store),
+) -> ConversaResponse:
+    """Grava, só naquela versão, as decisões marcadas "É relevante" e/ou as que foram à resposta
+    gerada (para reabrir com a mesma resposta e numeração, sem gerar outra). Os outros campos
+    da versão não mudam."""
+    campos = {k: [str(i) for i in v] for k, v in body.model_dump(exclude_none=True).items()}
+    return ConversaResponse.de_conversa(store.atualizar_versao(_parse_id(conversa_id), usuario.id, numero, campos))
 
 
 @router.delete("/{conversa_id}", status_code=status.HTTP_204_NO_CONTENT)

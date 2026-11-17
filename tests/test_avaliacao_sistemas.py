@@ -1,4 +1,4 @@
-"""Testes dos sistemas S0-S3 do benchmark (fakes; sem Qdrant/BM25/banco)."""
+"""Testes dos sistemas S0-S2 do benchmark (fakes; sem Qdrant/BM25/banco)."""
 from types import SimpleNamespace
 
 import pytest
@@ -31,17 +31,6 @@ class _Retriever:
         return {i: self._docs[i] for i in ids if i in self._docs}
 
 
-class _Reranker:
-    """Inverte a ordem de entrada."""
-
-    def __init__(self):
-        self.chamadas = 0
-
-    def rerank_scores(self, query, passagens):
-        self.chamadas += 1
-        return [float(i) for i in range(len(passagens))]
-
-
 ESTRUTURA = EstruturaArgumentativa(tese_central="tese fake")
 
 
@@ -51,37 +40,30 @@ def _deps(ids, achados=None):
     )
 
 
-def test_rodar_sistema_s2_s3():
-    ids = [f"a{i}" for i in range(25)]
-    deps = _deps(ids)
-    rr = _Reranker()
-
-    assert rodar_sistema("S2", ESTRUTURA, deps, {}) == ids[:20]
-    assert rr.chamadas == 0
-
-    s3 = rodar_sistema("S3", ESTRUTURA, deps, {"S3": rr})
-    assert rr.chamadas == 1
-    assert s3 == list(reversed(ids[:25]))[:20]
+def test_rodar_sistema_s2_busca_50_e_devolve_top20_na_ordem_do_rrf():
+    ids = [f"a{i}" for i in range(60)]
+    assert rodar_sistema("S2", ESTRUTURA, _deps(ids)) == ids[:20]
 
 
 def test_rodar_sistema_s0_usa_bm25_k20():
-    ids = rodar_sistema("S0", ESTRUTURA, _deps([]), {})
+    ids = rodar_sistema("S0", ESTRUTURA, _deps([]))
     assert ids == [f"b{i}" for i in range(20)]
-
-
-def test_rodar_sistema_sem_reranker_falha():
-    with pytest.raises(KeyError, match="S4"):
-        rodar_sistema("S4", ESTRUTURA, _deps(["a0"]), {})
 
 
 def test_sistema_desconhecido_falha():
     with pytest.raises(KeyError):
-        rodar_sistema("S9", ESTRUTURA, _deps(["a0"]), {})
+        rodar_sistema("S3", ESTRUTURA, _deps(["a0"]))
 
 
 def test_candidatos_hibrido_so_os_que_o_retriever_acha():
     deps = _deps(["a0", "a1", "a2"], achados=["a0", "a2"])
     assert candidatos_hibrido(ESTRUTURA, hybrid=deps.hybrid, retriever=deps.retriever) == ["a0", "a2"]
+
+
+def test_candidatos_hibrido_pede_50_por_padrao():
+    ids = [f"a{i}" for i in range(60)]
+    deps = _deps(ids)
+    assert len(candidatos_hibrido(ESTRUTURA, hybrid=deps.hybrid, retriever=deps.retriever)) == 50
 
 
 def test_top_denso_funde_colecoes_por_rrf():
@@ -97,23 +79,6 @@ def test_top_denso_funde_colecoes_por_rrf():
     estrutura = EstruturaArgumentativa(tese_central="EPI não elide a insalubridade.")
     # x está nas duas coleções: o RRF o põe na frente de a e b.
     assert top_denso(hybrid, estrutura, 1) == ["x"]
-
-
-def test_construir_rerankers_nome_desconhecido():
-    import pytest
-    from avaliacao.sistemas import construir_rerankers
-
-    with pytest.raises(ValueError):
-        construir_rerankers(["S9"])
-    assert construir_rerankers([]) == {}
-
-
-def test_construir_rerankers_s6_usa_monoptt5(monkeypatch):
-    import query.search.reranker_monoptt5 as mod
-    from avaliacao.sistemas import construir_rerankers
-
-    monkeypatch.setattr(mod, "MonoPTT5", lambda: "mono")
-    assert construir_rerankers(["S6"]) == {"S6": "mono"}
 
 
 class _Bm25Chunks:
@@ -142,3 +107,50 @@ def test_top10_e_prefixo_do_top20_bm25_e_denso():
     assert sistemas.top_bm25(hybrid, est, 10) == sistemas.top_bm25(hybrid, est, 20)[:10]
     assert sistemas.top_denso(hybrid, est, 10) == sistemas.top_denso(hybrid, est, 20)[:10]
     assert len(sistemas.top_bm25(hybrid, est, 20)) == 15  # 100 chunks / 7 por doc: profundidade fixa
+
+
+# --- S7: S2 + triagem por IA ------------------------------------------------------------------
+
+from query.search.triagem import Avaliacao  # noqa: E402
+
+
+def _av(nota):
+    return Avaliacao(nota=nota, posicao="deferiu", motivo="m")
+
+
+def test_ordenar_por_triagem_nota_desc_desempate_pela_entrada_e_sem_nota_no_fim():
+    av = {"b": _av(3), "c": _av(3), "a": _av(1)}
+    assert sistemas.ordenar_por_triagem(["a", "b", "c", "d"], av) == ["b", "c", "a", "d"]
+
+
+class _CacheMemoria:
+    def __init__(self):
+        self.salvas = {}
+
+    def ler_varios(self, chaves):
+        return {c: self.salvas[c] for c in chaves if c in self.salvas}
+
+    def gravar_varios(self, itens):
+        self.salvas.update(itens)
+
+
+def test_s7_avalia_os_50_em_lotes_de_10_usando_o_cache_e_devolve_top20(monkeypatch):
+    ids = [f"a{i}" for i in range(60)]
+    lotes = []
+
+    def avaliar_lote(estrutura, decisoes, client):
+        lotes.append(list(decisoes))
+        # as 10 últimas dos 50 viram nota 3, o resto nota 1
+        return {i: _av(3 if int(i[1:]) >= 40 else 1) for i in decisoes}
+
+    monkeypatch.setattr(sistemas, "avaliar_lote", avaliar_lote)
+    deps = _deps(ids)
+    deps.openai, deps.triagem_cache = object(), _CacheMemoria()
+
+    top = rodar_sistema("S7", ESTRUTURA, deps)
+    assert [len(lote) for lote in lotes] == [10] * 5
+    assert top[:10] == [f"a{i}" for i in range(40, 50)] and len(top) == 20
+
+    lotes.clear()
+    assert rodar_sistema("S7", ESTRUTURA, deps) == top
+    assert lotes == []  # 2ª vez: tudo do cache

@@ -25,6 +25,9 @@ import { FaixaLivre } from "@/components/resultados/faixa-livre";
 import { contarFiltros, temFiltroRestrito, rotuloTribunal, ROTULO_FASE, type ContagemFiltros } from "@/lib/api";
 import { useRespostaGerada } from "@/components/resultados/resposta-gerada";
 import { ParecerPesquisa } from "@/components/resultados/parecer-pesquisa";
+import { useTriagem } from "@/components/resultados/triagem";
+import { ProgressoTriagem } from "@/components/resultados/progresso-triagem";
+import { idsParaResposta, numeracao, organizar, type Secoes } from "@/lib/triagem-view";
 import { sintetizar } from "@/lib/sintese";
 import {
   compareResultCards,
@@ -125,8 +128,10 @@ function DropdownOption({ label, active, onClick }: { label: string; active: boo
  *  de provimento/data e ordenação operam sobre o mesmo lote já recebido. */
 export function SearchResultsPage() {
   const router = useRouter();
-  const { resultados, estrutura, versionNumero, loadVersion } = useSearchSession();
-  const { conversations, activeId } = useConversations();
+  const {
+    resultados, estrutura, versionNumero, loadVersion, buscaNova, relevantesUsuario, setRelevantesUsuario, respostaIds, setRespostaIds,
+  } = useSearchSession();
+  const { conversations, activeId, setRelevantes, setRespostaIds: salvarRespostaIds } = useConversations();
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -134,6 +139,8 @@ export function SearchResultsPage() {
   const [dateTo, setDateTo] = useState<string>("");
   const [citacao, setCitacao] = useState<string | null>(null); // chip da "Base citada"
   const [tribunal, setTribunal] = useState<string | null>(null);
+  const [poucoAberta, setPoucoAberta] = useState(false);
+  const [erroVoto, setErroVoto] = useState<{ id: string; mensagem: string } | null>(null);
   const [recebida, setRecebida] = useState<{ chave: string; dados: ContagemFiltros | null } | null>(null);
   const restrito = estrutura !== null && temFiltroRestrito(estrutura);
   const chaveFiltro = JSON.stringify([estrutura?.dispositivos, estrutura?.expressoes, estrutura?.tribunais, estrutura?.fase]);
@@ -168,7 +175,32 @@ export function SearchResultsPage() {
 
   const ranks = useMemo(() => relevanceRanks(results), [results]);
   const porRank = useMemo(() => [...results].sort((a, b) => ranks.get(a.id)! - ranks.get(b.id)!), [results, ranks]);
-  const resposta = useRespostaGerada(estrutura, porRank);
+  // Triagem por IA: a nota de cada decisão ordena a lista. Sem a IA, fica a ordem da busca.
+  const triagem = useTriagem(estrutura, porRank, { automatica: buscaNova });
+  const comTriagem = triagem.status !== "indisponivel";
+  // Numeração (#N) e resposta não dependem dos votos: votar não renumera nem refaz a resposta.
+  const secoesBase = useMemo(() => organizar(porRank, triagem.avaliacoes, []), [porRank, triagem.avaliacoes]);
+  // Conversa reaberta com resposta salva: usa as mesmas decisões e os mesmos #N, mesmo que o servidor
+  // tenha terminado lotes depois do "Parar" — reabrir não gera (nem cobra) outra resposta.
+  const usarSalva = respostaIds.length > 0 && !triagem.avaliouAqui;
+  const numeros = useMemo(
+    () => (comTriagem ? numeracao(secoesBase, usarSalva ? respostaIds : []) : ranks),
+    [comTriagem, secoesBase, usarSalva, respostaIds, ranks],
+  );
+  const terminal = triagem.status === "concluida" || triagem.status === "parada";
+  const idsResposta = useMemo(() => {
+    if (!comTriagem || triagem.status === "avaliando") return null;
+    if (usarSalva) return respostaIds.filter((id) => numeros.has(id));
+    return terminal ? idsParaResposta(secoesBase, triagem.avaliacoes) : null;
+  }, [comTriagem, triagem.status, usarSalva, respostaIds, numeros, terminal, secoesBase, triagem.avaliacoes]);
+  // A resposta recebida para outras decisões vira a salva da versão (para reabrir igual).
+  const aoReceberResposta = (ids: string[]) => {
+    if (usarSalva || ids.join(",") === respostaIds.join(",")) return;
+    setRespostaIds(ids);
+    if (activeId && versionNumero !== null) salvarRespostaIds(activeId, versionNumero, ids).catch(() => {});
+  };
+  const resposta = useRespostaGerada(estrutura, idsResposta, aoReceberResposta);
+  const porNumero = useMemo(() => [...results].sort((a, b) => numeros.get(a.id)! - numeros.get(b.id)!), [results, numeros]);
   const sintese = useMemo(() => sintetizar(results), [results]);
   const tribunais = useMemo(() => {
     const n = new Map<string, number>();
@@ -185,9 +217,10 @@ export function SearchResultsPage() {
     setCitacao(null);
     setTribunal(null);
   };
-  // "Decisões que sustentam": tira os filtros para o card existir na lista e rola até ele.
+  // Citação da resposta (#N): tira os filtros para o card existir na lista e rola até ele.
   const irPara = (id: string) => {
     limparFiltros();
+    setPoucoAberta(true);
     setTimeout(() => document.getElementById(`decisao-${id}`)?.scrollIntoView({ block: "start" }), 0);
   };
 
@@ -217,6 +250,55 @@ export function SearchResultsPage() {
     () => sortedResults.filter((d) => passaFiltrosComuns(d) && (!citacao || idsCitacao.has(d.id))),
     [sortedResults, passaFiltrosComuns, citacao, idsCitacao],
   );
+
+  // As seções da triagem sobre a lista filtrada. Relevância = nota da IA (invertida em "crescente");
+  // por data, cada seção segue a ordem por data.
+  const secoesTela = useMemo((): Secoes | null => {
+    if (!comTriagem) return null;
+    const s = organizar(filteredResults, triagem.avaliacoes, relevantesUsuario);
+    const reordenar = (f: (l: typeof results) => typeof results): Secoes => ({
+      relacionadas: f(s.relacionadas), naoAvaliadas: f(s.naoAvaliadas), poucoRelacionadas: f(s.poucoRelacionadas),
+    });
+    if (sortBy === "relevance") {
+      // dentro de cada seção, a ordem do #N (nota, depois RRF; a resposta salva primeiro)
+      const porN = (l: typeof results) => [...l].sort((a, b) => numeros.get(a.id)! - numeros.get(b.id)!);
+      return reordenar((l) => (sortDir === "desc" ? porN(l) : porN(l).reverse()));
+    }
+    const pos = new Map(filteredResults.map((d, i) => [d.id, i]));
+    return reordenar((l) => [...l].sort((a, b) => pos.get(a.id)! - pos.get(b.id)!));
+  }, [comTriagem, filteredResults, triagem.avaliacoes, relevantesUsuario, sortBy, sortDir, numeros]);
+
+  // "É relevante" / "Desfazer": atualiza na hora e grava na versão; se falhar, volta atrás.
+  const votar = (id: string, relevante: boolean) => {
+    const anteriores = relevantesUsuario;
+    const novos = relevante ? [...anteriores.filter((i) => i !== id), id] : anteriores.filter((i) => i !== id);
+    setErroVoto(null);
+    setRelevantesUsuario(novos);
+    if (!activeId || versionNumero === null) return;
+    setRelevantes(activeId, versionNumero, novos).catch(() => {
+      setRelevantesUsuario(anteriores);
+      setErroVoto({ id, mensagem: "Não foi possível salvar sua marcação. Tente de novo." });
+    });
+  };
+
+  const cardDe = (decision: (typeof results)[number], pouco = false) => {
+    const votada = relevantesUsuario.includes(decision.id);
+    return (
+      <ResultadoCard
+        key={decision.id}
+        decision={decision}
+        estrutura={estrutura}
+        rank={numeros.get(decision.id)}
+        total={results.length}
+        ementaIgualA={repetidas.has(decision.id) ? numeros.get(repetidas.get(decision.id)!) : undefined}
+        avaliacao={comTriagem ? triagem.avaliacoes.get(decision.id) : undefined}
+        marcadaPorVoce={votada}
+        onDesfazer={votada ? () => votar(decision.id, false) : undefined}
+        onRelevante={pouco && !votada ? () => votar(decision.id, true) : undefined}
+        erroVoto={erroVoto?.id === decision.id ? erroVoto.mensagem : undefined}
+      />
+    );
+  };
 
   const contagemDesfecho = contarDesfechos(results);
 
@@ -297,7 +379,7 @@ export function SearchResultsPage() {
         `${idx + 1}. ${titleFromEmenta(d.ementa)}`,
         `   ${d.tribunal} — ${d.turma} · ${formatarData(d.data_julgamento, "long")}`,
         `   Processo: ${d.numero_processo} · Rel. ${d.relator}`,
-        `   Provimento: ${d.classificacao_provimento ? resumoProvimento(d.classificacao_provimento) : PROVIMENTO_LABEL[d.provimento]} · Relevância: #${ranks.get(d.id)} de ${results.length}`,
+        `   Provimento: ${d.classificacao_provimento ? resumoProvimento(d.classificacao_provimento) : PROVIMENTO_LABEL[d.provimento]} · Relevância: #${numeros.get(d.id)} de ${results.length}`,
         `   ${truncate(d.ementa, 600)}`,
       ].join("\n")
     );
@@ -347,8 +429,9 @@ export function SearchResultsPage() {
                 : null
             }
             resposta={resposta}
-            ordem={porRank}
+            ordem={porNumero}
             onIr={irPara}
+            ocultarResposta={!comTriagem}
             semResposta={restrito && results.length === 0 ? "Sem decisões no filtro restrito, a resposta não é gerada." : undefined}
           />
         )}
@@ -526,6 +609,17 @@ export function SearchResultsPage() {
           </div>
         )}
 
+        {results.length > 0 && (
+          <ProgressoTriagem
+            status={triagem.status}
+            avaliadas={triagem.avaliadas}
+            total={triagem.total}
+            erro={triagem.erro}
+            onParar={triagem.parar}
+            onContinuar={triagem.continuar}
+          />
+        )}
+
         {/* Results list */}
         {filteredResults.length === 0 && restrito && results.length === 0 ? null : filteredResults.length === 0 ? (
           <div className="w-full max-w-[800px] flex flex-col items-center justify-center py-20 text-center">
@@ -561,16 +655,35 @@ export function SearchResultsPage() {
           </div>
         ) : (
           <div className="w-full max-w-[800px] space-y-4">
-            {filteredResults.map((decision) => (
-              <ResultadoCard
-                key={decision.id}
-                decision={decision}
-                estrutura={estrutura}
-                rank={ranks.get(decision.id)}
-                total={results.length}
-                ementaIgualA={repetidas.has(decision.id) ? ranks.get(repetidas.get(decision.id)!) : undefined}
-              />
-            ))}
+            {secoesTela ? (
+              <>
+                {secoesTela.relacionadas.map((d) => cardDe(d))}
+                {secoesTela.naoAvaliadas.length > 0 && (
+                  <>
+                    <h3 className="pt-2 text-[#6B6B80] dark:text-[#A6A6B4]" style={{ fontSize: "14.4px", fontWeight: 600 }}>
+                      Ainda não avaliadas ({secoesTela.naoAvaliadas.length})
+                    </h3>
+                    {secoesTela.naoAvaliadas.map((d) => cardDe(d))}
+                  </>
+                )}
+                {secoesTela.poucoRelacionadas.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setPoucoAberta((v) => !v)}
+                      aria-expanded={poucoAberta}
+                      className="flex items-center gap-2 pt-2 text-[#6B6B80] dark:text-[#A6A6B4] hover:text-[#1A3A5C] dark:hover:text-[#8AB0DC]"
+                      style={{ fontSize: "14.4px", fontWeight: 600 }}
+                    >
+                      Pouco relacionadas ({secoesTela.poucoRelacionadas.length})
+                      <ChevronDown className={`w-4 h-4 transition-transform ${poucoAberta ? "rotate-180" : ""}`} strokeWidth={2} />
+                    </button>
+                    {poucoAberta && secoesTela.poucoRelacionadas.map((d) => cardDe(d, true))}
+                  </>
+                )}
+              </>
+            ) : (
+              filteredResults.map((d) => cardDe(d))
+            )}
 
             <div className="flex justify-center pt-2">
               <button

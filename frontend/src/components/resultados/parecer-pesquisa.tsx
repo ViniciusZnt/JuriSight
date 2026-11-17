@@ -76,13 +76,15 @@ interface Props {
   onIr: (id: string) => void;
   /** Quando não há decisões para responder, o porquê (no lugar da resposta). */
   semResposta?: string;
+  /** A triagem por IA não respondeu: a tela fica como busca pura, sem o bloco da resposta. */
+  ocultarResposta?: boolean;
 }
 
 /** O parecer da pesquisa num card só: a faixa azul diz como a busca foi feita (filtro restrito
  *  com o total do acervo, busca semântica e termos do BM25) e, abaixo, a resposta gerada pela IA
  *  em linhas — resposta, por quê, o que provar, base legal e atenção —, com o órgão de quem
  *  decidiu e os números #N que levam aos cards. */
-export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, estado }, ordem, onIr, semResposta }: Props) {
+export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, estado }, ordem, onIr, semResposta, ocultarResposta }: Props) {
   const [explicacao, setExplicacao] = useState<ExplicacaoBusca | null>(null);
   const [erroExplicacao, setErroExplicacao] = useState(false);
   const [todosTermos, setTodosTermos] = useState(false);
@@ -204,12 +206,14 @@ export function ParecerPesquisa({ estrutura, filtro, resposta: { chave, vazia, e
       </div>
 
       {/* A resposta da IA, em linhas */}
-      {vazia ? (
-        semResposta && (
-          <Linha icone={MessageSquareText} rotulo="Resposta">
-            <span className="text-[#8A8A9A] dark:text-[#9494A2]">{semResposta}</span>
-          </Linha>
-        )
+      {ocultarResposta ? null : vazia ? (
+        <Linha icone={MessageSquareText} rotulo="Resposta">
+          <span className="text-[#8A8A9A] dark:text-[#9494A2]">{semResposta ?? "Nenhuma decisão avaliada como relacionada à tese."}</span>
+        </Linha>
+      ) : estado.status === "aguardando" ? (
+        <Linha icone={MessageSquareText} rotulo="Resposta">
+          <span className="text-[#8A8A9A] dark:text-[#9494A2]">A resposta sai quando a avaliação terminar ou você parar.</span>
+        </Linha>
       ) : estado.status === "carregando" ? (
         <Linha icone={MessageSquareText} rotulo="Resposta" tom="resposta">
           <div className="space-y-2.5 animate-pulse pt-1" aria-label="Gerando a resposta a partir das decisões…">

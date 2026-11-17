@@ -3,7 +3,7 @@
 Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem uma
 régua: um **conjunto-ouro** de pares (tese × acórdão) com **relevância 0–3** e **stance**
 (fortalece / enfraquece / neutro), julgados por pessoas. O `benchmark` roda a busca (e o
-pipeline de produção, S3) para cada tese e reporta as métricas. Só mede, não muda a busca.
+pipeline de produção, S7) para cada tese e reporta as métricas. Só mede, não muda a busca.
 
 Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start do README,
 passos 5 e 7). Variáveis do `.env` (ver `.env.example`): `OPENAI_GEN_MODEL` (escreve as
@@ -21,11 +21,13 @@ Duas etapas **idempotentes** (dá para interromper e retomar):
 1. **teses**: completa até `--teses` (reais das conversas e sintéticas; conversas de contas
    `@example.com`, dos testes E2E, ficam de fora). A OpenAI escreve as sintéticas e atribui o
    tema, que decide o split dev/teste. Mostra a estimativa e pede confirmação (`--sim` pula);
-2. **pool**: para cada tese, une os 30 candidatos do híbrido, o top-10 do BM25 e o top-10 do denso.
+2. **pool**: para cada tese, une os 50 candidatos do híbrido, o top-10 do BM25 e o top-10 do denso.
+   O pool era de 30 até a triagem por IA: os pares das posições 31 a 50 precisam ser julgados
+   (o `exportar` só traz os pares sem rótulo) antes da medição final.
 
-## 2. Benchmark de rerankers (S0–S6)
+## 2. Benchmark de sistemas (S0, S1, S2, S7)
 
-Compara sete sistemas sobre as mesmas teses, com rótulos de duas pessoas:
+Compara os sistemas sobre as mesmas teses, com rótulos de duas pessoas:
 
 1. **Teses dos advogados:** `uv run python -m avaliacao.teses_advogados importar ARQUIVO...`, com
    `docs/avaliacao/1-producao-de-teses.xlsx` preenchida (origem `advogado`; idempotente).
@@ -36,7 +38,7 @@ Compara sete sistemas sobre as mesmas teses, com rótulos de duas pessoas:
    (linhas inválidas são avisadas e ignoradas; reimportar não duplica). Os pares pendentes vão
    ao adjudicador num lote exportado de novo; `... importar --adjudicacao ARQUIVO` grava a
    **rodada 2** e falha sem gravar se o e-mail do arquivo não for o do adjudicador.
-5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos] [--saida DIR]`
+5. **Rodar:** `uv run python -m avaliacao.benchmark rodar [--sistemas S0,S1,S2,S7] [--split dev|teste|todos] [--saida DIR]`
    grava `data/eval/runs/<data>_runs.json`.
 6. **Relatório:** `uv run python -m avaliacao.benchmark relatorio data/eval/runs/<data>_runs.json`.
 
@@ -50,34 +52,33 @@ mais (ou stance diferente com as duas notas >= 2) fica **pendente** e sai das m�
 só humano, vale o dele. O relatório lista cada pendente; **zere-os antes da medição final**. A
 concordância (kappa, alfa, AC2) usa só a rodada 1.
 
-**Sistemas.** Todos devolvem o top-20. S3 a S6 reordenam os mesmos 30 candidatos do S2, com a
-mesma entrada (tese contra a ementa cortada em 1.200 caracteres). O embedding da OpenAI é
-calculado uma vez por texto e reaproveitado, então a latência medida exclui o embedding repetido. Cada tese/sistema S2 a S6 grava `fora_dos_candidatos` (deve vir vazio) e falhas isoladas ficam em `teses_com_erro`, sem abortar a run.
+**Sistemas.** Todos devolvem o top-20. S2 e S7 partem dos mesmos 50 candidatos do híbrido (os
+do `/query`). O S7 avalia os 50 com a triagem de produção (`query/search/triagem.py`, lotes de 10,
+`OPENAI_TRIAGEM_MODEL`) e reaproveita o `public.triagem_cache`: rodar de novo não paga de novo.
+O embedding da OpenAI é calculado uma vez por texto e reaproveitado, então a latência medida
+exclui o embedding repetido. Cada tese/sistema S2 e S7 grava `fora_dos_candidatos` (deve vir
+vazio) e falhas isoladas ficam em `teses_com_erro`, sem abortar a run.
 
 | Sistema | O que é |
 |---------|---------|
 | S0 | BM25 sozinho |
 | S1 | Denso sozinho (2 coleções, RRF) |
-| S2 | Híbrido RRF, sem reranker |
-| S3 | S2 + FlashRank (o de produção) |
-| S4 | S2 + `gte-multilingual-reranker-base` |
-| S5 | S2 + `bge-reranker-v2-m3` |
-| S6 | S2 + `unicamp-dl/monoptt5-base` |
+| S2 | Híbrido RRF (os 50 do `/query`, na ordem do RRF) |
+| S7 | S2 + triagem por IA (nota 0–3; o que a tela mostra) |
 
-O S6 precisa do PyTorch (CPU), no grupo opcional `benchmark`: `uv sync --group benchmark` e
-`uv run --group benchmark python -m avaliacao.benchmark rodar`. Sem o grupo, `rodar` com S6
-falha logo no início.
+Para escolher entre 40 e 50 decisões por busca, rode o S7 no split `dev` com cada valor de
+`N_RESULTADOS_TRIAGEM` (`query/search/pipeline.py`) e compare o nDCG@10.
 
 **Métricas.** A principal é o **nDCG@10** (ganho 2^nota − 1). As demais: MRR@10, P@5, P@10,
 Recall@10, Recall@20 e MAP@10 (relevante = nota >= 2) e **Judged@10** (fração do top-10 com
 rótulo). Tese sem nenhum relevante fica fora das médias que dependem disso. O **teto** é o
-nDCG@10 da melhor ordem possível dos 30 candidatos; os **perdidos** são os relevantes que BM25
-ou denso trouxeram no top-10 e o híbrido deixou fora dos 30.
+nDCG@10 da melhor ordem possível dos 50 candidatos; os **perdidos** são os relevantes que BM25
+ou denso trouxeram no top-10 e o híbrido deixou fora dos 50.
 
 **Limitação:** o Recall@20 de S0 e S1 é enviesado para baixo, porque as posições 11 a 20 deles
-só têm rótulo se caírem nos 30 do híbrido. Compare-os por Judged@10 e nDCG@10.
+só têm rótulo se caírem nos 50 do híbrido. Compare-os por Judged@10 e nDCG@10.
 
-**Estatística.** Diferenças pareadas por tese (S3×S2, S4×S3, S5×S3, S6×S3, S0×S2, S1×S2): teste t
+**Estatística.** Diferenças pareadas por tese (S7×S2, S0×S2, S1×S2): teste t
 pareado com correção de **Holm**, Wilcoxon com Benjamini-Hochberg como checagem e IC95% por
 bootstrap (10.000 reamostragens, seed fixa). Como a correção depende de quantos contrastes
 entram (`m_holm` no JSON), **só cite p ajustado de uma run com todos os sistemas**.
@@ -85,7 +86,8 @@ entram (`m_holm` no JSON), **só cite p ajustado de uma run com todos os sistema
 ## Resultados medidos: latência por sistema
 
 Mediana / p95, em segundos, de um smoke em 5 teses; inclui a busca inteira, medida nesta
-máquina, sem GPU. Exclui o embedding repetido da OpenAI (ver "Sistemas"), então a latência
+máquina, sem GPU. S3 a S6 eram os rerankers (FlashRank, gte, bge, monoPTT5), removidos quando a
+triagem por IA (S7) os substituiu; os números ficam como registro do porquê. Exclui o embedding repetido da OpenAI (ver "Sistemas"), então a latência
 em produção é um pouco maior.
 
 | Sistema | Latência (mediana / p95) |

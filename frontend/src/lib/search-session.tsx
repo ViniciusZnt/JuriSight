@@ -19,6 +19,13 @@ interface SearchSessionState {
   versionNumero: number | null;
   /** Códigos de dispositivos sugeridos pela IA no /enrich (para o selo na Revisão). */
   dispositivosIa: string[];
+  /** true quando os resultados vêm de uma busca que acabou de rodar (a triagem por IA começa
+   *  sozinha); false ao reabrir uma versão (a triagem só lê o cache, sem gastar). */
+  buscaNova: boolean;
+  /** Decisões marcadas "É relevante" na versão exibida. */
+  relevantesUsuario: string[];
+  /** Decisões que foram à resposta gerada da versão exibida, na ordem #1..#k. */
+  respostaIds: string[];
   /** Expressões sugeridas pela IA no /enrich: só viram filtro se o advogado clicar. */
   expressoesSugeridas: ExpressaoSugerida[];
   /** Dispositivos que a IA relaciona ao tema: também só viram filtro com o clique. */
@@ -43,7 +50,11 @@ interface SearchSessionCtx extends SearchSessionState {
    *  uma conversa pela sidebar (a versão mais recente) quanto ao trocar de versão pelo
    *  dropdown V1/V2/... na página de Resultados (sem chamar a API de novo — a versão já
    *  veio inteira do backend). */
-  loadVersion: (version: ConversationVersion) => void;
+  loadVersion: (version: ConversationVersion, opcoes?: { buscaNova?: boolean }) => void;
+  /** Atualiza os votos da versão exibida (depois de gravar na conversa). */
+  setRelevantesUsuario: (ids: string[]) => void;
+  /** Atualiza as decisões da resposta da versão exibida (depois de gravar na conversa). */
+  setRespostaIds: (ids: string[]) => void;
   reset: () => void;
 }
 
@@ -55,6 +66,9 @@ const initialState: SearchSessionState = {
   aviso: null,
   resultados: null,
   versionNumero: null,
+  buscaNova: false,
+  relevantesUsuario: [],
+  respostaIds: [],
   dispositivosIa: [],
   expressoesSugeridas: [],
   dispositivosSugeridos: [],
@@ -88,7 +102,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
     setState((prev) => ({ ...prev, estrutura }));
   }, []);
 
-  const loadVersion = useCallback((version: ConversationVersion) => {
+  const loadVersion = useCallback((version: ConversationVersion, opcoes?: { buscaNova?: boolean }) => {
     setState({
       // versões salvas antes do filtro restrito não têm esses campos
       estrutura: { ...emptyEstrutura(), ...version.estrutura },
@@ -98,16 +112,27 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       aviso: version.aviso,
       resultados: version.resultados,
       versionNumero: version.numero,
+      buscaNova: opcoes?.buscaNova ?? false,
+      relevantesUsuario: version.relevantesUsuario ?? [],
+      respostaIds: version.respostaIds ?? [],
       dispositivosIa: [],
       expressoesSugeridas: [],
       dispositivosSugeridos: [],
     });
   }, []);
 
+  const setRelevantesUsuario = useCallback((ids: string[]) => {
+    setState((prev) => ({ ...prev, relevantesUsuario: ids }));
+  }, []);
+
+  const setRespostaIds = useCallback((ids: string[]) => {
+    setState((prev) => ({ ...prev, respostaIds: ids }));
+  }, []);
+
   const reset = useCallback(() => setState(initialState), []);
 
   return (
-    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, loadVersion, reset }}>
+    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, loadVersion, setRelevantesUsuario, setRespostaIds, reset }}>
       {children}
     </Ctx.Provider>
   );

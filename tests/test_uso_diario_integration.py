@@ -73,3 +73,19 @@ def test_limite_total_soma_todas_as_contas(usuarios):
 
 def test_banco_fora_do_ar_nao_bloqueia():
     UsoDiario("postgresql://ninguem@127.0.0.1:1/nada?connect_timeout=1", por_conta=0, total=0).consumir(uuid.uuid4(), "query")
+
+
+def test_do_dia_conta_so_hoje_e_so_a_conta(usuarios):
+    a, b = usuarios
+    acao = f"teste-{uuid.uuid4().hex}"
+    uso = UsoDiario(DATABASE_URL, por_conta=10, total=10_000)
+    uso.consumir(a, acao)
+    uso.consumir(a, acao)
+    uso.consumir(b, acao)
+    assert uso.do_dia(a) == {acao: 2}
+
+
+def test_triagem_estourada_usa_mensagem_sem_numero(usuarios, monkeypatch):
+    monkeypatch.setenv("LIMITE_DIARIO_TRIAGEM_POR_CONTA", "0")
+    with pytest.raises(LimiteDiarioExcedido, match="limite de uso da IA de hoje"):
+        UsoDiario(DATABASE_URL).consumir(usuarios[0], "triagem")

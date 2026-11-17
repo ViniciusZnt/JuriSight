@@ -1,8 +1,8 @@
 """
 Result Formatter (RFC Tabela 6) — última etapa do pipeline de busca.
 
-Serializa os (documento_id, DocumentoJuridico, score_rrf) já ordenados pelo
-reranker (query/search/pipeline.py) nos cards de resposta da API — tipo, ementa, relator,
+Serializa os (documento_id, DocumentoJuridico, score_rrf) já ordenados pela
+busca (query/search/pipeline.py) nos cards de resposta da API — tipo, ementa, relator,
 provimento e link (RF05/RF06/RF09).
 """
 from __future__ import annotations

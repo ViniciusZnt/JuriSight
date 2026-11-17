@@ -12,8 +12,9 @@ import { ProvimentoPanel } from "@/components/provimento/provimento-panel";
 import { assuntoDoCard, ementaComCitacao, formatarData, matchedEntities, paraSalvo, titleFromEmenta, truncate, TIPO_DOCUMENTO_LABEL } from "@/lib/decision-view";
 import { useSaved } from "@/lib/saved";
 import { useCopiar } from "@/lib/use-copiar";
-import type { EstruturaArgumentativa, ResultCard } from "@/lib/api";
+import type { Avaliacao, EstruturaArgumentativa, ResultCard } from "@/lib/api";
 import { BUSCA } from "@/lib/cores-busca";
+import { ROTULO_NOTA } from "@/lib/triagem-view";
 
 interface Props {
   decision: ResultCard;
@@ -25,7 +26,24 @@ interface Props {
   ementaIgualA?: number;
   /** "decisao" na faixa restrita (âncora das chips da resposta); outro prefixo na livre. */
   idPrefix?: string;
+  /** Nota da triagem por IA: vira o selo "Mesmo pedido" etc., com o motivo no title. */
+  avaliacao?: Avaliacao;
+  /** O advogado marcou "É relevante" contra a triagem. */
+  marcadaPorVoce?: boolean;
+  /** Botão "É relevante" (cards pouco relacionados). */
+  onRelevante?: () => void;
+  /** Botão "Desfazer" do voto. */
+  onDesfazer?: () => void;
+  /** Falha ao gravar o voto. */
+  erroVoto?: string;
 }
+
+const COR_NOTA: Record<number, string> = {
+  3: "bg-[#E7F4EC] dark:bg-[#12291C] text-[#2D6B4A] dark:text-[#7FCFA3] border-[#C6E5D2] dark:border-[#1E4A33]",
+  2: "bg-[#EFF4FA] dark:bg-[#1A2A3C] text-[#1A3A5C] dark:text-[#8AB0DC] border-[#C8D9EF] dark:border-[#2A3A4C]",
+  1: "bg-[#F6F6F9] dark:bg-[#1C1C21] text-[#6B6B80] dark:text-[#A6A6B4] border-[#E0E0EA] dark:border-[#2A2A32]",
+  0: "bg-[#F6F6F9] dark:bg-[#1C1C21] text-[#8A8A9A] dark:text-[#9494A2] border-[#E0E0EA] dark:border-[#2A2A32]",
+};
 
 /** "Achada pela semântica e pelos termos" — por onde a decisão entrou, antes da fusão. */
 function origemDoCard(canais: ("semantica" | "termos")[]): string {
@@ -34,7 +52,9 @@ function origemDoCard(canais: ("semantica" | "termos")[]): string {
 }
 
 /** Card de decisão da tela de resultados, igual nas duas faixas. */
-export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, idPrefix = "decisao" }: Props) {
+export function ResultadoCard({
+  decision, estrutura, rank, total, ementaIgualA, idPrefix = "decisao", avaliacao, marcadaPorVoce, onRelevante, onDesfazer, erroVoto,
+}: Props) {
   const { isSaved, toggle } = useSaved();
   const [expandida, setExpandida] = useState(false);
   const [copiada, copiar] = useCopiar();
@@ -82,6 +102,36 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
                   </Link>
                 </h3>
                 <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                  {avaliacao && !marcadaPorVoce && (
+                    <span
+                      title={avaliacao.motivo}
+                      data-nota={avaliacao.nota}
+                      className={`relative z-10 inline-flex items-center rounded-md border px-2 py-[2px] ${COR_NOTA[avaliacao.nota]}`}
+                      style={{ fontSize: "12px", fontWeight: 600 }}
+                    >
+                      {ROTULO_NOTA[avaliacao.nota]}
+                    </span>
+                  )}
+                  {marcadaPorVoce && (
+                    <span className="relative z-10 inline-flex items-center gap-1.5 rounded-md border px-2 py-[2px] border-[#C6E5D2] dark:border-[#1E4A33] bg-[#E7F4EC] dark:bg-[#12291C] text-[#2D6B4A] dark:text-[#7FCFA3]" style={{ fontSize: "12px", fontWeight: 600 }}>
+                      Marcada por você
+                      {onDesfazer && (
+                        <button onClick={onDesfazer} className="underline underline-offset-2 hover:no-underline" style={{ fontWeight: 500 }}>
+                          Desfazer
+                        </button>
+                      )}
+                    </span>
+                  )}
+                  {onRelevante && (
+                    <button
+                      onClick={onRelevante}
+                      title="Discordo da IA: esta decisão serve à tese"
+                      className="relative z-10 rounded-md border border-[#E0E0EA] dark:border-[#2A2A32] bg-white dark:bg-[#1C1C21] text-[#1A3A5C] dark:text-[#8AB0DC] px-2 py-[2px] hover:border-[#1A3A5C]/40"
+                      style={{ fontSize: "12px", fontWeight: 600 }}
+                    >
+                      É relevante
+                    </button>
+                  )}
                   <OutcomeBadge outcome={outcome} label={rotuloSelo(decision)} size="sm" />
                 </div>
               </div>
@@ -97,6 +147,9 @@ export function ResultadoCard({ decision, estrutura, rank, total, ementaIgualA, 
                   <span className="font-mono">{decision.numero_processo}</span>
                 </MetaItem>
               </div>
+              {erroVoto && (
+                <p className="mt-1.5 text-[#C44040] dark:text-[#D96B6B]" style={{ fontSize: "12.6px" }}>{erroVoto}</p>
+              )}
               {decision.canais && decision.canais.length > 0 && (
                 <p className="mt-1.5 flex items-center gap-1.5 text-[#AEAEBF] dark:text-[#6E6E7C]" style={{ fontSize: "12.6px" }}>
                   {decision.canais.map((c) => (

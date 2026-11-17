@@ -14,7 +14,6 @@ Dados a levar para o servidor:
 | Postgres (`jurisight`) | 1,3 GB | `pg_dump` e `pg_restore` |
 | Qdrant (2 coleções) | 4,8 GB | cópia do volume (mesma versão, v1.19.1) |
 | Índice BM25 (`data/index/bm25s_index`) | 0,7 GB | `rsync` |
-| Reranker de produção (`ms-marco-MultiBERT-L-12`) | 0,16 GB | `rsync` (os outros modelos do cache são do benchmark e não vão) |
 | Modelo do Ollama (`llama3.2:3b`) | 2 GB | `ollama pull` no próprio servidor |
 
 ## 1. O que contratar
@@ -24,7 +23,7 @@ Dados a levar para o servidor:
 R$ 297); a MagnoHost sai mais barata e com CPU mais rápida.
 
 - **RAM:** em uso, o app ocupa de 8 a 10 GB: Llama 3B ~3 GB, BM25 ~2 a 3 GB, Qdrant ~1,5 GB, Postgres ~1 GB e o resto. Os 16 GB bastam.
-- **CPU:** é o gargalo. O enriquecimento (Llama 3.2 3B no Ollama) e o reranker rodam em CPU. O Zen 5 tem núcleos rápidos e AVX-512, e os dois aproveitam isso.
+- **CPU:** é o gargalo. O enriquecimento (Llama 3.2 3B no Ollama) roda em CPU. O Zen 5 tem núcleos rápidos e AVX-512, que ele aproveita.
 - **Disco:** cerca de 25 GB ocupados dos 160 GB.
 
 **Perguntar ao suporte antes de pagar:**
@@ -179,7 +178,6 @@ docker run --rm -v jurisight_qdrant_data:/data -v ~/deploy-dados:/out alpine tar
 docker start jurisight_qdrant
 rsync -avP ~/deploy-dados/ deploy@IP:/opt/backups/inicial/
 rsync -avP data/index/bm25s_index deploy@IP:/opt/jurisight/data/index/
-rsync -avP data/index/reranker_cache/ms-marco-MultiBERT-L-12 deploy@IP:/opt/jurisight/data/index/reranker_cache/
 ```
 
 O `rsync -P` retoma de onde parou se a conexão cair. Com 50 Mbps de upload, ~20 min; com 10 Mbps,
@@ -244,7 +242,7 @@ Pronto quando: o check fica verde no PR e a alteração do teste aparece no site
 | Risco | O que fazer |
 |---|---|
 | Uma mudança no SSH ou no `ufw` tranca o acesso | Sempre testar o login em outro terminal antes de fechar a sessão atual; em último caso, o console do painel. |
-| Busca lenta demais | Adicionar núcleos no painel (+R$ 20 por núcleo), ou tirar o reranker em produção (S2), que corta de 3 a 9 s por busca. |
+| Busca lenta demais | Adicionar núcleos no painel (+R$ 20 por núcleo). |
 | Memória estoura com o Llama carregado | O swap de 4 GB segura o pico. Se acontecer sempre, `OLLAMA_KEEP_ALIVE=5m` descarrega o modelo mais cedo. |
 | Um deploy quebra o site | Na VPS, `git checkout <commit anterior>` e `docker compose -f docker-compose.prod.yml up -d --build`. Os dados ficam nos volumes. |
 | Certificado não sai | Conferir se 80/443 estão abertas e se o domínio aponta para o IP; o erro aparece em `logs caddy`. |

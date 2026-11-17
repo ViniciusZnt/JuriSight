@@ -2,14 +2,17 @@
 API Controller (RFC Tabela 6/Figura 10) — a aplicação FastAPI.
 
 Orquestra o pipeline: PDF Extractor -> Query Enrichment -> Query Builder -> Hybrid
-Search (RRF) -> Doc Retriever -> filtros -> Reranker -> Result Formatter. Todos os endpoints
+Search (RRF) -> Doc Retriever -> filtros -> Result Formatter; a ordem final é a da triagem
+por IA, que o front pede em lotes. Todos os endpoints
 exigem sessão (cookie httpOnly, `auth_routes.get_current_user`), exceto /health:
   - POST /enrich          — extrai a EstruturaArgumentativa do PDF e/ou da intenção.
   - POST /query           — busca híbrida; com dispositivos ou expressões, só devolve
                             decisões que cumprem todos (faixa "restrita").
   - POST /query/livre     — a mesma busca sem os filtros restritos (faixa "livre").
   - POST /query/explicacao — os textos que a busca usa (só monta, sem OpenAI).
-  - POST /resposta        — resposta curta sobre as ementas (OpenAI).
+  - POST /triagem        — nota 0-3 e posição de um lote de até 10 decisões (OpenAI), com cache.
+  - POST /resposta        — resposta curta sobre as ementas relacionadas (OpenAI).
+  - GET  /uso             — quanto a conta gastou hoje de cada limite diário.
   - GET  /document/{id}   — detalhe completo de um documento.
   - GET  /health          — liveness (público).
 Os routers de /auth, /conversas, /provimento e /filtros vêm de seus próprios módulos.
@@ -60,16 +63,16 @@ from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
 from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados em tests/test_api.py)
     N_CANDIDATOS_COM_FILTRO,
-    N_CANDIDATOS_PARA_RERANK,
-    N_RESULTS_FINAL,
+    N_RESULTADOS_LIVRE,
+    N_RESULTADOS_TRIAGEM,
     buscar,
-    normalizar_scores as _normalizar_scores,
 )
-from query.search.reranker import Reranker
 from query.search.resposta import Resposta, chave_da_resposta, gerar_resposta
 from query.search.resposta_cache import RespostaCache, ensure_schema as ensure_resposta_cache_schema
+from query.search.triagem import MAX_LOTE, Avaliacao, avaliar_lote, chave_da_triagem, tese_para_ia
+from query.search.triagem_cache import TriagemCache, avaliacoes_do_cache, ensure_schema as ensure_triagem_cache_schema
 from query.api.provimento_routes import get_provimento_store, router as provimento_router
-from query.api.uso_diario import LimiteDiarioExcedido, UsoDiario, ensure_schema as ensure_uso_diario_schema
+from query.api.uso_diario import ACOES_PAGAS, LimiteDiarioExcedido, UsoDiario, ensure_schema as ensure_uso_diario_schema
 from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
 from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema_correcoes
 from scraper.schema import Provimento
@@ -90,7 +93,6 @@ async def lifespan(app: FastAPI):
     app.state.hybrid = HybridSearch(embedder, store, bm25)
     app.state.doc_retriever = DocRetriever(DATABASE_URL)
     app.state.enricher = QueryEnricher()
-    app.state.reranker = Reranker()  # ~150MB, carregado uma vez (ver query/search/reranker.py)
     ensure_schema(DATABASE_URL)  # idempotente — cria auth.usuarios se ainda não existir
     app.state.usuario_store = UsuarioStore(DATABASE_URL)
     ensure_conversas_schema(DATABASE_URL)  # depende de auth.usuarios (FK) — roda depois
@@ -102,6 +104,8 @@ async def lifespan(app: FastAPI):
     app.state.filtro_store = FiltroStore(DATABASE_URL)  # as tabelas vêm de `python -m query.filtros.preparar`
     ensure_resposta_cache_schema(DATABASE_URL)
     app.state.resposta_cache = RespostaCache(DATABASE_URL)
+    ensure_triagem_cache_schema(DATABASE_URL)
+    app.state.triagem_cache = TriagemCache(DATABASE_URL)
     app.state.openai = openai.OpenAI(max_retries=0)  # timeout curto por chamada (query/search/resposta.py)
     yield
 
@@ -166,16 +170,16 @@ def get_enricher(request: Request) -> QueryEnricher:
     return request.app.state.enricher
 
 
-def get_reranker(request: Request) -> Reranker:
-    return request.app.state.reranker
-
-
 def get_openai(request: Request) -> openai.OpenAI:
     return request.app.state.openai
 
 
 def get_resposta_cache(request: Request) -> RespostaCache | None:
     return getattr(request.app.state, "resposta_cache", None)
+
+
+def get_triagem_cache(request: Request) -> TriagemCache | None:
+    return getattr(request.app.state, "triagem_cache", None)
 
 
 def get_uso_diario(request: Request) -> UsoDiario | None:
@@ -374,7 +378,6 @@ async def query(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
     retriever: DocRetriever = Depends(get_doc_retriever),
-    reranker: Reranker = Depends(get_reranker),
     provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
     filtro_store: FiltroStore | None = Depends(get_filtro_store),
 ) -> list[ResultCard]:
@@ -386,7 +389,7 @@ async def query(
                                       body.estrutura.tribunais, body.estrutura.fase)
         if not ids:
             return []
-    cards = await _buscar_cards(body, hybrid, retriever, reranker, ids)
+    cards = await _buscar_cards(body, hybrid, retriever, ids, N_RESULTADOS_TRIAGEM)
     if ids is not None:  # garantia da faixa restrita: nunca marca um card que não está entre os elegíveis
         elegiveis = set(ids)
         cards = [c.model_copy(update={"faixa": "restrita"}) for c in cards if c.id in elegiveis]
@@ -398,23 +401,22 @@ async def query_livre(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
     retriever: DocRetriever = Depends(get_doc_retriever),
-    reranker: Reranker = Depends(get_reranker),
     provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
 ) -> list[ResultCard]:
     """Busca semântica livre, sem os dispositivos e expressões (que ficam só no texto do BM25).
     Pedida sob demanda depois da /query restrita, por isso não gasta o limite diário."""
-    cards = await _buscar_cards(body, hybrid, retriever, reranker, None)
+    cards = await _buscar_cards(body, hybrid, retriever, None, N_RESULTADOS_LIVRE)
     return await run_in_threadpool(com_classificacao, cards, provimento_store)
 
 
-async def _buscar_cards(body: QueryRequest, hybrid, retriever, reranker, ids: list[str] | None) -> list[ResultCard]:
+async def _buscar_cards(body: QueryRequest, hybrid, retriever, ids: list[str] | None, n_resultados: int) -> list[ResultCard]:
     try:
         return await run_in_threadpool(
             buscar,
             body.estrutura,
             hybrid=hybrid,
             retriever=retriever,
-            reranker=reranker,
+            n_resultados=n_resultados,
             provimento=body.provimento,
             data_inicio=body.data_inicio,
             data_fim=body.data_fim,
@@ -446,12 +448,65 @@ async def query_explicacao(body: ExplicacaoRequest) -> ExplicacaoResponse:
 
 
 # --------------------------------------------------------------------------- #
+# POST /triagem                                                                #
+# --------------------------------------------------------------------------- #
+
+class TriagemRequest(BaseModel):
+    estrutura: EstruturaArgumentativa
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=MAX_LOTE)  # um lote, na ordem do RRF
+    apenas_cache: bool = False  # reabrir uma conversa: nunca chama a OpenAI
+
+
+class AvaliacaoItem(Avaliacao):
+    id: str
+
+
+class TriagemResponse(BaseModel):
+    avaliacoes: list[AvaliacaoItem]  # na ordem de `ids`; quem não foi avaliado não vem
+
+
+@app.post("/triagem", response_model=TriagemResponse)
+async def triagem(
+    body: TriagemRequest,
+    usuario: Usuario = Depends(get_current_user),
+    uso: UsoDiario | None = Depends(get_uso_diario),
+    retriever: DocRetriever = Depends(get_doc_retriever),
+    client: openai.OpenAI = Depends(get_openai),
+    cache: TriagemCache | None = Depends(get_triagem_cache),
+) -> TriagemResponse:
+    """Avalia um lote. O que já está no cache (por par tese × decisão) não vai à OpenAI; só o lote
+    que de fato chama a OpenAI conta no limite diário ("triagem"). As ementas vêm do banco."""
+    if not tese_para_ia(body.estrutura):
+        raise HTTPException(status_code=422, detail="A tese está vazia: preencha a tese central ou o pedido.")
+    ids = list(dict.fromkeys(str(i) for i in body.ids))
+    avaliacoes = await run_in_threadpool(avaliacoes_do_cache, cache, body.estrutura, ids)
+    faltam = [i for i in ids if i not in avaliacoes]
+    if faltam and not body.apenas_cache:
+        await consumir_limite(uso, usuario, "triagem")
+        docs = await run_in_threadpool(retriever.fetch, faltam, False)
+        decisoes = {i: docs[i] for i in faltam if i in docs}
+        try:
+            novas = await run_in_threadpool(avaliar_lote, body.estrutura, decisoes, client)
+        except openai.OpenAIError as exc:
+            logger.warning("Triagem indisponível: %s", exc)
+            raise HTTPException(status_code=503, detail="Avaliação por IA indisponível agora.") from exc
+        avaliacoes.update(novas)
+        if cache is not None and novas:
+            itens = {chave_da_triagem(body.estrutura, i): a.model_dump(mode="json") for i, a in novas.items()}
+            try:
+                await run_in_threadpool(cache.gravar_varios, itens)
+            except psycopg.Error as exc:
+                logger.warning("Triagem não foi guardada no cache: %s", exc)
+    return TriagemResponse(avaliacoes=[AvaliacaoItem(id=i, **avaliacoes[i].model_dump()) for i in ids if i in avaliacoes])
+
+
+# --------------------------------------------------------------------------- #
 # POST /resposta                                                               #
 # --------------------------------------------------------------------------- #
 
 class RespostaRequest(BaseModel):
     estrutura: EstruturaArgumentativa
-    ids: list[uuid.UUID] = Field(max_length=20)  # na ordem dos cards: ids[0] é o #1
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=25)  # as relacionadas, na ordem dos cards: ids[0] é o #1
 
 
 @app.post("/resposta", response_model=Resposta)
@@ -462,8 +517,10 @@ async def resposta(
     retriever: DocRetriever = Depends(get_doc_retriever),
     client: openai.OpenAI = Depends(get_openai),
     cache: RespostaCache | None = Depends(get_resposta_cache),
+    triagem: TriagemCache | None = Depends(get_triagem_cache),
 ) -> Resposta:
-    """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`.
+    """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`, e a
+    posição de cada decisão em relação à tese vem do cache da triagem (também não do cliente).
     Resposta já gerada para a mesma tese, lista, modelo e prompt vem do cache, sem chamar a OpenAI;
     falha no cache não derruba a resposta. Só a geração conta no limite diário."""
     ids = [str(i) for i in body.ids]
@@ -478,8 +535,10 @@ async def resposta(
     await consumir_limite(uso, usuario, "resposta")  # só conta quando vai gerar (cache não gasta)
     docs = await run_in_threadpool(retriever.fetch, ids)
     decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs}
+    avaliacoes = await run_in_threadpool(avaliacoes_do_cache, triagem, body.estrutura, ids)
+    posicoes = {n: avaliacoes[i].posicao for n, i in enumerate(ids, start=1) if i in avaliacoes}
     try:
-        gerada = await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, client)
+        gerada = await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, posicoes, client)
     except openai.OpenAIError as exc:
         logger.warning("Resposta gerada indisponível: %s", exc)
         raise HTTPException(status_code=503, detail="A resposta gerada está indisponível agora. Os resultados continuam abaixo.") from exc
@@ -489,6 +548,36 @@ async def resposta(
         except psycopg.Error as exc:
             logger.warning("Resposta não foi guardada no cache: %s", exc)
     return gerada
+
+
+# --------------------------------------------------------------------------- #
+# GET /uso                                                                     #
+# --------------------------------------------------------------------------- #
+
+class UsoAcao(BaseModel):
+    acao: str
+    usado: int
+    limite: int
+
+
+class UsoResponse(BaseModel):
+    acoes: list[UsoAcao]
+
+
+@app.get("/uso", response_model=UsoResponse)
+async def uso_de_hoje(
+    usuario: Usuario = Depends(get_current_user),
+    uso: UsoDiario | None = Depends(get_uso_diario),
+) -> UsoResponse:
+    """Uso de hoje da conta em cada ação paga ("Uso de hoje" na sidebar). Não consome nada."""
+    if uso is None:
+        raise HTTPException(status_code=503, detail="Uso diário indisponível agora.")
+    try:
+        do_dia = await run_in_threadpool(uso.do_dia, usuario.id)
+    except psycopg.Error as exc:
+        logger.warning("Uso diário indisponível: %s", exc)
+        raise HTTPException(status_code=503, detail="Uso diário indisponível agora.") from exc
+    return UsoResponse(acoes=[UsoAcao(acao=a, usado=do_dia.get(a, 0), limite=uso.limites(a)[0]) for a in ACOES_PAGAS])
 
 
 # --------------------------------------------------------------------------- #

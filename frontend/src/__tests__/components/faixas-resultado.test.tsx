@@ -13,10 +13,11 @@ jest.mock("@/lib/api", () => ({
   queryLivre: jest.fn(),
   gerarResposta: jest.fn(),
   explicarBusca: jest.fn().mockResolvedValue({ semantica: "tese", termos: [] }),
+  avaliarLote: jest.fn().mockResolvedValue({}),
 }));
 const sessao: { resultados: ResultCard[]; estrutura: ReturnType<typeof emptyEstrutura> } = { resultados: [], estrutura: emptyEstrutura() };
 jest.mock("@/lib/search-session", () => ({
-  useSearchSession: () => ({ ...sessao, versionNumero: 1, loadVersion: jest.fn() }),
+  useSearchSession: () => ({ ...sessao, versionNumero: 1, loadVersion: jest.fn(), buscaNova: false, relevantesUsuario: [], setRelevantesUsuario: jest.fn(), respostaIds: [], setRespostaIds: jest.fn() }),
 }));
 
 const card = (id: string, extra: Partial<ResultCard> = {}): ResultCard => ({
@@ -44,7 +45,7 @@ beforeEach(() => {
     expressoes: [{ texto: "banco de horas", total: 50 }],
   });
   (queryLivre as jest.Mock).mockReset().mockResolvedValue([]);
-  (gerarResposta as jest.Mock).mockReset().mockResolvedValue({ frases: [], posicoes: [] });
+  (gerarResposta as jest.Mock).mockReset().mockResolvedValue({ frases: [] });
 });
 
 describe("barra de filtros", () => {

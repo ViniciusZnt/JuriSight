@@ -95,7 +95,13 @@ def test_pool_une_os_tres_corredores():
     assert len(por_corredor["hibrido"]) == 30
     assert len(por_corredor["bm25_top10"]) == 10
     assert len(por_corredor["vetorial_top10"]) == 10
-    assert hybrid.chamadas_search[0][1] == 30
+    assert hybrid.chamadas_search[0][1] == 50
+
+
+def test_pool_usa_50_do_hibrido():
+    hybrid = _hybrid([], [], [], hibrido=[f"h{i}" for i in range(60)])
+    pool = montar_pool(_estrutura(), hybrid=hybrid, retriever=_FakeRetriever(), k=0)
+    assert sum("hibrido" in c for c in pool.values()) == 50
 
 
 def test_corredores_na_ordem_fixa_e_colapsa_chunks():

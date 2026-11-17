@@ -111,7 +111,7 @@ def ndcg_teto(candidatos: list[str], ganhos: dict[str, int], k: int = 10) -> flo
 
     Ordena os candidatos por ganho decrescente e calcula `ndcg_at_k` com os mesmos
     `ganhos`; o ideal segue sendo o de todos os julgados, então o teto pode ficar
-    abaixo de 1 (o recall do pool limita o reranker). Retorna None quando o ideal é 0.
+    abaixo de 1 (o recall do pool limita qualquer reordenação). Retorna None quando o ideal é 0.
     """
     ordem = sorted(candidatos, key=lambda doc: ganhos.get(doc, 0), reverse=True)
     return ndcg_at_k(ordem, ganhos, k)

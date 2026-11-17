@@ -18,13 +18,13 @@ def montar_pool(
     *,
     hybrid,
     retriever,
-    n_hibrido: int = 30,
+    n_hibrido: int = 50,
     k: int = 10,
 ) -> dict[str, list[str]]:
     """Une os n_hibrido candidatos do híbrido ao top-k do BM25 e ao top-k do denso.
 
     Input:  estrutura — a tese; hybrid/retriever — os mesmos objetos do pipeline de
-            produção; n_hibrido — candidatos do híbrido (o que os rerankers veem);
+            produção; n_hibrido — candidatos do híbrido (os 50 que a triagem ordena na tela);
             k — documentos distintos de cada canal isolado.
     Returns: {documento_id: corredores que o trouxeram}, corredores sempre na
              ordem hibrido, bm25_top10, vetorial_top10. Documentos ausentes do retriever ou

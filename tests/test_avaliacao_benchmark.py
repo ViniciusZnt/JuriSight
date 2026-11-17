@@ -1,7 +1,5 @@
-import gc
 import json
 import uuid
-import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -60,11 +58,11 @@ def test_medias_por_sistema_e_excluidas():
 def test_contraste_com_diferenca_clara():
     ndcg = {
         "S2": {f"t{i}": 0.30 + 0.01 * (i % 3) for i in range(8)},
-        "S3": {f"t{i}": 0.60 + 0.02 * (i % 4) for i in range(8)},
+        "S7": {f"t{i}": 0.60 + 0.02 * (i % 4) for i in range(8)},
     }
     contrastes, avisos, _ = calcular_contrastes(ndcg)
     c = contrastes[0]
-    assert (c["tratamento"], c["controle"]) == ("S3", "S2")
+    assert (c["tratamento"], c["controle"]) == ("S7", "S2")
     assert c["n_teses"] == 8 and c["diferenca_media"] > 0.25
     assert c["ic95"][0] > 0
     assert c["p_t_holm"] < 0.05 and c["p_wilcoxon_bh"] < 0.05
@@ -72,7 +70,7 @@ def test_contraste_com_diferenca_clara():
 
 
 def test_contraste_com_diferencas_nulas_nao_quebra():
-    ndcg = {"S2": {f"t{i}": 0.5 for i in range(5)}, "S3": {f"t{i}": 0.5 for i in range(5)}}
+    ndcg = {"S2": {f"t{i}": 0.5 for i in range(5)}, "S7": {f"t{i}": 0.5 for i in range(5)}}
     c = calcular_contrastes(ndcg)[0][0]
     assert c["diferenca_media"] == 0
     assert c["p_t"] is None and c["p_wilcoxon"] is None
@@ -80,20 +78,20 @@ def test_contraste_com_diferencas_nulas_nao_quebra():
 
 
 def test_contraste_so_usa_teses_com_os_dois_valores():
-    ndcg = {"S2": {"a": 0.1, "b": None, "c": 0.2}, "S3": {"a": 0.3, "b": 0.5, "c": 0.4}}
+    ndcg = {"S2": {"a": 0.1, "b": None, "c": 0.2}, "S7": {"a": 0.3, "b": 0.5, "c": 0.4}}
     c = calcular_contrastes(ndcg)[0][0]
     assert c["n_teses"] == 2
     assert c["diferenca_media"] == pytest.approx(0.2)
-    um = calcular_contrastes({"S2": {"a": 0.1}, "S3": {"a": 0.3}})[0][0]
+    um = calcular_contrastes({"S2": {"a": 0.1}, "S7": {"a": 0.3}})[0][0]
     assert um["p_t"] is None and um["ic95"] is None
 
 
 def test_contrastes_de_sistema_ausente_sao_omitidos_com_aviso():
-    runs = _runs([_linha(T1, {s: (["a", "b"], 1.0) for s in ("S0", "S1", "S2", "S3")})], ["S0", "S1", "S2", "S3"])
+    runs = _runs([_linha(T1, {s: (["a", "b"], 1.0) for s in ("S0", "S1", "S2")})], ["S0", "S1", "S2"])
     rel = avaliar_runs(runs, _rotulos({T1: GANHOS}))
     pares = {(c["tratamento"], c["controle"]) for c in rel["contrastes"]}
-    assert pares == {("S3", "S2"), ("S0", "S2"), ("S1", "S2")}
-    assert any("S4" in a for a in rel["avisos"])
+    assert pares == {("S0", "S2"), ("S1", "S2")}
+    assert any("S7" in a for a in rel["avisos"])
 
 
 def test_holm_e_bh():
@@ -159,13 +157,13 @@ def test_perdidos_ignora_nota_1_e_conta_repetido_uma_vez():
 def test_diferencas_simetricas_nao_sao_significativas():
     base = [0.5] * 6
     ndcg = {"S2": {f"t{i}": base[i] for i in range(6)},
-            "S3": {f"t{i}": 0.5 + d for i, d in enumerate([0.1, -0.1, 0.2, -0.2, 0.3, -0.3])}}
+            "S7": {f"t{i}": 0.5 + d for i, d in enumerate([0.1, -0.1, 0.2, -0.2, 0.3, -0.3])}}
     c = calcular_contrastes(ndcg)[0][0]
     assert c["p_t"] > 0.05 and c["p_wilcoxon"] > 0.05
 
 
 def test_diferenca_constante_nao_nula_tem_p_t_none():
-    ndcg = {"S2": {f"t{i}": 0.3 + 0.01 * i for i in range(5)}, "S3": {f"t{i}": 0.5 + 0.01 * i for i in range(5)}}
+    ndcg = {"S2": {f"t{i}": 0.3 + 0.01 * i for i in range(5)}, "S7": {f"t{i}": 0.5 + 0.01 * i for i in range(5)}}
     c = calcular_contrastes(ndcg)[0][0]
     assert c["diferenca_media"] == pytest.approx(0.2)
     assert c["p_t"] is None
@@ -175,27 +173,26 @@ def test_familia_com_contraste_degenerado_mantem_m():
     n = 6
     ndcg = {
         "S2": {f"t{i}": 0.3 + 0.01 * (i % 3) for i in range(n)},
-        "S3": {f"t{i}": 0.6 + 0.02 * (i % 4) for i in range(n)},
+        "S7": {f"t{i}": 0.6 + 0.02 * (i % 4) for i in range(n)},
         "S0": {f"t{i}": 0.3 + 0.01 * (i % 3) for i in range(n)},  # S0 x S2: tudo zero
     }
     contrastes, avisos, omitidos = calcular_contrastes(ndcg)
-    assert [(c["tratamento"], c["controle"]) for c in contrastes] == [("S3", "S2"), ("S0", "S2")]
+    assert [(c["tratamento"], c["controle"]) for c in contrastes] == [("S7", "S2"), ("S0", "S2")]
     degenerado = contrastes[1]
     assert degenerado["p_t"] is None and degenerado["p_t_holm"] == 1.0
     # m = 2 contrastes rodados: Holm do significativo = min(1, 2 * p)
     assert contrastes[0]["p_t_holm"] == pytest.approx(min(1.0, 2 * contrastes[0]["p_t"]))
-    assert {(o["tratamento"], o["controle"]) for o in omitidos} == {
-        ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S1", "S2")}
+    assert {(o["tratamento"], o["controle"]) for o in omitidos} == {("S1", "S2")}
 
 
 def test_relatorio_grava_m_e_metodo_wilcoxon():
     ids = [str(uuid.uuid4()) for _ in range(4)]
-    linhas = [_linha(t, {"S2": (["c"], 1.0), "S3": (["a", "d", "b"], 1.0)}) for t in ids]
-    rel = avaliar_runs(_runs(linhas, ["S2", "S3"]), lambda tid: (GANHOS, {}))
+    linhas = [_linha(t, {"S2": (["c"], 1.0), "S1": (["a", "d", "b"], 1.0)}) for t in ids]
+    rel = avaliar_runs(_runs(linhas, ["S2", "S1"]), lambda tid: (GANHOS, {}))
     est = rel["estatistica"]
     assert est["m_holm"] == 1 and est["m_bh"] == 1
     assert est["wilcoxon_zero_method"] == "pratt"
-    assert len(est["contrastes_omitidos"]) == 5
+    assert len(est["contrastes_omitidos"]) == 2
 
 
 def test_commit_git_marca_dirty(monkeypatch):
@@ -210,47 +207,29 @@ def test_commit_git_marca_dirty(monkeypatch):
     assert bm._commit_git() == "abc123"
 
 
-class _Reranker:
-    pass
-
-
 def test_rodar_com_fakes(monkeypatch, tmp_path):
-    construidos, refs, chamadas = [], [], []
+    chamadas = []
 
-    def construir(nomes):
-        # o reranker do sistema anterior já tem de ter sido liberado
-        assert all(r() is None for r in refs), "reranker anterior ainda vivo"
-        r = _Reranker()
-        refs.append(weakref.ref(r))
-        construidos.append(nomes)
-        return {nomes[0]: r}
-
-    def rodar_sistema(sistema, estrutura, deps, rerankers):
+    def rodar_sistema(sistema, estrutura, deps):
         chamadas.append(sistema)
         return [f"{sistema}-1", f"{sistema}-2"]
 
-    monkeypatch.setattr(bm, "construir_rerankers", construir)
     monkeypatch.setattr(bm, "rodar_sistema", rodar_sistema)
     monkeypatch.setattr(bm, "candidatos_hibrido", lambda est, hybrid, retriever: ["c1", "c2"])
     monkeypatch.setattr(bm, "top_bm25", lambda h, e, k: ["b1"])
     monkeypatch.setattr(bm, "top_denso", lambda h, e, k: ["v1"])
-    monkeypatch.setattr(bm, "_nomes_dos_modelos", lambda ss: {s: f"modelo-{s}" for s in ss if s in ("S3", "S4")})
 
     teses = [SimpleNamespace(id=uuid.uuid4(), estrutura={}, origem="sintetica", tema="t", split="dev") for _ in range(2)]
     deps = SimpleNamespace(hybrid=None, retriever=None)
-    runs = rodar(teses, deps, ["S2", "S3", "S4"], None, tmp_path)
+    runs = rodar(teses, deps, ["S0", "S2"], tmp_path)
 
-    assert construidos == [["S3"], ["S4"]]
-    gc.collect()
-    assert all(r() is None for r in refs)
     # aquecimento (1 chamada sem medir) + 2 teses medidas por sistema
-    assert chamadas.count("S3") == 3 and chamadas.count("S2") == 3
+    assert chamadas.count("S0") == 3 and chamadas.count("S2") == 3
     arquivo = json.loads(open(runs["arquivo"], encoding="utf-8").read())
-    assert {"commit", "sistemas", "modelos", "teses"} <= set(arquivo)
-    assert arquivo["modelos"] == {"S3": "modelo-S3", "S4": "modelo-S4"}
+    assert {"commit", "sistemas", "teses"} <= set(arquivo)
     t = arquivo["teses"][0]
     assert {"tese_id", "origem", "tema", "split", "candidatos", "top10_bm25", "top10_denso", "sistemas"} <= set(t)
-    assert t["sistemas"]["S3"]["ids"] == ["S3-1", "S3-2"] and t["sistemas"]["S3"]["latencia_s"] >= 0
+    assert t["sistemas"]["S2"]["ids"] == ["S2-1", "S2-2"] and t["sistemas"]["S2"]["latencia_s"] >= 0
 
 
 def _teses_fake(n=2):
@@ -258,12 +237,10 @@ def _teses_fake(n=2):
 
 
 def _patch_rodar(monkeypatch, rodar_sistema, candidatos=("c1", "c2")):
-    monkeypatch.setattr(bm, "construir_rerankers", lambda nomes: {nomes[0]: object()})
     monkeypatch.setattr(bm, "rodar_sistema", rodar_sistema)
     monkeypatch.setattr(bm, "candidatos_hibrido", lambda est, hybrid, retriever: list(candidatos))
     monkeypatch.setattr(bm, "top_bm25", lambda h, e, k: ["b1"])
     monkeypatch.setattr(bm, "top_denso", lambda h, e, k: ["v1"])
-    monkeypatch.setattr(bm, "_nomes_dos_modelos", lambda ss: {})
 
 
 def test_rodar_calcula_cada_embedding_uma_vez_e_restaura(monkeypatch):
@@ -280,7 +257,7 @@ def test_rodar_calcula_cada_embedding_uma_vez_e_restaura(monkeypatch):
     hybrid = SimpleNamespace(embedder=emb)
     vistos = []
 
-    def rodar_sistema(sistema, estrutura, deps, rerankers):
+    def rodar_sistema(sistema, estrutura, deps):
         vistos.append(deps.hybrid.embedder.embed_text("frase da tese"))
         assert deps.hybrid.embedder.marca == "original"  # o wrapper repassa o resto
         return ["c1"]
@@ -288,22 +265,21 @@ def test_rodar_calcula_cada_embedding_uma_vez_e_restaura(monkeypatch):
     _patch_rodar(monkeypatch, rodar_sistema)
     # candidatos_hibrido real também embute: simula via top_denso
     monkeypatch.setattr(bm, "top_denso", lambda h, e, k: h.embedder.embed_text("frase da tese") and ["v1"])
-    rodar(_teses_fake(1), SimpleNamespace(hybrid=hybrid, retriever=None), ["S2", "S3", "S4"], None, None)
+    rodar(_teses_fake(1), SimpleNamespace(hybrid=hybrid, retriever=None), ["S0", "S1", "S2"], None)
     assert chamadas == ["frase da tese"]
     assert len(set(map(tuple, vistos))) == 1
     assert hybrid.embedder is emb
 
 
 def test_rodar_registra_fora_dos_candidatos(monkeypatch):
-    def rodar_sistema(sistema, estrutura, deps, rerankers):
-        return ["c1", "x9"] if sistema == "S3" else ["c1", "c2"]
+    def rodar_sistema(sistema, estrutura, deps):
+        return ["c1", "x9"] if sistema == "S2" else ["c1", "c2"]
 
     _patch_rodar(monkeypatch, rodar_sistema)
     runs = rodar(_teses_fake(1), SimpleNamespace(hybrid=SimpleNamespace(embedder=None), retriever=None),
-                 ["S0", "S2", "S3"], None, None)
+                 ["S0", "S2"], None)
     s = runs["teses"][0]["sistemas"]
-    assert s["S3"]["fora_dos_candidatos"] == ["x9"]
-    assert s["S2"]["fora_dos_candidatos"] == []
+    assert s["S2"]["fora_dos_candidatos"] == ["x9"]
     assert "fora_dos_candidatos" not in s["S0"]
 
 
@@ -311,26 +287,17 @@ def test_rodar_excecao_numa_tese_nao_aborta(monkeypatch, capsys):
     teses = _teses_fake(3)
     ruim = {"n": 0}
 
-    def rodar_sistema(sistema, estrutura, deps, rerankers):
+    def rodar_sistema(sistema, estrutura, deps):
         ruim["n"] += 1
         if sistema == "S2" and ruim["n"] == 3:  # aquecimento + 1a tese ok; 2a tese falha
             raise RuntimeError("openai fora")
         return ["c1"]
 
     _patch_rodar(monkeypatch, rodar_sistema)
-    runs = rodar(teses, SimpleNamespace(hybrid=SimpleNamespace(embedder=None), retriever=None), ["S2"], None, None)
+    runs = rodar(teses, SimpleNamespace(hybrid=SimpleNamespace(embedder=None), retriever=None), ["S2"], None)
     assert [("S2" in t["sistemas"]) for t in runs["teses"]] == [True, False, True]
     assert runs["teses_com_erro"] == [{"tese_id": str(teses[1].id), "sistema": "S2", "erro": "openai fora"}]
     assert "openai fora" in capsys.readouterr().err
-
-
-def test_checar_s6_sem_torch_falha_cedo(monkeypatch):
-    import sys
-
-    monkeypatch.setitem(sys.modules, "torch", None)  # import levanta ImportError
-    with pytest.raises(RuntimeError, match="uv run --group benchmark"):
-        bm._checar_dependencias(["S2", "S6"])
-    bm._checar_dependencias(["S2", "S3"])  # sem S6 não checa nada
 
 
 def test_relatorio_medias_por_origem_adjudicador_e_pendentes(capsys):

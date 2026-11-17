@@ -31,7 +31,7 @@ import pytest
 from auth.db import ensure_schema as ensure_auth_schema
 from auth.store import UsuarioStore
 from conversations.db import ensure_schema as ensure_conversas_schema
-from conversations.store import ConversaStore
+from conversations.store import ConversaNaoEncontradaError, ConversaStore
 from tests.conftest import DATABASE_URL, requer_postgres
 
 pytestmark = requer_postgres
@@ -107,3 +107,38 @@ def test_add_versao_acumula_numeracao_sequencial(store: ConversaStore, usuario_i
     assert [v["numero"] for v in atualizada.versoes] == [1, 2]
     assert atualizada.versoes[1]["file_name"] == "processo.pdf"
     assert atualizada.versoes[1]["resultados"] == [{"id": "d1"}]
+
+
+def _versao(store, cid, uid, tese):
+    return store.add_versao(cid, uid, estrutura={"tese_central": tese}, has_file=False, file_name=None,
+                            pdf_extraido=None, aviso=None, resultados=[{"id": "d1"}])
+
+
+def test_atualizar_versao_altera_so_a_versao_pedida(store: ConversaStore, usuario_id):
+    conversa = store.create(usuario_id, "Teste integração — relevantes")
+    _versao(store, conversa.id, usuario_id, "v1")
+    _versao(store, conversa.id, usuario_id, "v2")
+
+    atualizada = store.atualizar_versao(conversa.id, usuario_id, 2, {"relevantes_usuario": ["a", "b"]})
+
+    v1, v2 = atualizada.versoes
+    assert "relevantes_usuario" not in v1
+    assert v2["relevantes_usuario"] == ["a", "b"]
+    assert v2["estrutura"] == {"tese_central": "v2"} and v2["resultados"] == [{"id": "d1"}] and v2["numero"] == 2
+
+
+def test_atualizar_versao_versao_inexistente_ou_de_outro_usuario(store: ConversaStore, usuario_id):
+    conversa = store.create(usuario_id, "Teste integração — relevantes 404")
+    _versao(store, conversa.id, usuario_id, "v1")
+    with pytest.raises(ConversaNaoEncontradaError):
+        store.atualizar_versao(conversa.id, usuario_id, 2, {"relevantes_usuario": ["a"]})
+    with pytest.raises(ConversaNaoEncontradaError):
+        store.atualizar_versao(conversa.id, uuid.uuid4(), 1, {"relevantes_usuario": ["a"]})
+
+
+def test_atualizar_versao_junta_campos_sem_apagar_os_outros(store: ConversaStore, usuario_id):
+    conversa = store.create(usuario_id, "Teste integração — resposta_ids")
+    _versao(store, conversa.id, usuario_id, "v1")
+    store.atualizar_versao(conversa.id, usuario_id, 1, {"relevantes_usuario": ["a"]})
+    v = store.atualizar_versao(conversa.id, usuario_id, 1, {"resposta_ids": ["x", "y"]}).versoes[0]
+    assert v["relevantes_usuario"] == ["a"] and v["resposta_ids"] == ["x", "y"] and v["estrutura"] == {"tese_central": "v1"}

@@ -10,11 +10,14 @@ jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   contarFiltros: jest.fn().mockResolvedValue({ total: 5, dispositivos: [], expressoes: [] }),
   queryLivre: jest.fn().mockResolvedValue([]),
-  gerarResposta: jest.fn().mockResolvedValue({ frases: [], posicoes: [] }),
+  gerarResposta: jest.fn().mockResolvedValue({ frases: [] }),
   explicarBusca: jest.fn().mockResolvedValue({ semantica: "tese", termos: [] }),
+  avaliarLote: jest.fn().mockResolvedValue({}),
 }));
 const sessao: { resultados: ResultCard[]; estrutura: ReturnType<typeof emptyEstrutura>; versionNumero: number } = { resultados: [], estrutura: emptyEstrutura(), versionNumero: 1 };
-jest.mock("@/lib/search-session", () => ({ useSearchSession: () => ({ ...sessao, loadVersion: jest.fn() }) }));
+jest.mock("@/lib/search-session", () => ({
+  useSearchSession: () => ({ ...sessao, loadVersion: jest.fn(), buscaNova: false, relevantesUsuario: [], setRelevantesUsuario: jest.fn(), respostaIds: [], setRespostaIds: jest.fn() }),
+}));
 
 it("trocar de versão não acumula o painel \"Como esta busca foi feita\" (keys únicas entre irmãos)", async () => {
   sessao.resultados = [];

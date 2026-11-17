@@ -33,7 +33,7 @@ def carregar_store():
 
 
 def carregar_dependencias() -> SimpleNamespace:
-    """Devolve SimpleNamespace(hybrid, retriever, store, database_url).
+    """Devolve SimpleNamespace(hybrid, retriever, store, database_url, openai, triagem_cache).
 
     Lento (BM25 e embedder) — chame uma vez por processo.
     """
@@ -46,12 +46,17 @@ def carregar_dependencias() -> SimpleNamespace:
     from processing.embeddings.poly_vector import PolyVectorEmbedder
     from query.search.doc_retriever import DocRetriever
     from query.search.hybrid_search import HybridSearch
+    from query.search.triagem_cache import TriagemCache, ensure_schema as ensure_triagem_cache_schema
+    import openai
 
     client = QdrantClient(url=os.getenv("QDRANT_URL", "http://localhost:6333"), timeout=210)
     hybrid = HybridSearch(PolyVectorEmbedder(), QdrantStore(client), BM25Builder.load())
+    ensure_triagem_cache_schema(url)
     return SimpleNamespace(
         hybrid=hybrid,
         retriever=DocRetriever(url),
         store=carregar_store(),
         database_url=url,
+        openai=openai.OpenAI(max_retries=2),  # S7 (triagem por IA)
+        triagem_cache=TriagemCache(url),
     )

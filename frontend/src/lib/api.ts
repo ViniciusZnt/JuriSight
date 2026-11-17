@@ -264,18 +264,51 @@ export interface FraseResposta {
   citacoes: number[];
 }
 
-/** Posição da decisão #numero em relação à tese, lida pelo mesmo modelo que escreveu a resposta. */
+/** Posição da decisão em relação à tese, lida pela triagem por IA. */
 export type PosicaoTese = "deferiu" | "negou" | "fato_diferente" | "outro";
 
 export interface RespostaIA {
   frases: FraseResposta[];
-  posicoes: { numero: number; posicao: PosicaoTese }[];
 }
 
-/** POST /resposta — resposta curta gerada a partir das ementas dos resultados (ids na ordem dos
- *  cards, até 20). Lista vazia = nada que desse para ancorar; 503 = IA indisponível. */
+/** POST /resposta — resposta curta gerada a partir das decisões relacionadas (ids na ordem dos
+ *  cards, até 25). Lista vazia = nada que desse para ancorar; 503 = IA indisponível. */
 export async function gerarResposta(estrutura: EstruturaArgumentativa, ids: string[]): Promise<RespostaIA> {
-  return enviarJson<RespostaIA>("/resposta", "POST", { estrutura, ids: ids.slice(0, 20) });
+  return enviarJson<RespostaIA>("/resposta", "POST", { estrutura, ids: ids.slice(0, 25) });
+}
+
+export interface UsoAcao {
+  acao: string;
+  usado: number;
+  limite: number;
+}
+
+/** GET /uso — quanto a conta gastou hoje de cada limite diário (enrich, query, triagem, resposta). */
+export async function getUso(): Promise<{ acoes: UsoAcao[] }> {
+  return request<{ acoes: UsoAcao[] }>("/uso");
+}
+
+/** Nota da triagem: 3 mesmo problema e fato, 2 mesmo pedido, 1 mesmo ramo, 0 outro tema. */
+export type NotaTriagem = 0 | 1 | 2 | 3;
+
+export interface Avaliacao {
+  nota: NotaTriagem;
+  posicao: PosicaoTese;
+  motivo: string;
+}
+
+/** POST /triagem — avalia um lote de até 10 decisões (ids na ordem do RRF). Devolve só as
+ *  avaliadas, por id. `apenasCache` nunca chama a IA (reabrir uma conversa); 503 = IA indisponível. */
+export async function avaliarLote(
+  estrutura: EstruturaArgumentativa,
+  ids: string[],
+  opcoes: { apenasCache?: boolean },
+  signal?: AbortSignal,
+): Promise<Record<string, Avaliacao>> {
+  const r = await enviarJson<{ avaliacoes: (Avaliacao & { id: string })[] }>(
+    "/triagem", "POST", { estrutura, ids, apenas_cache: opcoes.apenasCache ?? false }, signal,
+  );
+  return Object.fromEntries(r.avaliacoes.map(({ id, ...a }) => [id, a]));
 }
 
 /** GET /document/{id} — detalhe completo de um documento (404 se não existir). */
@@ -364,6 +397,10 @@ export interface VersaoApi {
   aviso: string | null;
   resultados: ResultCard[] | null;
   criado_em: string; // ISO datetime
+  /** Decisões que o advogado marcou como relevantes contra a triagem (versões antigas não têm). */
+  relevantes_usuario?: string[];
+  /** Decisões que foram à resposta gerada, na ordem #1..#k (reabrir usa as mesmas, sem gerar outra). */
+  resposta_ids?: string[];
 }
 
 /** query/api/conversa_routes.py::ConversaResponse. */
@@ -410,4 +447,14 @@ export async function apagarConversa(id: string): Promise<void> {
  *  inteira (todas as versões), pro dropdown V1/V2/... ficar completo sem outra chamada. */
 export async function adicionarVersaoConversa(id: string, versao: NovaVersaoBody): Promise<ConversaApi> {
   return enviarJson<ConversaApi>(`/conversas/${encodeURIComponent(id)}/versoes`, "POST", versao);
+}
+
+/** PATCH /conversas/{id}/versoes/{numero} — grava só os campos dados naquela versão: o "É relevante"
+ *  e/ou as decisões que foram à resposta gerada. */
+export async function atualizarVersao(
+  conversaId: string,
+  numero: number,
+  campos: { relevantes_usuario?: string[]; resposta_ids?: string[] },
+): Promise<ConversaApi> {
+  return enviarJson<ConversaApi>(`/conversas/${encodeURIComponent(conversaId)}/versoes/${numero}`, "PATCH", campos);
 }
