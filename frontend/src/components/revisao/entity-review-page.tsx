@@ -16,6 +16,7 @@ import {
   PencilLine,
   Loader2,
 } from "lucide-react";
+import { PreviaBusca } from "@/components/revisao/previa-busca";
 import { FiltroRestrito } from "@/components/revisao/filtro-restrito";
 import { useSearchSession } from "@/lib/search-session";
 import { useConversations } from "@/lib/conversations";
@@ -468,6 +469,8 @@ export function EntityReviewPage() {
                 </div>
               </div>
             </div>
+
+            <PreviaBusca estrutura={data} />
           </div>
         </div>
 
