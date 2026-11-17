@@ -299,3 +299,16 @@ def test_resposta_do_cache_nao_conta_no_limite(usar):
     assert client.post("/resposta", json=CORPO).status_code == 200
     assert client.post("/resposta", json=CORPO).status_code == 200  # 2ª vem do cache: não gasta o limite
     assert uso.usos == 1
+
+
+def test_decisao_sem_ementa_nao_vai_a_resposta(usar):
+    class _ComVazia(_FakeRetriever):
+        def fetch(self, ids, completo=True):
+            docs = super().fetch(ids, completo)
+            docs[IDS[1]] = _doc("")
+            return docs
+
+    fake = usar(_openai(_gerada(resposta=_c("Sim.", [1]), fundamentos=[_fund("Cita a sem ementa.", [2])])))
+    app.dependency_overrides[get_doc_retriever] = lambda: _ComVazia()
+    assert [f["tipo"] for f in client.post("/resposta", json=CORPO).json()["frases"]] == ["resposta"]
+    assert "#2 (" not in fake.chamadas[0]["messages"][1]["content"]

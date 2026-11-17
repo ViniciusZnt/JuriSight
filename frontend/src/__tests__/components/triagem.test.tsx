@@ -8,7 +8,7 @@ type Chamada = {
   ids: string[];
   apenasCache: boolean;
   signal?: AbortSignal;
-  resolver: (r: Record<string, Avaliacao>) => void;
+  resolver: (r: Record<string, Avaliacao>, semEmenta?: string[]) => void;
   rejeitar: (e: unknown) => void;
 };
 let chamadas: Chamada[] = [];
@@ -17,7 +17,8 @@ beforeEach(() => {
   chamadas = [];
   (avaliarLote as jest.Mock).mockReset().mockImplementation(
     (_e: unknown, ids: string[], opcoes: { apenasCache?: boolean }, signal?: AbortSignal) =>
-      new Promise((resolver, rejeitar) => {
+      new Promise((resolve, rejeitar) => {
+        const resolver = (r: Record<string, Avaliacao>, semEmenta: string[] = []) => resolve({ avaliacoes: r, semEmenta });
         chamadas.push({ ids, apenasCache: !!opcoes.apenasCache, signal, resolver, rejeitar });
       }),
   );
@@ -236,4 +237,15 @@ test("avaliouAqui: verdadeiro quando a IA avaliou nesta tela, falso na leitura s
   await waitFor(() => expect(chamadas.some((ch) => ch.apenasCache)).toBe(true));
   act(() => reaberta.result.current.continuar());
   expect(reaberta.result.current.avaliouAqui).toBe(true);
+});
+
+test("sem ementa conta como processada: não fica faltando nem recebe nota", async () => {
+  const r = cards(10);
+  const { result } = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  await act(async () => chamadas[0].resolver(notas(chamadas[0].ids.slice(2)), chamadas[0].ids.slice(0, 2)));
+  expect(result.current.status).toBe("concluida");
+  expect(result.current.avaliadas).toBe(10);
+  expect([...result.current.semEmenta]).toEqual([r[0].id, r[1].id]);
+  expect(result.current.avaliacoes.has(r[0].id)).toBe(false);
 });

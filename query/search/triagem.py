@@ -89,6 +89,11 @@ def chave_da_triagem(estrutura: EstruturaArgumentativa, documento_id: str) -> st
     return hashlib.sha256(json.dumps(partes, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def tem_ementa(doc: DocumentoJuridico) -> bool:
+    """A triagem e a resposta só leem a ementa: decisão sem ela não é avaliada nem citada."""
+    return bool((doc.ementa or "").strip())
+
+
 def _trecho_triagem(ementa: str) -> str:
     """Até MAX_EMENTA_TRIAGEM; acima disso, começo (fatos) e fim (desfecho)."""
     e = ementa.strip()
@@ -106,6 +111,8 @@ def avaliar_lote(
     Returns: id -> Avaliacao, só dos itens válidos (número do lote, primeira ocorrência, nota 0-3).
     Raises: openai.OpenAIError (rede, timeout, status) — o endpoint vira 503.
     """
+    # Sem ementa não há o que ler: o modelo "avaliaria" só pelo cabeçalho (inventando a nota).
+    decisoes = {i: d for i, d in decisoes.items() if tem_ementa(d)}
     if not decisoes:
         return {}
     ids = list(decisoes)

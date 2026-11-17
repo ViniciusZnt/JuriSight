@@ -16,6 +16,8 @@ export type StatusTriagem = "avaliando" | "parada" | "concluida" | "indisponivel
 
 interface Estado {
   avaliacoes: Map<string, Avaliacao>;
+  /** Decisões sem ementa: a IA não as avalia; contam como processadas, sem nota. */
+  semEmenta: Set<string>;
   status: StatusTriagem;
   erro: string | null;
   /** A leitura só do cache (conversa reaberta) terminou: ao voltar à tela, não é refeita. */
@@ -53,9 +55,10 @@ export function useTriagem(
     const salvo = salvos.get(chave);
     if (salvo && TERMINAIS.includes(salvo.status)) return salvo;
     const avaliacoes = salvo?.avaliacoes ?? new Map<string, Avaliacao>();
-    const faltam = ids.some((i) => !avaliacoes.has(i));
+    const semEmenta = salvo?.semEmenta ?? new Set<string>();
+    const faltam = ids.some((i) => !avaliacoes.has(i) && !semEmenta.has(i));
     const status: StatusTriagem = !estrutura || !faltam ? "concluida" : opcoes.automatica ? "avaliando" : "ociosa";
-    return { avaliacoes, status, erro: null, cacheLido: salvo?.cacheLido, avaliou: !!salvo?.avaliou || status === "avaliando" };
+    return { avaliacoes, semEmenta, status, erro: null, cacheLido: salvo?.cacheLido, avaliou: !!salvo?.avaliou || status === "avaliando" };
   };
 
   const [estado, setEstado] = useState<Estado & { chave: string }>(() => ({ chave, ...inicial() }));
@@ -98,7 +101,7 @@ export function useTriagem(
       const fim = () => {
         if (!vivo() || fila.length > 0 || emVoo > 0) return;
         atualizar((e) => {
-          const faltam = ids.some((i) => !e.avaliacoes.has(i));
+          const faltam = ids.some((i) => !e.avaliacoes.has(i) && !e.semEmenta.has(i));
           return {
             ...e,
             status: !faltam ? "concluida" : modo === "cache" ? "ociosa" : "parada",
@@ -114,12 +117,16 @@ export function useTriagem(
           controles.current.add(controle);
           emVoo += 1;
           avaliarLote(estrutura, lote.ids, { apenasCache: modo === "cache" }, controle.signal)
-            .then((novas) => {
+            .then(({ avaliacoes: novas, semEmenta }) => {
               emVoo -= 1;
               controles.current.delete(controle);
               if (modo === "avaliar" && !controle.signal.aborted) atualizarUso();
               if (!vivo()) return;
-              atualizar((e) => ({ ...e, avaliacoes: new Map([...e.avaliacoes, ...Object.entries(novas)]) }));
+              atualizar((e) => ({
+                ...e,
+                avaliacoes: new Map([...e.avaliacoes, ...Object.entries(novas)]),
+                semEmenta: new Set([...e.semEmenta, ...semEmenta]),
+              }));
               disparar();
               fim();
             })
@@ -155,7 +162,7 @@ export function useTriagem(
   // Ao montar ou trocar de consulta: avalia (busca nova) ou só lê o cache (reaberta).
   useEffect(() => {
     const inicio = inicial();
-    const faltam = ids.filter((i) => !inicio.avaliacoes.has(i));
+    const faltam = ids.filter((i) => !inicio.avaliacoes.has(i) && !inicio.semEmenta.has(i));
     if (inicio.status === "avaliando") executar(faltam, "avaliar");
     else if (inicio.status === "ociosa" && !inicio.cacheLido) executar(faltam, "cache");
     return abortarTudo;
@@ -169,17 +176,19 @@ export function useTriagem(
   }, [abortarTudo, atualizar]);
 
   const continuar = useCallback(() => {
-    const faltam = ids.filter((i) => !atual.avaliacoes.has(i));
+    const faltam = ids.filter((i) => !atual.avaliacoes.has(i) && !atual.semEmenta.has(i));
     if (faltam.length === 0) return;
     atualizar((e) => ({ ...e, status: "avaliando", erro: null, avaliou: true }));
     executar(faltam, "avaliar");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chave, atual.avaliacoes, atualizar, executar]);
+  }, [chave, atual.avaliacoes, atual.semEmenta, atualizar, executar]);
 
   return {
     avaliacoes: atual.avaliacoes,
     status: atual.status,
-    avaliadas: ids.filter((i) => atual.avaliacoes.has(i)).length,
+    semEmenta: atual.semEmenta,
+    /** Processadas: avaliadas pela IA ou sem ementa (que a IA não avalia). */
+    avaliadas: ids.filter((i) => atual.avaliacoes.has(i) || atual.semEmenta.has(i)).length,
     total: ids.length,
     erro: atual.erro,
     /** true se a IA avaliou nesta tela; false numa conversa reaberta só com o cache. */

@@ -251,11 +251,12 @@ describe("gerarResposta", () => {
 });
 
 describe("avaliarLote", () => {
-  it("manda apenas_cache e devolve mapa por id", async () => {
-    mockFetchOnce(200, { avaliacoes: [{ id: "a", nota: 3, posicao: "deferiu", motivo: "m" }] });
+  it("manda apenas_cache e devolve mapa por id e os sem ementa", async () => {
+    mockFetchOnce(200, { avaliacoes: [{ id: "a", nota: 3, posicao: "deferiu", motivo: "m" }], sem_ementa: ["b"] });
     const controle = new AbortController();
     await expect(avaliarLote(estrutura, ["a", "b"], { apenasCache: true }, controle.signal)).resolves.toEqual({
-      a: { nota: 3, posicao: "deferiu", motivo: "m" },
+      avaliacoes: { a: { nota: 3, posicao: "deferiu", motivo: "m" } },
+      semEmenta: ["b"],
     });
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/triagem$/);
