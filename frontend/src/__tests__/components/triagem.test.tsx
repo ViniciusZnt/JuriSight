@@ -51,7 +51,7 @@ test("dispara 2 lotes por vez e o 3º só quando um termina", async () => {
   await waitFor(() => expect(chamadas).toHaveLength(2));
   expect(chamadas.map((c) => c.ids)).toEqual([r.slice(0, 10).map((d) => d.id), r.slice(10, 20).map((d) => d.id)]);
   expect(chamadas.every((c) => !c.apenasCache)).toBe(true);
-  await responder(chamadas[0]);
+  await responder(chamadas[0], notas(chamadas[0].ids, 2));
   expect(chamadas).toHaveLength(3);
   expect(chamadas[2].ids).toEqual(r.slice(20).map((d) => d.id));
 });
@@ -114,7 +114,7 @@ test("lote do meio falha duas vezes → segue com os outros e os ids dele ficam 
   const r = cards(30);
   const { result } = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
   await waitFor(() => expect(chamadas).toHaveLength(2));
-  await responder(chamadas[0]); // dispara o 3º lote
+  await responder(chamadas[0], notas(chamadas[0].ids, 2)); // dispara o 3º lote
   await falhar(chamadas[1], new ApiError("Erro 500.", 500));
   const nova = chamadas.find((c, i) => i > 1 && c.ids[0] === r[10].id)!;
   await falhar(nova, new ApiError("Erro 500.", 500));
@@ -248,4 +248,44 @@ test("sem ementa conta como processada: não fica faltando nem recebe nota", asy
   expect(result.current.avaliadas).toBe(10);
   expect([...result.current.semEmenta]).toEqual([r[0].id, r[1].id]);
   expect(result.current.avaliacoes.has(r[0].id)).toBe(false);
+});
+
+test("para sozinha ao achar 5 'Mesmo problema e fato': o lote em voo termina, os próximos não saem", async () => {
+  const r = cards(30);
+  const { result } = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
+  await waitFor(() => expect(chamadas).toHaveLength(2));
+  await responder(chamadas[0], { ...notas(chamadas[0].ids.slice(0, 5), 3), ...notas(chamadas[0].ids.slice(5), 1) });
+  expect(chamadas).toHaveLength(2);
+  expect(result.current.status).toBe("avaliando");
+  await responder(chamadas[1], notas(chamadas[1].ids, 0));
+  expect(result.current.status).toBe("parada");
+  expect(result.current.paradaAutomatica).toBe(true);
+  expect(result.current.avaliadas).toBe(20);
+  expect(chamadas).toHaveLength(2);
+});
+
+test("'Avaliar restantes' depois da parada automática não para sozinho", async () => {
+  const r = cards(30);
+  const { result } = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
+  await waitFor(() => expect(chamadas).toHaveLength(2));
+  await responder(chamadas[0]);
+  await responder(chamadas[1]);
+  expect(result.current.paradaAutomatica).toBe(true);
+  act(() => result.current.continuar());
+  expect(result.current.paradaAutomatica).toBe(false);
+  await waitFor(() => expect(chamadas).toHaveLength(3));
+  await responder(chamadas[2]);
+  expect(result.current.status).toBe("concluida");
+});
+
+test("com menos de 5 'Mesmo problema e fato' avalia tudo", async () => {
+  const r = cards(30);
+  const { result } = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
+  await waitFor(() => expect(chamadas).toHaveLength(2));
+  await responder(chamadas[0], { ...notas(chamadas[0].ids.slice(0, 4), 3), ...notas(chamadas[0].ids.slice(4), 2) });
+  expect(chamadas).toHaveLength(3);
+  await responder(chamadas[1], notas(chamadas[1].ids, 2));
+  await responder(chamadas[2], notas(chamadas[2].ids, 2));
+  expect(result.current.status).toBe("concluida");
+  expect(result.current.paradaAutomatica).toBe(false);
 });

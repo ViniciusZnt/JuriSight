@@ -1,20 +1,22 @@
 "use client";
 
 import { AlertTriangle, Sparkles } from "lucide-react";
-import type { StatusTriagem } from "@/components/resultados/triagem";
+import { PARAR_COM_MESMO_FATO, type StatusTriagem } from "@/components/resultados/triagem";
 
 interface Props {
   status: StatusTriagem;
   avaliadas: number;
   total: number;
   erro: string | null;
+  /** Parou sozinha ao achar decisões suficientes com o mesmo problema e fato. */
+  paradaAutomatica?: boolean;
   onParar: () => void;
   onContinuar: () => void;
 }
 
 /** Barra da triagem por IA acima da lista: progresso e "Parar e responder" enquanto avalia;
  *  "Avaliar N restantes" quando sobrou o que avaliar; aviso quando a IA não respondeu. */
-export function ProgressoTriagem({ status, avaliadas, total, erro, onParar, onContinuar }: Props) {
+export function ProgressoTriagem({ status, avaliadas, total, erro, paradaAutomatica, onParar, onContinuar }: Props) {
   const restantes = total - avaliadas;
   const caixa = "w-full max-w-[800px] mb-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3";
 
@@ -47,7 +49,11 @@ export function ProgressoTriagem({ status, avaliadas, total, erro, onParar, onCo
       <Sparkles className="w-4 h-4 text-[#1A3A5C] dark:text-[#8AB0DC] flex-shrink-0" strokeWidth={1.8} />
       <div className="flex-1 min-w-[180px]">
         <p className="text-[#1A3A5C] dark:text-[#8AB0DC]" style={{ fontSize: "13.8px", fontWeight: 600 }}>
-          {avaliando ? `Avaliando decisões com a IA… ${avaliadas} de ${total}` : `${restantes} ${restantes === 1 ? "decisão ainda não avaliada" : "decisões ainda não avaliadas"}`}
+          {avaliando
+            ? `Avaliando decisões com a IA… ${avaliadas} de ${total}`
+            : paradaAutomatica
+              ? `Parou ao encontrar ${PARAR_COM_MESMO_FATO} decisões com o mesmo problema e fato · ${restantes} não avaliadas`
+              : `${restantes} ${restantes === 1 ? "decisão ainda não avaliada" : "decisões ainda não avaliadas"}`}
         </p>
         {avaliando && (
           <div className="h-1 rounded-full bg-[#DCE6F3] dark:bg-[#26313F] mt-1.5 overflow-hidden" aria-hidden>

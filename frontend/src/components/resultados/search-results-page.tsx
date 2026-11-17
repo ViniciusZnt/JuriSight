@@ -621,6 +621,7 @@ export function SearchResultsPage() {
             avaliadas={triagem.avaliadas}
             total={triagem.total}
             erro={triagem.erro}
+            paradaAutomatica={triagem.paradaAutomatica}
             onParar={triagem.parar}
             onContinuar={triagem.continuar}
           />

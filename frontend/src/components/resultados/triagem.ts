@@ -8,6 +8,9 @@ import { useUsoDiario } from "@/lib/uso-diario";
  *  em voo, "Parar e responder" ainda economiza: os lotes que não saíram não são pagos. */
 export const TAMANHO_LOTE = 10;
 export const EM_VOO = 2;
+/** Na avaliação automática, achar esta quantidade de "Mesmo problema e fato" (nota 3) basta:
+ *  os lotes em voo terminam (já estão pagos) e os próximos não saem. */
+export const PARAR_COM_MESMO_FATO = 5;
 
 /** avaliando: lotes em voo · parada: o advogado parou, ou sobrou o que avaliar (lote que falhou,
  *  limite diário) · concluida: tudo avaliado · indisponivel: a IA não respondeu ao 1º lote ·
@@ -24,6 +27,8 @@ interface Estado {
   cacheLido?: boolean;
   /** A IA avaliou nesta tela (busca nova ou "Avaliar"): a resposta pode ser refeita com o que ela leu. */
   avaliou?: boolean;
+  /** Parou sozinha ao achar PARAR_COM_MESMO_FATO decisões de nota 3. */
+  paradaAutomatica?: boolean;
 }
 
 // Voltar da página da decisão não refaz (nem cobra) a avaliação: o estado fica por chave.
@@ -89,7 +94,7 @@ export function useTriagem(
   );
 
   const executar = useCallback(
-    (pendentes: string[], modo: "avaliar" | "cache") => {
+    (pendentes: string[], modo: "avaliar" | "cache", autoParar = false, mesmoFatoAntes = 0) => {
       if (!estrutura) return;
       abortarTudo();
       const minha = execucao.current;
@@ -97,6 +102,8 @@ export function useTriagem(
       const fila = lotes(pendentes).map((loteIds, indice) => ({ ids: loteIds, indice, tentativas: 0 }));
       const limite = modo === "cache" ? fila.length : EM_VOO;
       let emVoo = 0;
+      let mesmoFato = mesmoFatoAntes;
+      let paradaAutomatica = false;
 
       const fim = () => {
         if (!vivo() || fila.length > 0 || emVoo > 0) return;
@@ -105,6 +112,7 @@ export function useTriagem(
           return {
             ...e,
             status: !faltam ? "concluida" : modo === "cache" ? "ociosa" : "parada",
+            paradaAutomatica: paradaAutomatica && faltam,
             cacheLido: e.cacheLido || modo === "cache",
           };
         });
@@ -122,6 +130,11 @@ export function useTriagem(
               controles.current.delete(controle);
               if (modo === "avaliar" && !controle.signal.aborted) atualizarUso();
               if (!vivo()) return;
+              mesmoFato += Object.values(novas).filter((a) => a.nota === 3).length;
+              if (autoParar && mesmoFato >= PARAR_COM_MESMO_FATO && fila.length > 0) {
+                fila.length = 0; // os lotes em voo terminam; os próximos não saem
+                paradaAutomatica = true;
+              }
               atualizar((e) => ({
                 ...e,
                 avaliacoes: new Map([...e.avaliacoes, ...Object.entries(novas)]),
@@ -163,7 +176,8 @@ export function useTriagem(
   useEffect(() => {
     const inicio = inicial();
     const faltam = ids.filter((i) => !inicio.avaliacoes.has(i) && !inicio.semEmenta.has(i));
-    if (inicio.status === "avaliando") executar(faltam, "avaliar");
+    const mesmoFato = [...inicio.avaliacoes.values()].filter((a) => a.nota === 3).length;
+    if (inicio.status === "avaliando") executar(faltam, "avaliar", true, mesmoFato);
     else if (inicio.status === "ociosa" && !inicio.cacheLido) executar(faltam, "cache");
     return abortarTudo;
     // `chave` resume ids + estrutura
@@ -178,7 +192,7 @@ export function useTriagem(
   const continuar = useCallback(() => {
     const faltam = ids.filter((i) => !atual.avaliacoes.has(i) && !atual.semEmenta.has(i));
     if (faltam.length === 0) return;
-    atualizar((e) => ({ ...e, status: "avaliando", erro: null, avaliou: true }));
+    atualizar((e) => ({ ...e, status: "avaliando", erro: null, avaliou: true, paradaAutomatica: false }));
     executar(faltam, "avaliar");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave, atual.avaliacoes, atual.semEmenta, atualizar, executar]);
@@ -193,6 +207,8 @@ export function useTriagem(
     erro: atual.erro,
     /** true se a IA avaliou nesta tela; false numa conversa reaberta só com o cache. */
     avaliouAqui: !!atual.avaliou,
+    /** Parou sozinha ao achar PARAR_COM_MESMO_FATO "Mesmo problema e fato". */
+    paradaAutomatica: !!atual.paradaAutomatica,
     parar,
     continuar,
   };
