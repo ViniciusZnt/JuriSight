@@ -67,7 +67,7 @@ Cinco situações que a spec implica e que podem passar despercebidas. Cada uma 
 
 ---
 
-### Tarefa 1: Busca sem reranker (e remoção do reranker do projeto)
+### Task 1: Busca sem reranker (e remoção do reranker do projeto)
 
 **Arquivos:**
 - Modificar: `query/search/pipeline.py`, `query/api/app.py`, `avaliacao/sistemas.py`, `avaliacao/benchmark.py`, `tests/fakes.py`, `tests/test_pipeline.py`, `tests/test_api.py`, `tests/test_avaliacao_sistemas.py`, `tests/test_avaliacao_benchmark.py`, `pyproject.toml`, `uv.lock`, `docs/deploy/2026-11-01-deploy-vps.md`
@@ -133,7 +133,7 @@ Apague `test_buscar_mantem_ordem_do_reranker_e_corta_em_20`, `test_buscar_sem_re
 
 ---
 
-### Tarefa 2: Limite diário por ação e `GET /uso`
+### Task 2: Limite diário por ação e `GET /uso`
 
 **Arquivos:**
 - Modificar: `query/api/uso_diario.py`, `query/api/app.py`, `.env.example`
@@ -182,7 +182,7 @@ Integração: `test_do_dia_conta_so_hoje_e_so_a_conta` (consumir 2× `query` par
 
 ---
 
-### Tarefa 3: Núcleo da triagem (sem HTTP)
+### Task 3: Núcleo da triagem (sem HTTP)
 
 **Arquivos:**
 - Criar: `query/search/triagem.py`, `tests/test_triagem.py`
@@ -246,7 +246,7 @@ def test_chave_muda_com_tese_doc_e_modelo_mas_nao_com_filtros(monkeypatch):
 
 ---
 
-### Tarefa 4: Cache da triagem e `POST /triagem`
+### Task 4: Cache da triagem e `POST /triagem`
 
 **Arquivos:**
 - Criar: `query/search/triagem_cache.py`, `tests/test_triagem_api.py`
@@ -296,7 +296,7 @@ Para registrar a ação, o `_FakeUso` deste arquivo guarda `self.acoes.append(ac
 
 ---
 
-### Tarefa 5: Resposta só com as relacionadas, posição vinda da triagem
+### Task 5: Resposta só com as relacionadas, posição vinda da triagem
 
 **Arquivos:**
 - Modificar: `query/search/resposta.py`, `query/api/app.py` (rota `/resposta`), `tests/test_resposta.py`
@@ -334,7 +334,7 @@ def test_timeout_40(usar)                      # fake.chamadas[0]["timeout"] == 
 
 ---
 
-### Tarefa 6: Voto "É relevante" salvo na versão da conversa
+### Task 6: Voto "É relevante" salvo na versão da conversa
 
 **Arquivos:**
 - Modificar: `conversations/store.py`, `query/api/conversa_routes.py`, `tests/test_conversa_routes.py`, `tests/test_conversa_store_integration.py`
@@ -360,7 +360,7 @@ def test_timeout_40(usar)                      # fake.chamadas[0]["timeout"] == 
 
 ---
 
-### Tarefa 7: Benchmark S7 e pool de 50
+### Task 7: Benchmark S7 e pool de 50
 
 **Arquivos:**
 - Modificar: `avaliacao/sistemas.py`, `avaliacao/benchmark.py`, `avaliacao/contexto.py`, `avaliacao/pooling.py`, `docs/avaliacao/README.md`, `tests/test_avaliacao_sistemas.py`, `tests/test_avaliacao_pooling.py`
@@ -396,7 +396,7 @@ def test_pool_usa_50_do_hibrido()  # em tests/test_avaliacao_pooling.py
 
 ---
 
-### Tarefa 8: Front — API, versão e sessão
+### Task 8: Front — API, versão e sessão
 
 **Arquivos:**
 - Modificar: `frontend/src/lib/api.ts`, `frontend/src/lib/conversations.tsx`, `frontend/src/lib/search-session.tsx`, `frontend/src/components/revisao/entity-review-page.tsx`, `frontend/src/__tests__/lib/api.test.ts`, `frontend/src/__tests__/lib/conversations.test.ts`
@@ -424,7 +424,7 @@ def test_pool_usa_50_do_hibrido()  # em tests/test_avaliacao_pooling.py
 
 ---
 
-### Tarefa 9: Front — hook `useTriagem` (lotes, parar, falhas)
+### Task 9: Front — hook `useTriagem` (lotes, parar, falhas)
 
 **Arquivos:**
 - Criar: `frontend/src/components/resultados/triagem.ts`, `frontend/src/__tests__/components/triagem.test.tsx`
@@ -486,7 +486,7 @@ test("trocar a chave aborta os lotes da anterior")
 
 ---
 
-### Tarefa 10: Front — organizar a lista em seções
+### Task 10: Front — organizar a lista em seções
 
 **Arquivos:**
 - Criar: `frontend/src/lib/triagem-view.ts`, `frontend/src/__tests__/lib/triagem-view.test.ts`
@@ -524,7 +524,7 @@ test("voto sobrevive a filtro que esconde o card")  // organizar com resultados 
 
 ---
 
-### Tarefa 11: Front — tela de resultados
+### Task 11: Front — tela de resultados
 
 **Arquivos:**
 - Modificar: `frontend/src/components/resultados/search-results-page.tsx`, `resposta-gerada.tsx`, `parecer-pesquisa.tsx`, `resultado-card.tsx`, `resumo-decisoes.tsx` (se ele usar a posição), `frontend/src/__tests__/components/parecer-pesquisa.test.tsx`
@@ -590,7 +590,7 @@ Ajuste `parecer-pesquisa.test.tsx` para o estado sem `posicoes`.
 
 ---
 
-### Tarefa 12: Front — indicador "Uso de hoje" na sidebar
+### Task 12: Front — indicador "Uso de hoje" na sidebar
 
 **Arquivos:**
 - Criar: `frontend/src/lib/uso-diario.tsx`, `frontend/src/components/uso-diario.tsx`, `frontend/src/__tests__/components/uso-diario.test.tsx`
