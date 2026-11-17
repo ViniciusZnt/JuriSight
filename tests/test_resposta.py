@@ -10,11 +10,14 @@ from fastapi.testclient import TestClient
 
 import psycopg
 
-from query.api.app import app, get_current_user, get_doc_retriever, get_openai, get_resposta_cache, get_uso_diario
+from query.api.app import (
+    app, get_current_user, get_doc_retriever, get_openai, get_resposta_cache, get_triagem_cache, get_uso_diario,
+)
 from query.api.uso_diario import LimiteDiarioExcedido
 from query.api.auth_routes import get_usuario_store
 from query.enrichment.schema import EstruturaArgumentativa
-from query.search.resposta import Citada, Desfecho, Fundamento, RespostaGerada, chave_da_resposta
+from query.search.resposta import Citada, Fundamento, RespostaGerada, chave_da_resposta
+from query.search.triagem import chave_da_triagem
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 from tests.fakes import FakeOpenAI, usuario_fake
 
@@ -39,7 +42,7 @@ class _FakeRetriever:
 def _gerada(**campos) -> RespostaGerada:
     """Resposta do modelo com as partes vazias, exceto as dadas."""
     vazia = Citada(citacoes=[], texto="")
-    base = dict(desfechos=[], resposta=vazia, fundamentos=[], base_legal=vazia, prova=vazia,
+    base = dict(resposta=vazia, fundamentos=[], base_legal=vazia, prova=vazia,
                 negaram_por_outros_fatos=vazia, negaram_pelo_direito=vazia)
     return RespostaGerada(**{**base, **campos})
 
@@ -52,8 +55,16 @@ def _fund(texto: str, citacoes: list[int], precedente: str = "") -> Fundamento:
     return Fundamento(quem_decidiu="TRT2", precedente_de_outro_ramo=precedente, citacoes=citacoes, texto=texto)
 
 
-def _d(numero: int, pedido: str, fatos_da_premissa: bool = True) -> Desfecho:
-    return Desfecho(numero=numero, motivo="m", pedido_da_tese=pedido, fatos_da_premissa=fatos_da_premissa)
+class _FakeTriagem:
+    """Cache da triagem com a posição de cada decisão (#n -> posição)."""
+
+    def __init__(self, posicoes: dict[int, str]):
+        tese = EstruturaArgumentativa(**CORPO["estrutura"])
+        self._salvas = {chave_da_triagem(tese, IDS[n - 1]): {"nota": 3, "posicao": p, "motivo": "m"}
+                        for n, p in posicoes.items()}
+
+    def ler_varios(self, chaves):
+        return {c: self._salvas[c] for c in chaves if c in self._salvas}
 
 
 def _openai(gerada: RespostaGerada | None = None, erro: Exception | None = None) -> FakeOpenAI:
@@ -62,7 +73,8 @@ def _openai(gerada: RespostaGerada | None = None, erro: Exception | None = None)
 
 @pytest.fixture
 def usar():
-    def _usar(fake):
+    def _usar(fake, posicoes: dict[int, str] | None = None):
+        app.dependency_overrides[get_triagem_cache] = lambda: _FakeTriagem(posicoes or {})
         app.dependency_overrides[get_current_user] = lambda: _USUARIO
         app.dependency_overrides[get_doc_retriever] = lambda: _FakeRetriever()
         app.dependency_overrides[get_openai] = lambda: fake
@@ -78,14 +90,13 @@ def test_partes_viram_frases_na_ordem_e_ementas_vem_do_banco_numeradas(usar, mon
     monkeypatch.delenv("OPENAI_GEN_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_GEN_TEMPERATURE", raising=False)
     fake = usar(_openai(_gerada(
-        desfechos=[_d(1, "deferiu"), _d(2, "negou"), _d(3, "negou", fatos_da_premissa=False)],
         resposta=_c("Sim, quando a perícia confirma.", [1, 3, 1]),
         fundamentos=[_fund("A 11ª Turma do TRT2 entende assim.", [1])],
         base_legal=_c("CLT, art. 189: insalubre dá adicional.", [1, 1]),
         prova=_c("Para o pedido, é preciso provar: perícia.", [1]),
         negaram_por_outros_fatos=_c("As que negaram partiram de EPI eficaz.", [3]),
         negaram_pelo_direito=_c("As decisões contrárias negaram porque…", [2]),
-    )))
+    )), posicoes={1: "deferiu", 2: "negou", 3: "fato_diferente"})
     resp = client.post("/resposta", json=CORPO)
     assert resp.status_code == 200
     assert resp.json() == {
@@ -97,16 +108,13 @@ def test_partes_viram_frases_na_ordem_e_ementas_vem_do_banco_numeradas(usar, mon
             {"tipo": "divergencia", "texto": "As decisões contrárias negaram porque…", "citacoes": [2]},
             {"tipo": "divergencia", "texto": "As que negaram partiram de EPI eficaz.", "citacoes": [3]},
         ],
-        "posicoes": [
-            {"numero": 1, "posicao": "deferiu"}, {"numero": 2, "posicao": "negou"},
-            {"numero": 3, "posicao": "fato_diferente"},
-        ],
     }
     kw = fake.chamadas[0]
-    assert kw["model"] == "gpt-4o-mini" and kw["temperature"] == 0 and kw["timeout"] == 30
+    assert kw["model"] == "gpt-4o-mini" and kw["temperature"] == 0 and kw["timeout"] == 40
     assert kw["response_format"] is RespostaGerada
     usuario = kw["messages"][1]["content"]
-    assert "#1 (RORSum, TRT2, 11ª Turma)\nEMENTA 1" in usuario and "#3 (RORSum" in usuario
+    assert "#1 (RORSum, TRT2, 11ª Turma · deferiu)\nEMENTA 1" in usuario
+    assert "#3 (RORSum, TRT2, 11ª Turma · fato_diferente)" in usuario
     assert "ruído acima da NR-15" in usuario
 
 
@@ -117,17 +125,16 @@ def test_frase_sem_citacao_ou_indice_invalido_some(usar):
         prova=_c("Prova sem citação.", []),
     )))
     assert client.post("/resposta", json=CORPO).json() == {
-        "frases": [{"tipo": "fundamento", "texto": "Válida, TRT2.", "citacoes": [2]}], "posicoes": [],
+        "frases": [{"tipo": "fundamento", "texto": "Válida, TRT2.", "citacoes": [2]}],
     }
 
 
-def test_divergencia_so_cita_decisao_com_o_desfecho_certo(usar):
+def test_divergencia_so_cita_decisao_com_a_posicao_da_triagem(usar):
     """Quem negou por fato diferente não entra como "contrária", e vice-versa; sem citação certa, a frase sai."""
     usar(_openai(_gerada(
-        desfechos=[_d(1, "deferiu"), _d(2, "negou", fatos_da_premissa=False), _d(3, "negou")],
         negaram_pelo_direito=_c("As decisões contrárias negaram porque EPI eficaz.", [2]),
         negaram_por_outros_fatos=_c("As que negaram partiram de EPI eficaz.", [2, 3, 1]),
-    )))
+    )), posicoes={1: "deferiu", 2: "fato_diferente", 3: "negou"})
     assert client.post("/resposta", json=CORPO).json()["frases"] == [
         {"tipo": "divergencia", "texto": "As que negaram partiram de EPI eficaz.", "citacoes": [2]},
     ]
@@ -151,18 +158,29 @@ def test_fundamento_enunciado_sem_nomear_o_tribunal_fica(usar):
     ]
 
 
-def test_posicoes_validas_vao_ao_cliente_sem_o_motivo(usar):
-    usar(_openai(_gerada(desfechos=[_d(2, "negou", fatos_da_premissa=False), _d(1, "deferiu"),
-                                        _d(1, "negou"), _d(9, "negou")])))
-    assert client.post("/resposta", json=CORPO).json()["posicoes"] == [
-        {"numero": 1, "posicao": "deferiu"}, {"numero": 2, "posicao": "fato_diferente"},
-    ]
+def test_id_sem_triagem_vale_outro_e_nao_entra_em_divergencia(usar):
+    fake = usar(_openai(_gerada(
+        resposta=_c("Sim.", [1]),
+        negaram_pelo_direito=_c("As decisões contrárias negaram porque…", [2]),
+    )), posicoes={1: "deferiu"})
+    assert [f["tipo"] for f in client.post("/resposta", json=CORPO).json()["frases"]] == ["resposta"]
+    assert "#2 (RORSum, TRT2, 11ª Turma · outro)" in fake.chamadas[0]["messages"][1]["content"]
+
+
+def test_cache_da_triagem_fora_do_ar_vale_outro(usar):
+    class _Fora:
+        def ler_varios(self, chaves):
+            raise psycopg.OperationalError("banco fora")
+
+    usar(_openai(_gerada(resposta=_c("Sim.", [1]))))
+    app.dependency_overrides[get_triagem_cache] = lambda: _Fora()
+    assert client.post("/resposta", json=CORPO).json()["frases"][0]["citacoes"] == [1]
 
 
 def test_nenhuma_frase_valida_devolve_lista_vazia(usar):
     usar(_openai(_gerada(resposta=_c("Sem citação.", []))))
     resp = client.post("/resposta", json=CORPO)
-    assert resp.status_code == 200 and resp.json() == {"frases": [], "posicoes": []}
+    assert resp.status_code == 200 and resp.json() == {"frases": []}
 
 
 def test_erro_da_openai_vira_503(usar):
@@ -173,9 +191,9 @@ def test_erro_da_openai_vira_503(usar):
     assert "indisponível" in resp.json()["detail"]
 
 
-def test_mais_de_20_ids_422(usar):
+def test_mais_de_25_ids_422(usar):
     usar(_openai())
-    corpo = {**CORPO, "ids": [str(uuid.uuid4()) for _ in range(21)]}
+    corpo = {**CORPO, "ids": [str(uuid.uuid4()) for _ in range(26)]}
     assert client.post("/resposta", json=corpo).status_code == 422
 
 
@@ -209,7 +227,7 @@ class _FakeCache:
         self.salvas[chave] = resposta
 
 
-_UMA_FRASE = dict(desfechos=[_d(1, "deferiu")], resposta=_c("Sim, quando a perícia confirma.", [1]))
+_UMA_FRASE = dict(resposta=_c("Sim, quando a perícia confirma.", [1]))
 
 
 def test_resposta_gerada_vai_para_o_cache_e_a_segunda_vez_nao_chama_a_openai(usar):

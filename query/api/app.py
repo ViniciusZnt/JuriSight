@@ -506,7 +506,7 @@ async def triagem(
 
 class RespostaRequest(BaseModel):
     estrutura: EstruturaArgumentativa
-    ids: list[uuid.UUID] = Field(max_length=20)  # na ordem dos cards: ids[0] é o #1
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=25)  # as relacionadas, na ordem dos cards: ids[0] é o #1
 
 
 @app.post("/resposta", response_model=Resposta)
@@ -517,8 +517,10 @@ async def resposta(
     retriever: DocRetriever = Depends(get_doc_retriever),
     client: openai.OpenAI = Depends(get_openai),
     cache: RespostaCache | None = Depends(get_resposta_cache),
+    triagem: TriagemCache | None = Depends(get_triagem_cache),
 ) -> Resposta:
-    """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`.
+    """As ementas vêm do banco (nunca do cliente); o número de cada uma é a posição em `ids`, e a
+    posição de cada decisão em relação à tese vem do cache da triagem (também não do cliente).
     Resposta já gerada para a mesma tese, lista, modelo e prompt vem do cache, sem chamar a OpenAI;
     falha no cache não derruba a resposta. Só a geração conta no limite diário."""
     ids = [str(i) for i in body.ids]
@@ -533,8 +535,10 @@ async def resposta(
     await consumir_limite(uso, usuario, "resposta")  # só conta quando vai gerar (cache não gasta)
     docs = await run_in_threadpool(retriever.fetch, ids)
     decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs}
+    avaliacoes = await run_in_threadpool(avaliacoes_do_cache, triagem, body.estrutura, ids)
+    posicoes = {n: avaliacoes[i].posicao for n, i in enumerate(ids, start=1) if i in avaliacoes}
     try:
-        gerada = await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, client)
+        gerada = await run_in_threadpool(gerar_resposta, body.estrutura, decisoes, posicoes, client)
     except openai.OpenAIError as exc:
         logger.warning("Resposta gerada indisponível: %s", exc)
         raise HTTPException(status_code=503, detail="A resposta gerada está indisponível agora. Os resultados continuam abaixo.") from exc

@@ -1,7 +1,8 @@
 """
 Resposta gerada e ancorada (POST /resposta): poucas frases que respondem à tese,
-cada uma citando as decisões (#1..#N, a numeração dos cards) que a sustentam, e a
-posição de cada decisão em relação à tese (deferiu / negou / fato diferente / outro).
+cada uma citando as decisões (#1..#N, a numeração dos cards) que a sustentam. Só vão ao
+modelo as decisões que a triagem (query/search/triagem.py) avaliou como relacionadas, cada
+uma com a posição que a triagem leu (deferiu / negou / fato diferente / outro).
 
 Ao modelo vão SÓ a EstruturaArgumentativa (que já vai à OpenAI no embedding) e as
 ementas públicas dos resultados — nunca o PDF nem texto do caso. Frase sem citação ou com
@@ -23,19 +24,15 @@ from query.enrichment.schema import EstruturaArgumentativa
 from scraper.schema import DocumentoJuridico
 
 MODELO_PADRAO = "gpt-4o-mini"
-TIMEOUT_S = 30
+TIMEOUT_S = 40  # até 25 ementas
 MAX_EMENTA = 2000  # caracteres por ementa no prompt (começo + fim, onde fica o desfecho)
 
 _PROMPT = (
     "Você é um advogado trabalhista brasileiro. Responda à tese do usuário com base nas ementas "
-    "numeradas (#1, #2…); o cabeçalho de cada uma traz classe, tribunal, turma e data. Escreva em "
-    "português, curto e técnico. Preencha o schema na ordem:\n"
-    "- `desfechos`: um por decisão. `motivo`: o fato decisivo e a razão, em até 12 palavras. "
-    "`pedido_da_tese`: \"deferiu\" ou \"negou\" ao trabalhador o pedido da tese, lendo o desfecho no "
-    "fim da ementa; \"outro\" se não decidiu esse pedido. `fatos_da_premissa`: false se os fatos que "
-    "a decisão deu por provados contradizem a premissa da tese (ex.: a premissa diz proteção "
-    "ineficaz e a decisão a deu por eficaz; a premissa diz acima do limite e a decisão achou abaixo; "
-    "outro agente); true se são os mesmos fatos.\n"
+    "numeradas (#1, #2…); o cabeçalho de cada uma traz classe, tribunal, turma, data e, depois do "
+    "\"·\", a posição da decisão em relação ao pedido da tese: deferiu; negou (pelo direito, com os "
+    "mesmos fatos); fato_diferente (negou partindo de fatos que contradizem a premissa); outro. "
+    "Escreva em português, curto e técnico. Preencha o schema na ordem:\n"
     "- `resposta`: começa por \"Sim.\", \"Não.\" ou \"Depende.\" e segue com UMA frase completa, "
     "condicionada à premissa, que um advogado possa citar (\"Sim. Há horas extras a pagar quando a "
     "empresa não comprova o controle da jornada.\").\n"
@@ -58,11 +55,11 @@ _PROMPT = (
     "as citam. Nada de norma que não esteja nas ementas; texto vazio se nenhuma cita.\n"
     "- `prova`: UMA frase \"Para o pedido, é preciso provar: …\" com o que as decisões exigiram para "
     "deferir, os itens separados por \";\".\n"
-    "- `negaram_por_outros_fatos`: UMA frase só com as que negaram tendo `fatos_da_premissa` false: "
+    "- `negaram_por_outros_fatos`: UMA frase só com as de posição fato_diferente: "
     "\"As que negaram partiram de <o fato delas>, o que não contraria a premissa\", dizendo também se "
     "recusam o precedente ou a analogia que as favoráveis usam; texto vazio se não há. Nunca as chame "
     "de contrárias.\n"
-    "- `negaram_pelo_direito`: UMA frase só com as que negaram tendo `fatos_da_premissa` true, com "
+    "- `negaram_pelo_direito`: UMA frase só com as de posição negou, com "
     "o motivo jurídico delas (\"As decisões contrárias negaram porque …\"); texto vazio se não há.\n"
     "Sem contagem; não julgue quem está certo.\n"
     "Cada frase cita em `citacoes` os números (no máximo 4, os mais claros) das "
@@ -80,25 +77,11 @@ class Frase(BaseModel):
     citacoes: list[int]
 
 
-class PosicaoDecisao(BaseModel):
-    """Posição da decisão #numero em relação à tese — o painel "Decisões que sustentam" usa esta."""
-    numero: int
-    posicao: PosicaoTese
-
-
 class Resposta(BaseModel):
     frases: list[Frase] = []
-    posicoes: list[PosicaoDecisao] = []
 
 
 # --- Schema pedido ao modelo: um campo por parte, para nenhuma faltar nem trocar de lugar ---------
-
-class Desfecho(BaseModel):
-    numero: int
-    motivo: str  # antes da classificação: o modelo lê o fato decisivo e só então classifica
-    pedido_da_tese: Literal["deferiu", "negou", "outro"]
-    fatos_da_premissa: bool  # negou com fatos que contradizem a premissa = "fato_diferente"
-
 
 class Citada(BaseModel):
     citacoes: list[int]
@@ -113,12 +96,11 @@ class Fundamento(BaseModel):
 
 
 class RespostaGerada(BaseModel):
-    desfechos: list[Desfecho]
     resposta: Citada
     fundamentos: list[Fundamento]
     base_legal: Citada
     prova: Citada
-    negaram_por_outros_fatos: Citada  # só "fato_diferente"; o servidor confere com os desfechos
+    negaram_por_outros_fatos: Citada  # só "fato_diferente"; o servidor confere com as posições
     negaram_pelo_direito: Citada  # só "negou"
 
 
@@ -149,9 +131,6 @@ def posicao_de(pedido_da_tese: str, fatos_da_premissa: bool) -> PosicaoTese:
     return "fato_diferente" if pedido_da_tese == "negou" and not fatos_da_premissa else pedido_da_tese
 
 
-def _posicao(d: Desfecho) -> PosicaoTese:
-    return posicao_de(d.pedido_da_tese, d.fatos_da_premissa)
-
 
 def chave_da_resposta(estrutura: EstruturaArgumentativa, ids: list[str]) -> str:
     """Chave do cache (query/search/resposta_cache.py): muda com o modelo, a temperatura, o prompt,
@@ -169,20 +148,22 @@ def chave_da_resposta(estrutura: EstruturaArgumentativa, ids: list[str]) -> str:
 def gerar_resposta(
     estrutura: EstruturaArgumentativa,
     decisoes: dict[int, DocumentoJuridico],
+    posicoes: dict[int, PosicaoTese],
     client: OpenAI,
 ) -> Resposta:
     """Pede a resposta ao modelo e devolve só o que foi validado aqui.
 
-    Input:  estrutura — a tese revisada; decisoes — número do card (#n) -> documento.
+    Input:  estrutura — a tese revisada; decisoes — número do card (#n) -> documento;
+            posicoes — #n -> posição lida pela triagem (ausente = "outro").
     Returns: frases na ordem resposta, fundamentos, base legal, prova, divergência, cada uma com
-             citações que são todas números de `decisoes` (sem repetição), e a posição de cada
-             decisão em relação à tese.
+             citações que são todas números de `decisoes` (sem repetição).
     Raises: openai.OpenAIError (rede, timeout, status) — o endpoint vira 503.
     """
     if not decisoes:
         return Resposta()
+    posicoes = {n: posicoes.get(n, "outro") for n in decisoes}
     ementas = "\n\n".join(
-        f"{_cabecalho(n, d)}\n{_trecho(d.ementa)}" for n, d in sorted(decisoes.items())
+        f"{_cabecalho(n, d, posicoes[n])}\n{_trecho(d.ementa)}" for n, d in sorted(decisoes.items())
     )
     tese = estrutura.model_dump_json(exclude_defaults=True)
     resposta = client.chat.completions.parse(
@@ -198,9 +179,8 @@ def gerar_resposta(
     g = resposta.choices[0].message.parsed
     if g is None:  # recusa do modelo
         return Resposta()
-    posicoes = {d.numero: _posicao(d) for d in reversed(g.desfechos) if d.numero in decisoes}
     # A divergência só cita quem negou pelo direito; a frase de "outros fatos", só quem negou por fato
-    # diferente — citação que não bate com o desfecho sai, para a resposta não chamar de contrária
+    # diferente — citação que não bate com a posição sai, para a resposta não chamar de contrária
     # uma decisão que só tinha outros fatos.
     partes: list[tuple[TipoFrase, Citada | Fundamento, str | None]] = [
         ("resposta", g.resposta, None), *(("fundamento", f, None) for f in g.fundamentos),
@@ -212,7 +192,4 @@ def gerar_resposta(
         citacoes = [c for c in dict.fromkeys(f.citacoes) if exigida is None or posicoes.get(c) == exigida]
         if f.texto.strip() and citacoes and all(c in decisoes for c in citacoes) and _sem_erro_de_precedente(f):
             frases.append(Frase(tipo=tipo, texto=f.texto.strip(), citacoes=citacoes))
-    return Resposta(
-        frases=frases,
-        posicoes=[PosicaoDecisao(numero=n, posicao=p) for n, p in sorted(posicoes.items())],
-    )
+    return Resposta(frases=frases)
