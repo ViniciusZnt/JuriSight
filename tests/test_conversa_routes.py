@@ -75,6 +75,16 @@ class _FakeConversaStore:
         self._por_id[conversa_id] = novo
         return novo
 
+    def set_relevantes(self, conversa_id, usuario_id, numero, ids) -> Conversa:
+        c = self._get_or_raise(conversa_id, usuario_id)
+        if not 1 <= numero <= len(c.versoes):
+            raise ConversaNaoEncontradaError(conversa_id)
+        versoes = [dict(v) for v in c.versoes]
+        versoes[numero - 1]["relevantes_usuario"] = ids
+        novo = replace(c, versoes=versoes)
+        self._por_id[conversa_id] = novo
+        return novo
+
     def delete(self, conversa_id, usuario_id) -> None:
         self._get_or_raise(conversa_id, usuario_id)
         del self._por_id[conversa_id]
@@ -197,3 +207,50 @@ def test_id_malformado_404(client):
     resp = client.patch("/conversas/nao-eh-uuid", json={"titulo": "x"})
     assert resp.status_code == 404
     assert resp.json() == {"detail": "Conversa não encontrada."}
+
+
+# --------------------------------------------------------------------------- #
+# PATCH /conversas/{id}/versoes/{numero} — voto "É relevante"                  #
+# --------------------------------------------------------------------------- #
+
+def _com_versoes(client, n=2) -> str:
+    criada = client.post("/conversas", json={"titulo": "P"}).json()
+    for i in range(n):
+        client.post(f"/conversas/{criada['id']}/versoes",
+                    json={"estrutura": _estrutura_dict(f"v{i + 1}"), "has_file": False, "resultados": [_resultado_dict()]})
+    return criada["id"]
+
+
+def test_patch_versao_grava_relevantes_e_devolve_conversa(client):
+    cid = _com_versoes(client)
+    ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+    resp = client.patch(f"/conversas/{cid}/versoes/2", json={"relevantes_usuario": ids})
+    assert resp.status_code == 200
+    versoes = resp.json()["versoes"]
+    assert versoes[1]["relevantes_usuario"] == ids
+    assert versoes[0]["relevantes_usuario"] == []
+    assert versoes[1]["estrutura"]["tese_central"] == "v2"
+
+
+def test_versao_antiga_sem_campo_vem_com_lista_vazia(client):
+    cid = _com_versoes(client, 1)
+    assert client.get("/conversas").json()[0]["versoes"][0]["relevantes_usuario"] == []
+    assert cid
+
+
+def test_patch_versao_inexistente_404(client):
+    cid = _com_versoes(client, 1)
+    assert client.patch(f"/conversas/{cid}/versoes/3", json={"relevantes_usuario": []}).status_code == 404
+
+
+def test_patch_versao_de_outro_usuario_404(client):
+    cid = _com_versoes(client, 1)
+    app.dependency_overrides[get_current_user] = lambda: _USUARIO_B
+    resp = TestClient(app).patch(f"/conversas/{cid}/versoes/1", json={"relevantes_usuario": []})
+    assert resp.status_code == 404
+
+
+def test_patch_mais_de_50_ids_422(client):
+    cid = _com_versoes(client, 1)
+    ids = [str(uuid.uuid4()) for _ in range(51)]
+    assert client.patch(f"/conversas/{cid}/versoes/1", json={"relevantes_usuario": ids}).status_code == 422

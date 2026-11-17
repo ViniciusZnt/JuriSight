@@ -82,6 +82,16 @@ WHERE id = %s AND usuario_id = %s
 RETURNING {_SELECT_COLUNAS}
 """
 
+# Grava as decisões que o advogado marcou como relevantes ("É relevante") numa versão, sem tocar
+# nos outros campos dela. `numero` é 1-based; o elemento do array é numero - 1.
+_SET_RELEVANTES = f"""
+UPDATE public.conversas SET
+    versoes = jsonb_set(versoes, ARRAY[(%s - 1)::text, 'relevantes_usuario'], %s::jsonb),
+    atualizado_em = NOW()
+WHERE id = %s AND usuario_id = %s AND %s BETWEEN 1 AND jsonb_array_length(versoes)
+RETURNING {_SELECT_COLUNAS}
+"""
+
 _DELETE = """
 DELETE FROM public.conversas WHERE id = %s AND usuario_id = %s
 """
@@ -161,6 +171,18 @@ class ConversaStore:
                     usuario_id,
                 ),
             )
+            row = cur.fetchone()
+        if row is None:
+            raise ConversaNaoEncontradaError(conversa_id)
+        return _row_para_conversa(row)
+
+    def set_relevantes(
+        self, conversa_id: uuid.UUID, usuario_id: uuid.UUID, numero: int, ids: list[str]
+    ) -> Conversa:
+        """Substitui `relevantes_usuario` da versão `numero`. Versão inexistente ou conversa de
+        outro usuário levanta ConversaNaoEncontradaError (indistinguíveis, como no resto)."""
+        with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(_SET_RELEVANTES, (numero, Json(ids), conversa_id, usuario_id, numero))
             row = cur.fetchone()
         if row is None:
             raise ConversaNaoEncontradaError(conversa_id)

@@ -50,6 +50,7 @@ class VersaoResponse(BaseModel):
     aviso: str | None
     resultados: list[ResultCard] | None
     criado_em: str
+    relevantes_usuario: list[str] = []  # "É relevante" (versões antigas não têm o campo)
 
 
 class ConversaResponse(BaseModel):
@@ -152,6 +153,24 @@ def adicionar_versao(
         resultados=[r.model_dump(mode="json") for r in body.resultados] if body.resultados is not None else None,
     )
     return ConversaResponse.de_conversa(conversa)
+
+
+class RelevantesRequest(BaseModel):
+    relevantes_usuario: list[uuid.UUID] = Field(max_length=50)
+
+
+@router.patch("/{conversa_id}/versoes/{numero}", response_model=ConversaResponse)
+def marcar_relevantes(
+    conversa_id: str,
+    numero: int,
+    body: RelevantesRequest,
+    usuario: Usuario = Depends(get_current_user),
+    store: ConversaStore = Depends(get_conversa_store),
+) -> ConversaResponse:
+    """Grava as decisões que o advogado marcou como relevantes contra a triagem por IA, só
+    naquela versão (os outros campos dela não mudam)."""
+    ids = [str(i) for i in body.relevantes_usuario]
+    return ConversaResponse.de_conversa(store.set_relevantes(_parse_id(conversa_id), usuario.id, numero, ids))
 
 
 @router.delete("/{conversa_id}", status_code=status.HTTP_204_NO_CONTENT)
