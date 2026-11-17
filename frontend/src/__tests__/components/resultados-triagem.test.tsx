@@ -237,3 +237,14 @@ test("parada automática avisa o motivo e oferece avaliar o resto", async () => 
   expect(screen.getByRole("button", { name: "Avaliar 5 restantes" })).toBeInTheDocument();
   await waitFor(() => expect(gerarResposta).toHaveBeenCalled());
 });
+
+test("resposta salva antes da correção: a decisão sem ementa sai dela", async () => {
+  const r = cards(2);
+  sessao.resultados = r;
+  sessao.buscaNova = false;
+  sessao.respostaIds = [r[0].id, r[1].id];
+  render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  await act(async () => chamadas[0].resolver({ [r[0].id]: av(3) }, [r[1].id]));
+  await waitFor(() => expect(gerarResposta).toHaveBeenCalledWith(sessao.estrutura, [r[0].id]));
+});

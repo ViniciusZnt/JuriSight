@@ -99,7 +99,7 @@ def test_so_os_ids_sem_cache_vao_a_openai(usar):
     fake = FakeOpenAI(_itens(2))
     estado = usar(fake, cache=_FakeCache(_salva(IDS[0])))
     corpo = client.post("/triagem", json=CORPO).json()
-    assert estado["retriever"].pedidos == [[IDS[1]]]
+    assert estado["retriever"].pedidos == [IDS]  # o lote inteiro vem do banco (para checar a ementa)
     assert f"EMENTA {IDS[1]}" in fake.chamadas[0]["messages"][1]["content"]
     assert f"EMENTA {IDS[0]}" not in fake.chamadas[0]["messages"][1]["content"]
     assert [a["id"] for a in corpo["avaliacoes"]] == IDS
@@ -191,3 +191,12 @@ def test_apenas_cache_tambem_lista_sem_ementa(usar):
     usar(FakeOpenAI(_itens()), sem_ementa=[IDS[1]])
     corpo = client.post("/triagem", json={**CORPO, "apenas_cache": True}).json()
     assert corpo == {"avaliacoes": [], "sem_ementa": [IDS[1]]}
+
+
+def test_nota_antiga_no_cache_de_decisao_sem_ementa_e_ignorada(usar):
+    """Antes da correção a IA dava nota a decisões sem ementa, e essa nota ficou no cache."""
+    estado = usar(FakeOpenAI(_itens(2)), cache=_FakeCache(_salva(IDS[0], 3)), sem_ementa=[IDS[0]])
+    corpo = client.post("/triagem", json=CORPO).json()
+    assert corpo["sem_ementa"] == [IDS[0]]
+    assert [a["id"] for a in corpo["avaliacoes"]] == [IDS[1]]
+    assert estado["retriever"].pedidos == [IDS]
