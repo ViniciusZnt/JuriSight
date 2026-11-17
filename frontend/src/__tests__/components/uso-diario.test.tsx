@@ -1,6 +1,8 @@
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { useTriagem } from "@/components/resultados/triagem";
-import { UsoDiarioIndicador } from "@/components/uso-diario";
+import userEvent from "@testing-library/user-event";
+import { UsoDiarioMenu } from "@/components/uso-diario";
+import { PageTopbar } from "@/components/ui/page-topbar";
 import { UsoDiarioProvider, useUsoDiario } from "@/lib/uso-diario";
 import { avaliarLote, emptyEstrutura, getUso, type ResultCard } from "@/lib/api";
 
@@ -23,16 +25,22 @@ const montar = () =>
   render(
     <UsoDiarioProvider>
       <Gatilho />
-      <UsoDiarioIndicador />
+      <UsoDiarioMenu />
     </UsoDiarioProvider>,
   );
 
 beforeEach(() => (getUso as jest.Mock).mockReset());
 
-test("mostra 'Uso de hoje' com rótulo e usado/limite de cada ação", async () => {
+async function abrir() {
+  await userEvent.click(await screen.findByRole("button", { name: /Uso de hoje/ }));
+}
+
+test("o topo mostra só o botão; clicar abre o detalhe por ação", async () => {
   (getUso as jest.Mock).mockResolvedValue(uso(3, 12));
   montar();
-  expect(await screen.findByText("Uso de hoje")).toBeInTheDocument();
+  await screen.findByRole("button", { name: /Uso de hoje/ });
+  expect(screen.queryByText("Leitura do caso")).not.toBeInTheDocument();
+  await abrir();
   expect(screen.getByText("Leitura do caso")).toBeInTheDocument();
   expect(screen.getByText("Buscas").closest("li")).toHaveTextContent("3 / 30");
   expect(screen.getByText("Avaliações da IA")).toHaveAttribute("title", "Cada lote de até 10 decisões conta 1");
@@ -40,26 +48,27 @@ test("mostra 'Uso de hoje' com rótulo e usado/limite de cada ação", async () 
   expect(screen.getByText("Respostas da IA")).toBeInTheDocument();
 });
 
-test("barra âmbar a partir de 80% e vermelha em 100%", async () => {
+test("barra âmbar a partir de 80% e vermelha em 100%; o botão mostra a ação mais gasta", async () => {
   (getUso as jest.Mock).mockResolvedValue(uso(24, 150));
   montar();
-  await screen.findByText("Uso de hoje");
+  expect(await screen.findByRole("button", { name: /Uso de hoje/ })).toHaveAttribute("data-nivel", "esgotado");
+  await abrir();
   expect(screen.getByText("Buscas").closest("li")).toHaveAttribute("data-nivel", "alerta");
   expect(screen.getByText("Avaliações da IA").closest("li")).toHaveAttribute("data-nivel", "esgotado");
   expect(screen.getByText("Leitura do caso").closest("li")).toHaveAttribute("data-nivel", "normal");
 });
 
-test("falha do /uso esconde o bloco", async () => {
+test("falha do /uso esconde o botão", async () => {
   (getUso as jest.Mock).mockRejectedValue(new Error("503"));
   montar();
   await waitFor(() => expect(getUso).toHaveBeenCalled());
-  expect(screen.queryByText("Uso de hoje")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Uso de hoje/ })).not.toBeInTheDocument();
 });
 
 test("atualizar() busca de novo e re-renderiza", async () => {
   (getUso as jest.Mock).mockResolvedValueOnce(uso(3, 0)).mockResolvedValueOnce(uso(4, 5));
   montar();
-  await screen.findByText("Uso de hoje");
+  await abrir();
   await act(async () => screen.getByRole("button", { name: "atualizar" }).click());
   await waitFor(() => expect(screen.getByText("Buscas").closest("li")).toHaveTextContent("4 / 30"));
 });
@@ -87,4 +96,23 @@ test("cada lote da triagem que termina atualiza o uso; a leitura só do cache n�
   renderHook(() => useTriagem(est, r.slice(0, 5).map((d) => ({ id: `${d.id}-c` }) as ResultCard), { automatica: false }), { wrapper });
   await waitFor(() => expect(avaliarLote).toHaveBeenLastCalledWith(est, expect.any(Array), { apenasCache: true }, expect.anything()));
   await waitFor(() => expect(getUso).toHaveBeenCalledTimes(1)); // só a montagem do provider
+});
+
+test("Esc fecha o detalhe", async () => {
+  (getUso as jest.Mock).mockResolvedValue(uso(3, 12));
+  montar();
+  await abrir();
+  expect(screen.getByText("Buscas")).toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  expect(screen.queryByText("Buscas")).not.toBeInTheDocument();
+});
+
+test("o cabeçalho das telas traz o uso de hoje", async () => {
+  (getUso as jest.Mock).mockResolvedValue(uso(1, 1));
+  render(
+    <UsoDiarioProvider>
+      <PageTopbar crumbs={[{ label: "Início" }]} />
+    </UsoDiarioProvider>,
+  );
+  expect(await screen.findByRole("button", { name: /Uso de hoje/ })).toBeInTheDocument();
 });
