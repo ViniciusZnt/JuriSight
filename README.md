@@ -31,13 +31,14 @@ Portal TST (Falcão)
     → [Poly-Vector Embeddings]  ← OpenAI text-embedding-3-small (1536d)
     → [Qdrant]                  ← busca semântica (vetores em disco, HNSW em RAM)
     → [BM25 Index]              ← busca lexical (bm25s, mmap)
-    → [FastAPI + RRF]           ← fusão dos rankings (pool de 30 candidatos)
-    → [Cross-Encoder Rerank]    ← reordena por relevância real (FlashRank, ONNX)
+    → [FastAPI + RRF]           ← fusão dos rankings (50 decisões)
     → [Next.js]
+    → [Triagem por IA]          ← POST /triagem em lotes de 10: nota 0-3 por decisão (OpenAI)
 ```
 
-**Ordem dos resultados:** a ordem final é a do reranker (cross-encoder), ou seja,
-por relevância para a tese. A tela de resultados também ordena por data, no próprio
+**Ordem dos resultados:** a busca devolve 50 decisões na ordem do RRF; a tela as reordena
+pela nota que a triagem por IA dá a cada uma (0 a 3, a escala do conjunto-ouro), lote a lote.
+As de nota 0 e 1 ficam recolhidas no fim. Sem a OpenAI, fica a ordem do RRF. A tela de resultados também ordena por data, no próprio
 navegador. **Não há ordenação por hierarquia das fontes** (súmula antes de acórdão):
 o acervo tem só acórdãos (69.349, todos com `hierarquia_categoria = 4`), então essa
 ordenação não teria o que separar. O `categorical_sort.py` e o parâmetro `ordenar_por`
@@ -59,7 +60,7 @@ jurisight/
 ├── scraper/        ← coleta no portal do TST, estado da coleta e classificação de provimento (regex e Jev)
 ├── processing/     ← SAC Chunking e embeddings (Poly-Vector)
 ├── indexing/       ← vector_store (Qdrant), lexical (BM25) e a CLI de indexação
-├── query/          ← enrichment (PDF, LLM, Query Builder), search (RRF, reranker), filtros e api (FastAPI)
+├── query/          ← enrichment (PDF, LLM, Query Builder), search (RRF, triagem por IA, resposta), filtros e api (FastAPI)
 ├── auth/           ← autenticação (senha, JWT, schema; decisões em auth/DESIGN.md)
 ├── conversations/  ← histórico de busca persistido (public.conversas, ver §Conformidade)
 ├── avaliacao/      ← harness de avaliação da busca (ver §Avaliação da busca)
@@ -313,8 +314,8 @@ de API; só o deploy usa os secrets `VPS_HOST`, `VPS_USER` e `VPS_SSH_KEY`.
 
 Para saber se uma mudança na busca melhorou ou piorou o resultado, o projeto tem um
 **conjunto-ouro** de pares (tese × acórdão), julgados por pessoas com relevância 0–3 e
-stance, e um `benchmark` que compara sete sistemas de busca (S0–S6, do BM25 sozinho ao
-pipeline de produção com FlashRank) por nDCG@10 e outras métricas, com testes
+stance, e um `benchmark` que compara os sistemas de busca (S0, S1, S2 e S7, do BM25 sozinho
+ao pipeline de produção com a triagem por IA) por nDCG@10 e outras métricas, com testes
 estatísticos. O manual completo (construir o conjunto-ouro, exportar e importar as
 planilhas de julgamento, adjudicação, rodar e ler o relatório) está em
 [`docs/avaliacao/README.md`](docs/avaliacao/README.md).
@@ -477,7 +478,6 @@ acervo crescer, atualize `TOTAL_ACERVO` e as frases do guia.
 | Ollama / Llama 3.2 3B | Query enrichment local + sumarização de PDFs longos |
 | OpenAI text-embedding-3-small | Embeddings (1536d)              |
 | bm25s              | Busca lexical — índice BM25 (matriz esparsa, mmap) |
-| FlashRank          | Re-ranking pós-RRF — cross-encoder ONNX (sem PyTorch), multilíngue |
 | pdfplumber         | Extração de texto do PDF do usuário         |
 | FastAPI / Uvicorn  | Backend — API REST, fusão RRF dos rankings  |
 | Next.js / React    | Interface do usuário                        |
@@ -499,12 +499,12 @@ um limite de memória conhecido:
 - **BM25** (`indexing/lexical/bm25_builder.py`): `bm25s`, matriz esparsa carregada com
   `mmap=True`. Trocou o `rank_bm25` (~7GB de dicts Python em RAM) e levou o backend a ~300MB.
   Com o Qdrant acima, a mesma busca caiu de 80-330s para 3-5s.
-- **Re-ranking** (`query/search/reranker.py`): FlashRank (`ms-marco-MultiBERT-L-12`, ONNX, sem
-  PyTorch) reordena o pool do RRF. Uma chamada por passagem em 8 threads (a chamada única em
-  lote era super-linear) e passagens cortadas em 1200 caracteres (uma ementa de 60 mil
-  travava o lote). O pool é de 30 candidatos (`N_CANDIDATOS_PARA_RERANK`, em
-  `query/search/pipeline.py`), não 50: a busca híbrida pede 5x esse número por canal, então o
-  pool pesa também na busca.
+- **Triagem por IA** (`query/search/triagem.py`, `POST /triagem`): substituiu o cross-encoder,
+  que custava de 3 a 9 s por busca em CPU e ordenava pior do que a leitura da IA. O front pede
+  lotes de 10 ementas, 2 por vez, e reordena a lista a cada lote; o advogado pode parar no meio.
+  Cada par tese × decisão fica em `public.triagem_cache`: refinar a busca ou reabrir a conversa
+  não paga de novo. Cada lote que chama a OpenAI conta 1 no limite diário (`triagem`, 5x o das
+  outras ações). Com a OpenAI fora, a lista fica na ordem do RRF.
 
 Os docstrings desses arquivos registram a decisão e o motivo; as medições que a sustentaram estão no histórico do git (`git log -p` nos mesmos arquivos).
 
