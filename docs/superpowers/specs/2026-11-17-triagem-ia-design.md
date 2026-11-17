@@ -256,6 +256,26 @@ Card sem avaliação não mostra selo.
 - `docs/avaliacao/README.md`: atualizar a seção 2 e a tabela de sistemas.
 - **Escolher 40 vs 50 e o tamanho do lote:** rodar o S7 com `n_resultados` 40 e 50 no split dev. Isso fica **depois** desta entrega. O padrão de produção começa em 50.
 
+### 9. Indicador do limite diário (pedido do advogado, 17/11)
+
+O advogado quer ver na tela quanto já gastou do limite de hoje.
+
+**Backend:** `GET /uso`, com sessão obrigatória e sem consumir nada. Devolve `{ acoes: [{ acao, usado, limite }] }` para a conta logada, nas ações `enrich`, `query`, `triagem` e `resposta`, na ordem.
+
+- `usado` vem de `public.uso_diario` no dia de Brasília. A ação sem linha no dia vale 0.
+- `limite` é o limite por conta da ação (`UsoDiario.limites(acao)[0]`).
+- O limite total do sistema não aparece, porque é dado de operação.
+- Se o banco estiver fora, a resposta é 503 e o front esconde o indicador.
+
+**Front:**
+
+- Um bloco "Uso de hoje" no rodapé da sidebar, acima do perfil, com uma linha por ação: rótulo, "usado / limite" e uma barra fina.
+  - A barra fica âmbar a partir de 80% e vermelha em 100%.
+  - Os rótulos são "Leitura do caso" (`enrich`), "Buscas" (`query`), "Avaliações da IA" (`triagem`, com `title` "Cada lote de até 10 decisões conta 1") e "Respostas da IA" (`resposta`).
+- Um contexto `UsoDiarioProvider` busca o `/uso` ao montar e expõe `atualizar()`.
+- `atualizar()` é chamado depois de cada `/enrich`, `/query`, lote de `/triagem` e `/resposta` que terminar, com sucesso ou com 429.
+- Se `/uso` falhar, o bloco não aparece. O indicador nunca bloqueia nada.
+
 ## Decididos pelo advogado
 
 - Caminho 2 (triagem em lotes + resposta).
@@ -266,6 +286,7 @@ Card sem avaliação não mostra selo.
 - Se a OpenAI estiver fora, mostrar só o resultado da busca.
 - O reranker sai inteiro, inclusive do benchmark.
 - Múltiplas buscas ficam para depois.
+- Mostrar na tela quanto já foi gasto do limite diário.
 
 ## Decisões do autor deste documento (conferir)
 

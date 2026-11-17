@@ -133,14 +133,18 @@ Apague `test_buscar_mantem_ordem_do_reranker_e_corta_em_20`, `test_buscar_sem_re
 
 ---
 
-### Tarefa 2: Limite diário por ação
+### Tarefa 2: Limite diário por ação e `GET /uso`
 
 **Arquivos:**
-- Modificar: `query/api/uso_diario.py`, `.env.example`
-- Teste: `tests/test_uso_diario_integration.py`; e um teste unitário novo em `tests/test_api.py` ou num arquivo novo, `tests/test_uso_diario.py`
+- Modificar: `query/api/uso_diario.py`, `query/api/app.py`, `.env.example`
+- Teste: `tests/test_uso_diario_integration.py`; e um arquivo novo, `tests/test_uso_diario.py`
 
 **Interfaces:**
-- Produz: `UsoDiario.limites(acao: str) -> tuple[int, int]` (por conta, total). `consumir(usuario_id, acao)` usa `limites(acao)`.
+- Produz:
+  - `UsoDiario.limites(acao: str) -> tuple[int, int]` (por conta, total). `consumir(usuario_id, acao)` usa `limites(acao)`.
+  - `ACOES_PAGAS = ("enrich", "query", "triagem", "resposta")`.
+  - `UsoDiario.do_dia(usuario_id) -> dict[str, int]`: uso de hoje por ação, 0 se não houver linha. Erro do psycopg propaga.
+  - `GET /uso`: devolve `UsoResponse { acoes: list[UsoAcao{acao: str, usado: int, limite: int}] }`, na ordem de `ACOES_PAGAS`. Sessão obrigatória. Erro do banco ou `uso` ausente (`None`) → 503.
 
 - [ ] **Passo 1: teste** (`tests/test_uso_diario.py`, sem banco):
 
@@ -157,10 +161,24 @@ def test_triagem_tem_5x_o_limite_e_aceita_override(monkeypatch):
 
 No teste de integração, se já houver padrão de limite estourado: `test_triagem_estourada_usa_mensagem_sem_numero`. A mensagem por conta, para `"triagem"`, é "Você atingiu o limite de uso da IA de hoje. Ele renova à meia-noite." As demais ações mantêm a mensagem atual.
 
+Rotas, com fake de `UsoDiario` via `get_uso_diario`:
+
+```python
+def test_uso_devolve_as_4_acoes_na_ordem_com_usado_e_limite():
+    # fake.do_dia → {"query": 3}; limites: 30 e triagem 150
+    assert client.get("/uso").json() == {"acoes": [
+        {"acao": "enrich", "usado": 0, "limite": 30}, {"acao": "query", "usado": 3, "limite": 30},
+        {"acao": "triagem", "usado": 0, "limite": 150}, {"acao": "resposta", "usado": 0, "limite": 30}]}
+def test_uso_com_banco_fora_503()
+def test_uso_sem_sessao_401()
+```
+
+Integração: `test_do_dia_conta_so_hoje_e_so_a_conta` (consumir 2× `query` para A e 1× para B → A vê `{"query": 2}`).
+
 - [ ] **Passo 2: falha.** `uv run pytest tests/test_uso_diario.py -q` → FAIL: `limites` não existe.
-- [ ] **Passo 3: implementar** `limites`. As variáveis são lidas no `__init__`. Documente as duas em `.env.example`.
+- [ ] **Passo 3: implementar** `limites`, `do_dia` e a rota. As variáveis são lidas no `__init__`. Documente as duas em `.env.example`.
 - [ ] **Passo 4: passa.** `uv run pytest tests/test_uso_diario.py tests/test_uso_diario_integration.py -q`. O teste de integração é pulado se não houver banco, como já é.
-- [ ] **Passo 5: commit.** `git commit -m "Limite diário por ação: triagem com 5x o limite"`
+- [ ] **Passo 5: commit.** `git commit -m "Limite diário por ação (triagem 5x) e GET /uso"`
 
 ---
 
@@ -569,3 +587,34 @@ Ajuste `parecer-pesquisa.test.tsx` para o estado sem `posicoes`.
   - a resposta cita números que batem com os cards;
   - com `OPENAI_API_KEY` inválida, o aviso aparece e a lista vem na ordem da busca.
 - [ ] **Passo 6: commit.** `git commit -m "Tela de resultados: triagem progressiva, seções, voto e resposta das relacionadas"`
+
+---
+
+### Tarefa 12: Front — indicador "Uso de hoje" na sidebar
+
+**Arquivos:**
+- Criar: `frontend/src/lib/uso-diario.tsx`, `frontend/src/components/uso-diario.tsx`, `frontend/src/__tests__/components/uso-diario.test.tsx`
+- Modificar: `frontend/src/lib/api.ts` (`getUso`), o layout `(app)` (`frontend/src/app/(app)/layout.tsx`, envolver com o provider), `frontend/src/components/sidebar.tsx` (bloco acima do perfil), e os pontos que chamam APIs pagas: `home-page.tsx` (`/enrich`), `entity-review-page.tsx` (`/query`), `triagem.ts` (cada lote) e `resposta-gerada.tsx` (`/resposta`)
+
+**Interfaces:**
+- Consome: Tarefa 2 (`GET /uso`).
+- Produz:
+  - `getUso(): Promise<{ acoes: { acao: string; usado: number; limite: number }[] }>`
+  - `UsoDiarioProvider` e `useUsoDiario(): { acoes: UsoAcao[] | null; atualizar: () => void }`. `useUsoDiario` fora do provider devolve `{ acoes: null, atualizar: () => {} }`, para os testes existentes não quebrarem.
+  - `UsoDiarioIndicador`: nada quando `acoes === null`.
+
+- [ ] **Passo 1: testes.**
+
+```ts
+test("mostra 'Uso de hoje' com rótulo e usado/limite de cada ação")   // "Buscas" "3 / 30", "Avaliações da IA" "12 / 150"
+test("barra âmbar a partir de 80% e vermelha em 100%")               // data-nivel="alerta" | "esgotado"
+test("falha do /uso esconde o bloco")
+test("atualizar() busca de novo e re-renderiza")
+```
+
+- [ ] **Passo 2: falha.** `pnpm test -- src/__tests__/components/uso-diario.test.tsx` → FAIL.
+- [ ] **Passo 3: implementar.**
+  - Rótulos: `enrich` "Leitura do caso", `query` "Buscas", `triagem` "Avaliações da IA" (com `title` "Cada lote de até 10 decisões conta 1"), `resposta` "Respostas da IA".
+  - O `atualizar()` vai no `finally` de cada chamada paga: no `/enrich`, no `/query`, em cada lote da triagem e no `/resposta`. Nunca roda quando a chamada foi abortada.
+- [ ] **Passo 4: passa**, mais `pnpm test` inteiro e `pnpm lint`.
+- [ ] **Passo 5: commit.** `git commit -m "Sidebar: indicador do uso diário por ação"`
