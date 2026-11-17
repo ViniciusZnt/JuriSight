@@ -194,9 +194,9 @@ export function SearchResultsPage() {
   const terminal = triagem.status === "concluida" || triagem.status === "parada";
   const idsResposta = useMemo(() => {
     if (!comTriagem || triagem.status === "avaliando") return null;
-    if (usarSalva) return respostaIds.filter((id) => numeros.has(id));
+    if (usarSalva) return respostaIds.filter((id) => numeros.has(id) && !triagem.semEmenta.has(id));
     return terminal ? idsParaResposta(secoesBase, triagem.avaliacoes) : null;
-  }, [comTriagem, triagem.status, usarSalva, respostaIds, numeros, terminal, secoesBase, triagem.avaliacoes]);
+  }, [comTriagem, triagem.status, usarSalva, respostaIds, numeros, triagem.semEmenta, terminal, secoesBase, triagem.avaliacoes]);
   // A resposta recebida para outras decisões vira a salva da versão (para reabrir igual).
   const aoReceberResposta = (ids: string[]) => {
     if (usarSalva || ids.join(",") === respostaIds.join(",")) return;

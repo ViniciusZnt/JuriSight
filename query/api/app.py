@@ -481,10 +481,14 @@ async def triagem(
         raise HTTPException(status_code=422, detail="A tese está vazia: preencha a tese central ou o pedido.")
     ids = list(dict.fromkeys(str(i) for i in body.ids))
     avaliacoes = await run_in_threadpool(avaliacoes_do_cache, cache, body.estrutura, ids)
-    faltam = [i for i in ids if i not in avaliacoes]
-    docs = await run_in_threadpool(retriever.fetch, faltam, False) if faltam else {}
-    sem_ementa = [i for i in faltam if i in docs and not tem_ementa(docs[i])]
-    decisoes = {i: docs[i] for i in faltam if i in docs and tem_ementa(docs[i])}
+    # O lote inteiro vem do banco (barato): decisão sem ementa nunca tem nota, nem a do cache
+    # (antes da correção a IA "avaliava" essas pelo cabeçalho, e a nota ficou guardada).
+    docs = await run_in_threadpool(retriever.fetch, ids, False)
+    sem_ementa = [i for i in ids if i in docs and not tem_ementa(docs[i])]
+    for i in sem_ementa:
+        avaliacoes.pop(i, None)
+    faltam = [i for i in ids if i not in avaliacoes and i not in sem_ementa]
+    decisoes = {i: docs[i] for i in faltam if i in docs}
     if decisoes and not body.apenas_cache:
         await consumir_limite(uso, usuario, "triagem")
         try:
