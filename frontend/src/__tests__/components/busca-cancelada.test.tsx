@@ -21,6 +21,7 @@ jest.mock("@/lib/api", () => ({
   ...jest.requireActual("@/lib/api"),
   queryJurisprudencia: jest.fn(),
   queryLivre: jest.fn(),
+  explicarBusca: jest.fn().mockRejectedValue(new (jest.requireActual("@/lib/api").ApiError)("vazia", 422)),
 }));
 
 // Uma busca que só termina quando o teste manda; rejeita como o fetch quando o sinal aborta.
@@ -86,4 +87,9 @@ test("Faixa livre: a busca em andamento é cancelada ao desmontar", async () => 
   await userEvent.click(screen.getByRole("button", { name: /Busca livre/ }));
   unmount();
   expect((queryLivre as jest.Mock).mock.calls[0][1].aborted).toBe(true);
+});
+
+test("Revisão: mostra a prévia do que a busca vai usar", async () => {
+  render(<EntityReviewPage />);
+  expect(await screen.findByText("Preencha a tese central ou o pedido principal para buscar", {}, { timeout: 2000 })).toBeInTheDocument();
 });
