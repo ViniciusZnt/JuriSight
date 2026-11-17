@@ -14,6 +14,8 @@ import {
   ApiError,
   enviarCorrecaoProvimento,
   gerarResposta,
+  avaliarLote,
+  salvarRelevantes,
   emptyEstrutura,
   temFiltroRestrito,
   contarFiltros,
@@ -231,20 +233,51 @@ describe("enviarCorrecaoProvimento", () => {
 });
 
 describe("gerarResposta", () => {
-  it("manda a estrutura e no máximo 20 ids e devolve as frases e as posições", async () => {
-    const resposta = { frases: [{ tipo: "resposta", texto: "Sim.", citacoes: [1] }], posicoes: [{ numero: 1, posicao: "deferiu" }] };
+  it("manda a estrutura e no máximo 25 ids e devolve as frases", async () => {
+    const resposta = { frases: [{ tipo: "resposta", texto: "Sim.", citacoes: [1] }] };
     mockFetchOnce(200, resposta);
-    const ids = Array.from({ length: 25 }, (_, i) => `id-${i}`);
+    const ids = Array.from({ length: 30 }, (_, i) => `id-${i}`);
     await expect(gerarResposta(estrutura, ids)).resolves.toEqual(resposta);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/resposta$/);
     expect(init.credentials).toBe("include");
-    expect(JSON.parse(init.body)).toEqual({ estrutura, ids: ids.slice(0, 20) });
+    expect(JSON.parse(init.body)).toEqual({ estrutura, ids: ids.slice(0, 25) });
   });
 
   it("503 vira ApiError com o detail do backend", async () => {
     mockFetchOnce(503, { detail: "A resposta gerada está indisponível agora." });
     await expect(gerarResposta(estrutura, ["a"])).rejects.toEqual(new ApiError("A resposta gerada está indisponível agora.", 503));
+  });
+});
+
+describe("avaliarLote", () => {
+  it("manda apenas_cache e devolve mapa por id", async () => {
+    mockFetchOnce(200, { avaliacoes: [{ id: "a", nota: 3, posicao: "deferiu", motivo: "m" }] });
+    const controle = new AbortController();
+    await expect(avaliarLote(estrutura, ["a", "b"], { apenasCache: true }, controle.signal)).resolves.toEqual({
+      a: { nota: 3, posicao: "deferiu", motivo: "m" },
+    });
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toMatch(/\/triagem$/);
+    expect(init.signal).toBe(controle.signal);
+    expect(JSON.parse(init.body)).toEqual({ estrutura, ids: ["a", "b"], apenas_cache: true });
+  });
+
+  it("sem opção manda apenas_cache false", async () => {
+    mockFetchOnce(200, { avaliacoes: [] });
+    await avaliarLote(estrutura, ["a"], {});
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body).apenas_cache).toBe(false);
+  });
+});
+
+describe("salvarRelevantes", () => {
+  it("faz PATCH na versão com os ids", async () => {
+    mockFetchOnce(200, { id: "c1", titulo: "t", criado_em: "", atualizado_em: "", versoes: [] });
+    await salvarRelevantes("c1", 2, ["a"]);
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toMatch(/\/conversas\/c1\/versoes\/2$/);
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body)).toEqual({ relevantes_usuario: ["a"] });
   });
 });
 

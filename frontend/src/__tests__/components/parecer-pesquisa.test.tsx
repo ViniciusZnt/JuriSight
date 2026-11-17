@@ -19,7 +19,6 @@ const resposta: RespostaIA = {
     { tipo: "prova", texto: "Para o pedido, é preciso provar: controle de jornada; horas trabalhadas", citacoes: [1, 2] },
     { tipo: "divergencia", texto: "As que negaram partiram de controles de ponto válidos.", citacoes: [3] },
   ],
-  posicoes: [],
 };
 const ok = { chave: "k", vazia: false, estado: { status: "ok" as const, resposta } };
 
