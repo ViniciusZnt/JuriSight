@@ -75,12 +75,12 @@ class _FakeConversaStore:
         self._por_id[conversa_id] = novo
         return novo
 
-    def set_relevantes(self, conversa_id, usuario_id, numero, ids) -> Conversa:
+    def atualizar_versao(self, conversa_id, usuario_id, numero, campos) -> Conversa:
         c = self._get_or_raise(conversa_id, usuario_id)
         if not 1 <= numero <= len(c.versoes):
             raise ConversaNaoEncontradaError(conversa_id)
         versoes = [dict(v) for v in c.versoes]
-        versoes[numero - 1]["relevantes_usuario"] = ids
+        versoes[numero - 1].update(campos)
         novo = replace(c, versoes=versoes)
         self._por_id[conversa_id] = novo
         return novo
@@ -254,3 +254,22 @@ def test_patch_mais_de_50_ids_422(client):
     cid = _com_versoes(client, 1)
     ids = [str(uuid.uuid4()) for _ in range(51)]
     assert client.patch(f"/conversas/{cid}/versoes/1", json={"relevantes_usuario": ids}).status_code == 422
+
+
+def test_patch_versao_grava_resposta_ids_sem_tocar_relevantes(client):
+    cid = _com_versoes(client, 1)
+    rel, resp = [str(uuid.uuid4())], [str(uuid.uuid4()), str(uuid.uuid4())]
+    client.patch(f"/conversas/{cid}/versoes/1", json={"relevantes_usuario": rel})
+    v = client.patch(f"/conversas/{cid}/versoes/1", json={"resposta_ids": resp}).json()["versoes"][0]
+    assert v["resposta_ids"] == resp and v["relevantes_usuario"] == rel
+
+
+def test_patch_versao_sem_campo_422(client):
+    cid = _com_versoes(client, 1)
+    assert client.patch(f"/conversas/{cid}/versoes/1", json={}).status_code == 422
+
+
+def test_patch_mais_de_25_resposta_ids_422(client):
+    cid = _com_versoes(client, 1)
+    ids = [str(uuid.uuid4()) for _ in range(26)]
+    assert client.patch(f"/conversas/{cid}/versoes/1", json={"resposta_ids": ids}).status_code == 422

@@ -25,7 +25,12 @@ export function lerVotos(): Record<string, "util" | "nao_util"> {
 
 /** Pede a resposta (POST /resposta) para as decisões relacionadas, na ordem dos cards (#1 = ids[0]).
  *  `ids` null = ainda não pedir (a triagem está avaliando); lista vazia = nada a responder. */
-export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, idsPedidos: string[] | null) {
+export function useRespostaGerada(
+  estrutura: EstruturaArgumentativa | null,
+  idsPedidos: string[] | null,
+  /** Chamado quando o servidor devolve a resposta (gerada ou do cache dele) para estes ids. */
+  onRecebida?: (ids: string[]) => void,
+) {
   const aguardando = idsPedidos === null;
   const ids = estrutura && idsPedidos ? idsPedidos : [];
   const chave = `${ids.join(",")}|${JSON.stringify(estrutura)}`;
@@ -38,6 +43,7 @@ export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, idsP
     gerarResposta(estrutura, ids)
       .then((r) => {
         cache.set(chave, r);
+        onRecebida?.(ids);
         if (vivo) setRecebida({ chave });
       })
       .catch((e: Error) => vivo && setRecebida({ chave, erro: e.message }))

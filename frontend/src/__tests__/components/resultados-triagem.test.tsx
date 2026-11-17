@@ -5,8 +5,9 @@ import { ApiError, avaliarLote, emptyEstrutura, gerarResposta, type Avaliacao, t
 
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn(), replace: jest.fn() }) }));
 const setRelevantes = jest.fn();
+const salvarRespostaIds = jest.fn();
 jest.mock("@/lib/conversations", () => ({
-  useConversations: () => ({ conversations: [], activeId: "c1", setRelevantes }),
+  useConversations: () => ({ conversations: [], activeId: "c1", setRelevantes, setRespostaIds: salvarRespostaIds }),
 }));
 jest.mock("@/lib/saved", () => ({ useSaved: () => ({ isSaved: () => false, toggle: jest.fn() }) }));
 jest.mock("@/components/provimento/provimento-panel", () => ({ ProvimentoPanel: () => null }));
@@ -17,15 +18,17 @@ jest.mock("@/lib/api", () => ({
   explicarBusca: jest.fn().mockResolvedValue({ semantica: "tese", termos: [] }),
 }));
 const setRelevantesUsuario = jest.fn();
+const setRespostaIds = jest.fn();
 const sessao = {
   resultados: [] as ResultCard[],
   estrutura: { ...emptyEstrutura(), tese_central: "calor acima do limite" },
   versionNumero: 2,
   buscaNova: true,
   relevantesUsuario: [] as string[],
+  respostaIds: [] as string[],
 };
 jest.mock("@/lib/search-session", () => ({
-  useSearchSession: () => ({ ...sessao, loadVersion: jest.fn(), setRelevantesUsuario }),
+  useSearchSession: () => ({ ...sessao, loadVersion: jest.fn(), setRelevantesUsuario, setRespostaIds }),
 }));
 
 type Chamada = { ids: string[]; apenasCache: boolean; resolver: (r: Record<string, Avaliacao>) => void; rejeitar: (e: unknown) => void };
@@ -47,7 +50,10 @@ beforeEach(() => {
   chamadas = [];
   sessao.buscaNova = true;
   sessao.relevantesUsuario = [];
+  sessao.respostaIds = [];
   setRelevantes.mockReset().mockResolvedValue(undefined);
+  salvarRespostaIds.mockReset().mockResolvedValue(undefined);
+  setRespostaIds.mockReset();
   setRelevantesUsuario.mockReset();
   (avaliarLote as jest.Mock).mockReset().mockImplementation(
     (_e: unknown, ids: string[], opcoes: { apenasCache?: boolean }) =>
@@ -125,6 +131,9 @@ test("OpenAI fora: aviso, lista na ordem da busca e sem bloco de resposta", asyn
   expect(ordemNaTela(container)).toEqual(r.map((d) => d.id));
   expect(screen.queryByText(/A resposta sai quando/)).not.toBeInTheDocument();
   expect(gerarResposta).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+  await waitFor(() => expect(chamadas).toHaveLength(3));
+  expect(chamadas[2].apenasCache).toBe(false);
 });
 
 test("versão reaberta com tudo em cache não chama a IA e mostra a resposta", async () => {
@@ -153,4 +162,43 @@ test("continuar depois de parar descarta a resposta e pede de novo ao concluir",
   await act(async () => chamadas[2].resolver(Object.fromEntries(r.slice(10).map((d) => [d.id, av(3)]))));
   await waitFor(() => expect(gerarResposta).toHaveBeenCalledTimes(2));
   expect((gerarResposta as jest.Mock).mock.calls[1][1].slice(0, 5)).toEqual(r.slice(10).map((d) => d.id));
+});
+
+test("resposta gerada nesta tela é salva na versão (ids na ordem #1..#k)", async () => {
+  const r = cards(2);
+  sessao.resultados = r;
+  render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  await act(async () => chamadas[0].resolver({ [r[1].id]: av(3), [r[0].id]: av(2) }));
+  await waitFor(() => expect(salvarRespostaIds).toHaveBeenCalledWith("c1", 2, [r[1].id, r[0].id]));
+  expect(setRespostaIds).toHaveBeenCalledWith([r[1].id, r[0].id]);
+});
+
+test("reaberta com resposta salva: mesmas decisões e numeração, mesmo se o cache tem mais avaliações", async () => {
+  const r = cards(3);
+  sessao.resultados = r;
+  sessao.buscaNova = false;
+  sessao.respostaIds = [r[2].id];
+  const { container } = render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  // o servidor terminou lotes depois do "Parar": agora r0 e r1 também têm nota alta
+  await act(async () => chamadas[0].resolver({ [r[0].id]: av(3), [r[1].id]: av(3), [r[2].id]: av(2) }));
+  await waitFor(() => expect(gerarResposta).toHaveBeenCalledWith(sessao.estrutura, [r[2].id]));
+  expect(gerarResposta).toHaveBeenCalledTimes(1);
+  expect(ordemNaTela(container)[0]).toBe(r[2].id);
+  expect(container.querySelector(`#decisao-${r[2].id}`)).toHaveTextContent("#1");
+  expect(salvarRespostaIds).not.toHaveBeenCalled();
+});
+
+test("reaberta com decisões sem avaliação ainda mostra a resposta salva", async () => {
+  const r = cards(12);
+  sessao.resultados = r;
+  sessao.buscaNova = false;
+  sessao.respostaIds = [r[0].id];
+  render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(2));
+  await act(async () => chamadas[0].resolver({ [r[0].id]: av(3) }));
+  await act(async () => chamadas[1].resolver({}));
+  expect(screen.getByRole("button", { name: "Avaliar 11 restantes" })).toBeInTheDocument();
+  await waitFor(() => expect(gerarResposta).toHaveBeenCalledWith(sessao.estrutura, [r[0].id]));
 });

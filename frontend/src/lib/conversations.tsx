@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ConversaApi, EstruturaArgumentativa, NovaVersaoBody, ResultCard, VersaoApi } from "@/lib/api";
-import { adicionarVersaoConversa, apagarConversa, criarConversa, listarConversas, renomearConversa, salvarRelevantes } from "@/lib/api";
+import { adicionarVersaoConversa, apagarConversa, criarConversa, listarConversas, renomearConversa, atualizarVersao } from "@/lib/api";
 
 /** Uma versão de busca dentro de uma conversa — o que vira "V{numero}" no dropdown de
  *  versões da página de Resultados. Cada "Refinar consulta" bem-sucedido cria uma versão
@@ -21,11 +21,13 @@ export interface ConversationVersion {
   createdAt: number; // epoch ms
   /** Decisões marcadas "É relevante" contra a triagem por IA ([] nas versões antigas). */
   relevantesUsuario: string[];
+  /** Decisões que foram à resposta gerada, na ordem #1..#k ([] se ainda não houve resposta). */
+  respostaIds: string[];
 }
 
 /** O conteúdo de uma versão, sem o número (a API atribui o número — ver
  *  ConversationsCtx.addVersion), o timestamp (o backend que grava) e os votos (vêm depois). */
-export type ConversationSnapshot = Omit<ConversationVersion, "numero" | "createdAt" | "relevantesUsuario">;
+export type ConversationSnapshot = Omit<ConversationVersion, "numero" | "createdAt" | "relevantesUsuario" | "respostaIds">;
 
 /** Uma pesquisa salva (o "histórico" da sidebar) — pode ter várias versões. */
 export interface Conversation {
@@ -46,6 +48,7 @@ export function versionFromApi(v: VersaoApi): ConversationVersion {
     resultados: v.resultados,
     createdAt: new Date(v.criado_em).getTime(),
     relevantesUsuario: v.relevantes_usuario ?? [],
+    respostaIds: v.resposta_ids ?? [],
   };
 }
 
@@ -73,6 +76,8 @@ interface ConversationsCtx {
   addVersion: (id: string, snapshot: ConversationSnapshot) => Promise<ConversationVersion>;
   /** Grava o "É relevante" da versão `numero` e atualiza a lista local com o que a API devolveu. */
   setRelevantes: (conversaId: string, numero: number, ids: string[]) => Promise<void>;
+  /** Grava as decisões que foram à resposta gerada da versão `numero`. */
+  setRespostaIds: (conversaId: string, numero: number, ids: string[]) => Promise<void>;
 }
 
 const Ctx = createContext<ConversationsCtx | null>(null);
@@ -135,14 +140,25 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     return conv.versions[conv.versions.length - 1];
   }, []);
 
-  const setRelevantes = useCallback(async (conversaId: string, numero: number, ids: string[]) => {
-    const atualizada = await salvarRelevantes(conversaId, numero, ids);
-    setConversations((prev) => prev.map((c) => (c.id === conversaId ? fromApi(atualizada) : c)));
-  }, []);
+  const atualizar = useCallback(
+    async (conversaId: string, numero: number, campos: Parameters<typeof atualizarVersao>[2]) => {
+      const atualizada = await atualizarVersao(conversaId, numero, campos);
+      setConversations((prev) => prev.map((c) => (c.id === conversaId ? fromApi(atualizada) : c)));
+    },
+    [],
+  );
+  const setRelevantes = useCallback(
+    (conversaId: string, numero: number, ids: string[]) => atualizar(conversaId, numero, { relevantes_usuario: ids }),
+    [atualizar],
+  );
+  const setRespostaIds = useCallback(
+    (conversaId: string, numero: number, ids: string[]) => atualizar(conversaId, numero, { resposta_ids: ids }),
+    [atualizar],
+  );
 
   return (
     <Ctx.Provider
-      value={{ conversations, activeId, loading, create, rename, remove, setActive: setActiveId, addVersion, setRelevantes }}
+      value={{ conversations, activeId, loading, create, rename, remove, setActive: setActiveId, addVersion, setRelevantes, setRespostaIds }}
     >
       {children}
     </Ctx.Provider>

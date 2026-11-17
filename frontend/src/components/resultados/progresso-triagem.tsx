@@ -22,9 +22,16 @@ export function ProgressoTriagem({ status, avaliadas, total, erro, onParar, onCo
     return (
       <div role="status" className={`${caixa} border-[#EDD9BC] dark:border-[#4A3A22] bg-[#FBF4EC] dark:bg-[#2A2015]`}>
         <AlertTriangle className="w-4 h-4 text-[#8A5A1E] dark:text-[#E0AC6C] flex-shrink-0" strokeWidth={1.8} />
-        <p className="text-[#6B3B0A] dark:text-[#E0AC6C]" style={{ fontSize: "13.8px" }}>
+        <p className="flex-1 min-w-[180px] text-[#6B3B0A] dark:text-[#E0AC6C]" style={{ fontSize: "13.8px" }}>
           Avaliação por IA indisponível agora; a lista está na ordem da busca.
         </p>
+        <button
+          onClick={onContinuar}
+          className="rounded-lg border border-[#EDD9BC] dark:border-[#4A3A22] bg-white dark:bg-[#17171B] text-[#8A5A1E] dark:text-[#E0AC6C] px-3 py-1.5 hover:border-[#8A5A1E]/40 transition-colors"
+          style={{ fontSize: "13px", fontWeight: 600 }}
+        >
+          Tentar de novo
+        </button>
       </div>
     );
   }

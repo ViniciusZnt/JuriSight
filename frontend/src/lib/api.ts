@@ -399,6 +399,8 @@ export interface VersaoApi {
   criado_em: string; // ISO datetime
   /** Decisões que o advogado marcou como relevantes contra a triagem (versões antigas não têm). */
   relevantes_usuario?: string[];
+  /** Decisões que foram à resposta gerada, na ordem #1..#k (reabrir usa as mesmas, sem gerar outra). */
+  resposta_ids?: string[];
 }
 
 /** query/api/conversa_routes.py::ConversaResponse. */
@@ -447,9 +449,12 @@ export async function adicionarVersaoConversa(id: string, versao: NovaVersaoBody
   return enviarJson<ConversaApi>(`/conversas/${encodeURIComponent(id)}/versoes`, "POST", versao);
 }
 
-/** PATCH /conversas/{id}/versoes/{numero} — grava o "É relevante" daquela versão. */
-export async function salvarRelevantes(conversaId: string, numero: number, ids: string[]): Promise<ConversaApi> {
-  return enviarJson<ConversaApi>(
-    `/conversas/${encodeURIComponent(conversaId)}/versoes/${numero}`, "PATCH", { relevantes_usuario: ids },
-  );
+/** PATCH /conversas/{id}/versoes/{numero} — grava só os campos dados naquela versão: o "É relevante"
+ *  e/ou as decisões que foram à resposta gerada. */
+export async function atualizarVersao(
+  conversaId: string,
+  numero: number,
+  campos: { relevantes_usuario?: string[]; resposta_ids?: string[] },
+): Promise<ConversaApi> {
+  return enviarJson<ConversaApi>(`/conversas/${encodeURIComponent(conversaId)}/versoes/${numero}`, "PATCH", campos);
 }

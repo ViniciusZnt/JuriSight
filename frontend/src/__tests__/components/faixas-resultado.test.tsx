@@ -17,7 +17,7 @@ jest.mock("@/lib/api", () => ({
 }));
 const sessao: { resultados: ResultCard[]; estrutura: ReturnType<typeof emptyEstrutura> } = { resultados: [], estrutura: emptyEstrutura() };
 jest.mock("@/lib/search-session", () => ({
-  useSearchSession: () => ({ ...sessao, versionNumero: 1, loadVersion: jest.fn(), buscaNova: false, relevantesUsuario: [], setRelevantesUsuario: jest.fn() }),
+  useSearchSession: () => ({ ...sessao, versionNumero: 1, loadVersion: jest.fn(), buscaNova: false, relevantesUsuario: [], setRelevantesUsuario: jest.fn(), respostaIds: [], setRespostaIds: jest.fn() }),
 }));
 
 const card = (id: string, extra: Partial<ResultCard> = {}): ResultCard => ({

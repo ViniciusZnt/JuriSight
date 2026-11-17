@@ -186,3 +186,54 @@ test("voltar à tela não refaz a avaliação", async () => {
   expect(result.current.avaliadas).toBe(10);
   expect(chamadas).toHaveLength(1);
 });
+
+test("indisponivel não fica preso: ao reabrir, lê o cache de novo", async () => {
+  const r = cards(10);
+  const primeira = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  await falhar(chamadas[0], new ApiError("fora", 503));
+  await falhar(chamadas[1], new ApiError("fora", 503));
+  expect(primeira.result.current.status).toBe("indisponivel");
+  primeira.unmount();
+  const { result } = renderHook(() => useTriagem(estrutura, r, { automatica: false }));
+  await waitFor(() => expect(chamadas).toHaveLength(3));
+  expect(chamadas[2].apenasCache).toBe(true);
+  await responder(chamadas[2]);
+  expect(result.current.status).toBe("concluida");
+});
+
+test("leitura do cache interrompida é refeita ao voltar", async () => {
+  const r = cards(20);
+  const primeira = renderHook(() => useTriagem(estrutura, r, { automatica: false }));
+  await waitFor(() => expect(chamadas).toHaveLength(2));
+  await responder(chamadas[0]);
+  primeira.unmount();
+  renderHook(() => useTriagem(estrutura, r, { automatica: false }));
+  await waitFor(() => expect(chamadas).toHaveLength(3));
+  expect(chamadas[2].apenasCache).toBe(true);
+  expect(chamadas[2].ids).toEqual(r.slice(10).map((d) => d.id));
+});
+
+test("indisponivel: continuar tenta de novo", async () => {
+  const r = cards(10);
+  const { result } = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
+  await waitFor(() => expect(chamadas).toHaveLength(1));
+  await falhar(chamadas[0], new ApiError("fora", 503));
+  await falhar(chamadas[1], new ApiError("fora", 503));
+  act(() => result.current.continuar());
+  expect(result.current.status).toBe("avaliando");
+  await waitFor(() => expect(chamadas).toHaveLength(3));
+  expect(chamadas[2].apenasCache).toBe(false);
+});
+
+test("avaliouAqui: verdadeiro quando a IA avaliou nesta tela, falso na leitura só do cache", async () => {
+  const r = cards(10);
+  const nova = renderHook(() => useTriagem(estrutura, r, { automatica: true }));
+  expect(nova.result.current.avaliouAqui).toBe(true);
+  const r2 = cards(10);
+  const reaberta = renderHook(() => useTriagem(estrutura, r2, { automatica: false }));
+  expect(reaberta.result.current.avaliouAqui).toBe(false);
+  await waitFor(() => expect(chamadas.some((ch) => ch.apenasCache)).toBe(true));
+  act(() => reaberta.result.current.continuar());
+  expect(reaberta.result.current.avaliouAqui).toBe(true);
+});

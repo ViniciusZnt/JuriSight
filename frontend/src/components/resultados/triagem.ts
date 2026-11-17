@@ -18,11 +18,16 @@ interface Estado {
   avaliacoes: Map<string, Avaliacao>;
   status: StatusTriagem;
   erro: string | null;
+  /** A leitura só do cache (conversa reaberta) terminou: ao voltar à tela, não é refeita. */
+  cacheLido?: boolean;
+  /** A IA avaliou nesta tela (busca nova ou "Avaliar"): a resposta pode ser refeita com o que ela leu. */
+  avaliou?: boolean;
 }
 
 // Voltar da página da decisão não refaz (nem cobra) a avaliação: o estado fica por chave.
+// "indisponivel" não é final: ao voltar ou reabrir, a avaliação (ou a leitura do cache) é tentada de novo.
 const salvos = new Map<string, Estado>();
-const TERMINAIS: StatusTriagem[] = ["concluida", "parada", "indisponivel", "ociosa"];
+const TERMINAIS: StatusTriagem[] = ["concluida", "parada", "ociosa"];
 
 function lotes(ids: string[]): string[][] {
   return Array.from({ length: Math.ceil(ids.length / TAMANHO_LOTE) }, (_, i) => ids.slice(i * TAMANHO_LOTE, (i + 1) * TAMANHO_LOTE));
@@ -50,7 +55,7 @@ export function useTriagem(
     const avaliacoes = salvo?.avaliacoes ?? new Map<string, Avaliacao>();
     const faltam = ids.some((i) => !avaliacoes.has(i));
     const status: StatusTriagem = !estrutura || !faltam ? "concluida" : opcoes.automatica ? "avaliando" : "ociosa";
-    return { avaliacoes, status, erro: null };
+    return { avaliacoes, status, erro: null, cacheLido: salvo?.cacheLido, avaliou: !!salvo?.avaliou || status === "avaliando" };
   };
 
   const [estado, setEstado] = useState<Estado & { chave: string }>(() => ({ chave, ...inicial() }));
@@ -94,7 +99,11 @@ export function useTriagem(
         if (!vivo() || fila.length > 0 || emVoo > 0) return;
         atualizar((e) => {
           const faltam = ids.some((i) => !e.avaliacoes.has(i));
-          return { ...e, status: !faltam ? "concluida" : modo === "cache" ? "ociosa" : "parada" };
+          return {
+            ...e,
+            status: !faltam ? "concluida" : modo === "cache" ? "ociosa" : "parada",
+            cacheLido: e.cacheLido || modo === "cache",
+          };
         });
       };
 
@@ -147,9 +156,8 @@ export function useTriagem(
   useEffect(() => {
     const inicio = inicial();
     const faltam = ids.filter((i) => !inicio.avaliacoes.has(i));
-    const salvo = salvos.get(chave);
     if (inicio.status === "avaliando") executar(faltam, "avaliar");
-    else if (inicio.status === "ociosa" && !salvo) executar(faltam, "cache");
+    else if (inicio.status === "ociosa" && !inicio.cacheLido) executar(faltam, "cache");
     return abortarTudo;
     // `chave` resume ids + estrutura
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,7 +171,7 @@ export function useTriagem(
   const continuar = useCallback(() => {
     const faltam = ids.filter((i) => !atual.avaliacoes.has(i));
     if (faltam.length === 0) return;
-    atualizar((e) => ({ ...e, status: "avaliando", erro: null }));
+    atualizar((e) => ({ ...e, status: "avaliando", erro: null, avaliou: true }));
     executar(faltam, "avaliar");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave, atual.avaliacoes, atualizar, executar]);
@@ -174,6 +182,8 @@ export function useTriagem(
     avaliadas: ids.filter((i) => atual.avaliacoes.has(i)).length,
     total: ids.length,
     erro: atual.erro,
+    /** true se a IA avaliou nesta tela; false numa conversa reaberta só com o cache. */
+    avaliouAqui: !!atual.avaliou,
     parar,
     continuar,
   };

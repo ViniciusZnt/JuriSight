@@ -15,7 +15,7 @@ import {
   enviarCorrecaoProvimento,
   gerarResposta,
   avaliarLote,
-  salvarRelevantes,
+  atualizarVersao,
   emptyEstrutura,
   temFiltroRestrito,
   contarFiltros,
@@ -270,14 +270,14 @@ describe("avaliarLote", () => {
   });
 });
 
-describe("salvarRelevantes", () => {
-  it("faz PATCH na versão com os ids", async () => {
+describe("atualizarVersao", () => {
+  it("faz PATCH na versão só com os campos dados", async () => {
     mockFetchOnce(200, { id: "c1", titulo: "t", criado_em: "", atualizado_em: "", versoes: [] });
-    await salvarRelevantes("c1", 2, ["a"]);
+    await atualizarVersao("c1", 2, { resposta_ids: ["a"] });
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toMatch(/\/conversas\/c1\/versoes\/2$/);
     expect(init.method).toBe("PATCH");
-    expect(JSON.parse(init.body)).toEqual({ relevantes_usuario: ["a"] });
+    expect(JSON.parse(init.body)).toEqual({ resposta_ids: ["a"] });
   });
 });
 

@@ -24,6 +24,8 @@ interface SearchSessionState {
   buscaNova: boolean;
   /** Decisões marcadas "É relevante" na versão exibida. */
   relevantesUsuario: string[];
+  /** Decisões que foram à resposta gerada da versão exibida, na ordem #1..#k. */
+  respostaIds: string[];
   /** Expressões sugeridas pela IA no /enrich: só viram filtro se o advogado clicar. */
   expressoesSugeridas: ExpressaoSugerida[];
   /** Dispositivos que a IA relaciona ao tema: também só viram filtro com o clique. */
@@ -51,6 +53,8 @@ interface SearchSessionCtx extends SearchSessionState {
   loadVersion: (version: ConversationVersion, opcoes?: { buscaNova?: boolean }) => void;
   /** Atualiza os votos da versão exibida (depois de gravar na conversa). */
   setRelevantesUsuario: (ids: string[]) => void;
+  /** Atualiza as decisões da resposta da versão exibida (depois de gravar na conversa). */
+  setRespostaIds: (ids: string[]) => void;
   reset: () => void;
 }
 
@@ -64,6 +68,7 @@ const initialState: SearchSessionState = {
   versionNumero: null,
   buscaNova: false,
   relevantesUsuario: [],
+  respostaIds: [],
   dispositivosIa: [],
   expressoesSugeridas: [],
   dispositivosSugeridos: [],
@@ -109,6 +114,7 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
       versionNumero: version.numero,
       buscaNova: opcoes?.buscaNova ?? false,
       relevantesUsuario: version.relevantesUsuario ?? [],
+      respostaIds: version.respostaIds ?? [],
       dispositivosIa: [],
       expressoesSugeridas: [],
       dispositivosSugeridos: [],
@@ -119,10 +125,14 @@ export function SearchSessionProvider({ children }: { children: React.ReactNode 
     setState((prev) => ({ ...prev, relevantesUsuario: ids }));
   }, []);
 
+  const setRespostaIds = useCallback((ids: string[]) => {
+    setState((prev) => ({ ...prev, respostaIds: ids }));
+  }, []);
+
   const reset = useCallback(() => setState(initialState), []);
 
   return (
-    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, loadVersion, setRelevantesUsuario, reset }}>
+    <Ctx.Provider value={{ ...state, setEnrichResult, setEstrutura, loadVersion, setRelevantesUsuario, setRespostaIds, reset }}>
       {children}
     </Ctx.Provider>
   );

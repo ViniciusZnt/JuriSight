@@ -49,3 +49,9 @@ test("voto sobrevive a filtro que esconde o card", () => {
   expect(ids(organizar(todos.filter((d) => d.id !== "b"), m, votos).relacionadas)).toEqual(["a"]);
   expect(ids(organizar(todos, m, votos).relacionadas)).toEqual(["a", "b"]);
 });
+
+test("numeracao com prefixo: as decisões da resposta salva vêm primeiro, na ordem dela", () => {
+  const r = ["a", "b", "c", "d"].map(c);
+  const s = organizar(r, new Map([["a", av(3)], ["b", av(3)], ["c", av(2)], ["d", av(0)]]), []);
+  expect([...numeracao(s, ["c", "x", "a"])]).toEqual([["c", 1], ["a", 2], ["b", 3], ["d", 4]]);
+});

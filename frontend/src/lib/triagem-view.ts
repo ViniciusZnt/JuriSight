@@ -38,9 +38,15 @@ export function organizar(resultados: ResultCard[], avaliacoes: Map<string, Aval
   };
 }
 
-/** #1..#N na ordem relacionadas → não avaliadas → pouco relacionadas (a que a resposta cita). */
-export function numeracao(s: Secoes): Map<string, number> {
-  return new Map([...s.relacionadas, ...s.naoAvaliadas, ...s.poucoRelacionadas].map((d, i) => [d.id, i + 1]));
+/** #1..#N na ordem relacionadas → não avaliadas → pouco relacionadas (a que a resposta cita).
+ *  `prefixo` (as decisões de uma resposta já salva) vem primeiro, na ordem dela: reabrir uma
+ *  conversa mantém os #N que a resposta cita, mesmo que a triagem tenha avaliado mais depois. */
+export function numeracao(s: Secoes, prefixo: string[] = []): Map<string, number> {
+  const todas = [...s.relacionadas, ...s.naoAvaliadas, ...s.poucoRelacionadas];
+  const presentes = new Set(todas.map((d) => d.id));
+  const primeiro = prefixo.filter((id) => presentes.has(id));
+  const fixos = new Set(primeiro);
+  return new Map([...primeiro, ...todas.map((d) => d.id).filter((id) => !fixos.has(id))].map((id, i) => [id, i + 1]));
 }
 
 /** As decisões que vão à resposta: as de nota ≥ 2, na ordem da seção, até MAX_RESPOSTA. As

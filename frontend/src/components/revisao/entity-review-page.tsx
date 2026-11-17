@@ -314,7 +314,7 @@ export function EntityReviewPage() {
       // histórico navegável no dropdown de versões da página de Resultados.
       const versao = activeId
         ? await addVersion(activeId, snapshot)
-        : { numero: 1, ...snapshot, createdAt: Date.now(), relevantesUsuario: [] }; // acesso direto à URL, sem conversa — só exibe, não persiste
+        : { numero: 1, ...snapshot, createdAt: Date.now(), relevantesUsuario: [], respostaIds: [] }; // acesso direto à URL, sem conversa — só exibe, não persiste
       if (controle.signal.aborted) return; // saiu da tela durante o salvamento: não navega
       loadVersion(versao, { buscaNova: true });
       router.push("/resultados");

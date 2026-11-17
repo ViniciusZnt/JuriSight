@@ -114,12 +114,12 @@ def _versao(store, cid, uid, tese):
                             pdf_extraido=None, aviso=None, resultados=[{"id": "d1"}])
 
 
-def test_set_relevantes_altera_so_a_versao_pedida(store: ConversaStore, usuario_id):
+def test_atualizar_versao_altera_so_a_versao_pedida(store: ConversaStore, usuario_id):
     conversa = store.create(usuario_id, "Teste integração — relevantes")
     _versao(store, conversa.id, usuario_id, "v1")
     _versao(store, conversa.id, usuario_id, "v2")
 
-    atualizada = store.set_relevantes(conversa.id, usuario_id, 2, ["a", "b"])
+    atualizada = store.atualizar_versao(conversa.id, usuario_id, 2, {"relevantes_usuario": ["a", "b"]})
 
     v1, v2 = atualizada.versoes
     assert "relevantes_usuario" not in v1
@@ -127,10 +127,18 @@ def test_set_relevantes_altera_so_a_versao_pedida(store: ConversaStore, usuario_
     assert v2["estrutura"] == {"tese_central": "v2"} and v2["resultados"] == [{"id": "d1"}] and v2["numero"] == 2
 
 
-def test_set_relevantes_versao_inexistente_ou_de_outro_usuario(store: ConversaStore, usuario_id):
+def test_atualizar_versao_versao_inexistente_ou_de_outro_usuario(store: ConversaStore, usuario_id):
     conversa = store.create(usuario_id, "Teste integração — relevantes 404")
     _versao(store, conversa.id, usuario_id, "v1")
     with pytest.raises(ConversaNaoEncontradaError):
-        store.set_relevantes(conversa.id, usuario_id, 2, ["a"])
+        store.atualizar_versao(conversa.id, usuario_id, 2, {"relevantes_usuario": ["a"]})
     with pytest.raises(ConversaNaoEncontradaError):
-        store.set_relevantes(conversa.id, uuid.uuid4(), 1, ["a"])
+        store.atualizar_versao(conversa.id, uuid.uuid4(), 1, {"relevantes_usuario": ["a"]})
+
+
+def test_atualizar_versao_junta_campos_sem_apagar_os_outros(store: ConversaStore, usuario_id):
+    conversa = store.create(usuario_id, "Teste integração — resposta_ids")
+    _versao(store, conversa.id, usuario_id, "v1")
+    store.atualizar_versao(conversa.id, usuario_id, 1, {"relevantes_usuario": ["a"]})
+    v = store.atualizar_versao(conversa.id, usuario_id, 1, {"resposta_ids": ["x", "y"]}).versoes[0]
+    assert v["relevantes_usuario"] == ["a"] and v["resposta_ids"] == ["x", "y"] and v["estrutura"] == {"tese_central": "v1"}

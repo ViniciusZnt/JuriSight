@@ -128,8 +128,10 @@ function DropdownOption({ label, active, onClick }: { label: string; active: boo
  *  de provimento/data e ordenação operam sobre o mesmo lote já recebido. */
 export function SearchResultsPage() {
   const router = useRouter();
-  const { resultados, estrutura, versionNumero, loadVersion, buscaNova, relevantesUsuario, setRelevantesUsuario } = useSearchSession();
-  const { conversations, activeId, setRelevantes } = useConversations();
+  const {
+    resultados, estrutura, versionNumero, loadVersion, buscaNova, relevantesUsuario, setRelevantesUsuario, respostaIds, setRespostaIds,
+  } = useSearchSession();
+  const { conversations, activeId, setRelevantes, setRespostaIds: salvarRespostaIds } = useConversations();
   const [filter, setFilter] = useState<"all" | Outcome>("all");
   const [sortBy, setSortBy] = useState<"relevance" | "date">("relevance");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -178,13 +180,26 @@ export function SearchResultsPage() {
   const comTriagem = triagem.status !== "indisponivel";
   // Numeração (#N) e resposta não dependem dos votos: votar não renumera nem refaz a resposta.
   const secoesBase = useMemo(() => organizar(porRank, triagem.avaliacoes, []), [porRank, triagem.avaliacoes]);
-  const numeros = useMemo(() => (comTriagem ? numeracao(secoesBase) : ranks), [comTriagem, secoesBase, ranks]);
-  const terminal = triagem.status === "concluida" || triagem.status === "parada";
-  const idsResposta = useMemo(
-    () => (comTriagem && terminal ? idsParaResposta(secoesBase, triagem.avaliacoes) : null),
-    [comTriagem, terminal, secoesBase, triagem.avaliacoes],
+  // Conversa reaberta com resposta salva: usa as mesmas decisões e os mesmos #N, mesmo que o servidor
+  // tenha terminado lotes depois do "Parar" — reabrir não gera (nem cobra) outra resposta.
+  const usarSalva = respostaIds.length > 0 && !triagem.avaliouAqui;
+  const numeros = useMemo(
+    () => (comTriagem ? numeracao(secoesBase, usarSalva ? respostaIds : []) : ranks),
+    [comTriagem, secoesBase, usarSalva, respostaIds, ranks],
   );
-  const resposta = useRespostaGerada(estrutura, idsResposta);
+  const terminal = triagem.status === "concluida" || triagem.status === "parada";
+  const idsResposta = useMemo(() => {
+    if (!comTriagem || triagem.status === "avaliando") return null;
+    if (usarSalva) return respostaIds.filter((id) => numeros.has(id));
+    return terminal ? idsParaResposta(secoesBase, triagem.avaliacoes) : null;
+  }, [comTriagem, triagem.status, usarSalva, respostaIds, numeros, terminal, secoesBase, triagem.avaliacoes]);
+  // A resposta recebida para outras decisões vira a salva da versão (para reabrir igual).
+  const aoReceberResposta = (ids: string[]) => {
+    if (usarSalva || ids.join(",") === respostaIds.join(",")) return;
+    setRespostaIds(ids);
+    if (activeId && versionNumero !== null) salvarRespostaIds(activeId, versionNumero, ids).catch(() => {});
+  };
+  const resposta = useRespostaGerada(estrutura, idsResposta, aoReceberResposta);
   const porNumero = useMemo(() => [...results].sort((a, b) => numeros.get(a.id)! - numeros.get(b.id)!), [results, numeros]);
   const sintese = useMemo(() => sintetizar(results), [results]);
   const tribunais = useMemo(() => {
@@ -244,10 +259,14 @@ export function SearchResultsPage() {
     const reordenar = (f: (l: typeof results) => typeof results): Secoes => ({
       relacionadas: f(s.relacionadas), naoAvaliadas: f(s.naoAvaliadas), poucoRelacionadas: f(s.poucoRelacionadas),
     });
-    if (sortBy === "relevance") return sortDir === "desc" ? s : reordenar((l) => [...l].reverse());
+    if (sortBy === "relevance") {
+      // dentro de cada seção, a ordem do #N (nota, depois RRF; a resposta salva primeiro)
+      const porN = (l: typeof results) => [...l].sort((a, b) => numeros.get(a.id)! - numeros.get(b.id)!);
+      return reordenar((l) => (sortDir === "desc" ? porN(l) : porN(l).reverse()));
+    }
     const pos = new Map(filteredResults.map((d, i) => [d.id, i]));
     return reordenar((l) => [...l].sort((a, b) => pos.get(a.id)! - pos.get(b.id)!));
-  }, [comTriagem, filteredResults, triagem.avaliacoes, relevantesUsuario, sortBy, sortDir]);
+  }, [comTriagem, filteredResults, triagem.avaliacoes, relevantesUsuario, sortBy, sortDir, numeros]);
 
   // "É relevante" / "Desfazer": atualiza na hora e grava na versão; se falhar, volta atrás.
   const votar = (id: string, relevante: boolean) => {

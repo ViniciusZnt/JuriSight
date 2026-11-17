@@ -82,11 +82,11 @@ WHERE id = %s AND usuario_id = %s
 RETURNING {_SELECT_COLUNAS}
 """
 
-# Grava as decisões que o advogado marcou como relevantes ("É relevante") numa versão, sem tocar
-# nos outros campos dela. `numero` é 1-based; o elemento do array é numero - 1.
-_SET_RELEVANTES = f"""
+# Junta campos (votos "É relevante", ids da resposta) numa versão, sem tocar nos outros campos
+# dela. `numero` é 1-based; o elemento do array é numero - 1.
+_ATUALIZAR_VERSAO = f"""
 UPDATE public.conversas SET
-    versoes = jsonb_set(versoes, ARRAY[(%s - 1)::text, 'relevantes_usuario'], %s::jsonb),
+    versoes = jsonb_set(versoes, ARRAY[(%s - 1)::text], (versoes -> (%s - 1)) || %s::jsonb),
     atualizado_em = NOW()
 WHERE id = %s AND usuario_id = %s AND %s BETWEEN 1 AND jsonb_array_length(versoes)
 RETURNING {_SELECT_COLUNAS}
@@ -176,13 +176,14 @@ class ConversaStore:
             raise ConversaNaoEncontradaError(conversa_id)
         return _row_para_conversa(row)
 
-    def set_relevantes(
-        self, conversa_id: uuid.UUID, usuario_id: uuid.UUID, numero: int, ids: list[str]
+    def atualizar_versao(
+        self, conversa_id: uuid.UUID, usuario_id: uuid.UUID, numero: int, campos: dict[str, Any]
     ) -> Conversa:
-        """Substitui `relevantes_usuario` da versão `numero`. Versão inexistente ou conversa de
-        outro usuário levanta ConversaNaoEncontradaError (indistinguíveis, como no resto)."""
+        """Substitui só os `campos` dados na versão `numero` (ex.: relevantes_usuario, resposta_ids).
+        Versão inexistente ou conversa de outro usuário levanta ConversaNaoEncontradaError
+        (indistinguíveis, como no resto)."""
         with psycopg.connect(self.database_url) as conn, conn.cursor() as cur:
-            cur.execute(_SET_RELEVANTES, (numero, Json(ids), conversa_id, usuario_id, numero))
+            cur.execute(_ATUALIZAR_VERSAO, (numero, numero, Json(campos), conversa_id, usuario_id, numero))
             row = cur.fetchone()
         if row is None:
             raise ConversaNaoEncontradaError(conversa_id)

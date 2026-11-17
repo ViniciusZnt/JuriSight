@@ -93,8 +93,9 @@ describe("versionFromApi", () => {
     pdf_extraido: null, aviso: null, resultados: null, criado_em: "2026-11-17T12:00:00Z",
   };
 
-  it("versão sem relevantes_usuario vira lista vazia", () => {
+  it("versão sem relevantes_usuario nem resposta_ids vira listas vazias", () => {
     expect(versionFromApi(base).relevantesUsuario).toEqual([]);
+    expect(versionFromApi(base).respostaIds).toEqual([]);
   });
 
   it("carrega relevantes_usuario quando existe", () => {
