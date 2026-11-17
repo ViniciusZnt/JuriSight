@@ -2,7 +2,8 @@
 API Controller (RFC Tabela 6/Figura 10) — a aplicação FastAPI.
 
 Orquestra o pipeline: PDF Extractor -> Query Enrichment -> Query Builder -> Hybrid
-Search (RRF) -> Doc Retriever -> filtros -> Reranker -> Result Formatter. Todos os endpoints
+Search (RRF) -> Doc Retriever -> filtros -> Result Formatter; a ordem final é a da triagem
+por IA, que o front pede em lotes. Todos os endpoints
 exigem sessão (cookie httpOnly, `auth_routes.get_current_user`), exceto /health:
   - POST /enrich          — extrai a EstruturaArgumentativa do PDF e/ou da intenção.
   - POST /query           — busca híbrida; com dispositivos ou expressões, só devolve
@@ -60,12 +61,10 @@ from query.search.doc_retriever import DocRetriever
 from query.search.hybrid_search import HybridSearch
 from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados em tests/test_api.py)
     N_CANDIDATOS_COM_FILTRO,
-    N_CANDIDATOS_PARA_RERANK,
-    N_RESULTS_FINAL,
+    N_RESULTADOS_LIVRE,
+    N_RESULTADOS_TRIAGEM,
     buscar,
-    normalizar_scores as _normalizar_scores,
 )
-from query.search.reranker import Reranker
 from query.search.resposta import Resposta, chave_da_resposta, gerar_resposta
 from query.search.resposta_cache import RespostaCache, ensure_schema as ensure_resposta_cache_schema
 from query.api.provimento_routes import get_provimento_store, router as provimento_router
@@ -90,7 +89,6 @@ async def lifespan(app: FastAPI):
     app.state.hybrid = HybridSearch(embedder, store, bm25)
     app.state.doc_retriever = DocRetriever(DATABASE_URL)
     app.state.enricher = QueryEnricher()
-    app.state.reranker = Reranker()  # ~150MB, carregado uma vez (ver query/search/reranker.py)
     ensure_schema(DATABASE_URL)  # idempotente — cria auth.usuarios se ainda não existir
     app.state.usuario_store = UsuarioStore(DATABASE_URL)
     ensure_conversas_schema(DATABASE_URL)  # depende de auth.usuarios (FK) — roda depois
@@ -164,10 +162,6 @@ def get_doc_retriever(request: Request) -> DocRetriever:
 
 def get_enricher(request: Request) -> QueryEnricher:
     return request.app.state.enricher
-
-
-def get_reranker(request: Request) -> Reranker:
-    return request.app.state.reranker
 
 
 def get_openai(request: Request) -> openai.OpenAI:
@@ -374,7 +368,6 @@ async def query(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
     retriever: DocRetriever = Depends(get_doc_retriever),
-    reranker: Reranker = Depends(get_reranker),
     provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
     filtro_store: FiltroStore | None = Depends(get_filtro_store),
 ) -> list[ResultCard]:
@@ -386,7 +379,7 @@ async def query(
                                       body.estrutura.tribunais, body.estrutura.fase)
         if not ids:
             return []
-    cards = await _buscar_cards(body, hybrid, retriever, reranker, ids)
+    cards = await _buscar_cards(body, hybrid, retriever, ids, N_RESULTADOS_TRIAGEM)
     if ids is not None:  # garantia da faixa restrita: nunca marca um card que não está entre os elegíveis
         elegiveis = set(ids)
         cards = [c.model_copy(update={"faixa": "restrita"}) for c in cards if c.id in elegiveis]
@@ -398,23 +391,22 @@ async def query_livre(
     body: QueryRequest,
     hybrid: HybridSearch = Depends(get_hybrid),
     retriever: DocRetriever = Depends(get_doc_retriever),
-    reranker: Reranker = Depends(get_reranker),
     provimento_store: ProvimentoJevStore | None = Depends(get_provimento_store),
 ) -> list[ResultCard]:
     """Busca semântica livre, sem os dispositivos e expressões (que ficam só no texto do BM25).
     Pedida sob demanda depois da /query restrita, por isso não gasta o limite diário."""
-    cards = await _buscar_cards(body, hybrid, retriever, reranker, None)
+    cards = await _buscar_cards(body, hybrid, retriever, None, N_RESULTADOS_LIVRE)
     return await run_in_threadpool(com_classificacao, cards, provimento_store)
 
 
-async def _buscar_cards(body: QueryRequest, hybrid, retriever, reranker, ids: list[str] | None) -> list[ResultCard]:
+async def _buscar_cards(body: QueryRequest, hybrid, retriever, ids: list[str] | None, n_resultados: int) -> list[ResultCard]:
     try:
         return await run_in_threadpool(
             buscar,
             body.estrutura,
             hybrid=hybrid,
             retriever=retriever,
-            reranker=reranker,
+            n_resultados=n_resultados,
             provimento=body.provimento,
             data_inicio=body.data_inicio,
             data_fim=body.data_fim,

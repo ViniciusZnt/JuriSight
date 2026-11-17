@@ -7,14 +7,6 @@ from auth.store import Usuario
 from scraper.schema import DocumentoJuridico, Provimento, TipoDocumento
 
 
-class FakeReranker:
-    """Passthrough: scores estritamente decrescentes na ordem de entrada, então o
-    sort por score não muda a ordem que já veio do (fake) RRF."""
-
-    def rerank_scores(self, query: str, passagens: list[str]) -> list[float]:
-        return [1.0 - i * 0.01 for i in range(len(passagens))]
-
-
 class FakeDocRetriever:
     def __init__(self, docs: dict[str, DocumentoJuridico]):
         self._docs = docs

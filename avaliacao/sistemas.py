@@ -1,7 +1,7 @@
-"""Sistemas S0-S6 do benchmark de rerankers.
+"""Sistemas do benchmark.
 
-S0 BM25 sozinho; S1 denso sozinho; S2 híbrido RRF sem reranker; S3-S6 = S2 +
-um reranker. Cada sistema devolve o top-20 de ids de documento.
+S0 BM25 sozinho; S1 denso sozinho; S2 híbrido RRF (os 50 do /query, na ordem do RRF).
+Cada sistema devolve o top-20 de ids de documento.
 """
 from __future__ import annotations
 
@@ -13,13 +13,16 @@ from query.search.hybrid_search import (
     _doc_id_do_chunk,
     reciprocal_rank_fusion,
 )
-from query.search.pipeline import N_CANDIDATOS_PARA_RERANK, N_RESULTS_FINAL, buscar
+from query.search.pipeline import N_RESULTADOS_TRIAGEM, buscar
 
-SISTEMAS: tuple[str, ...] = ("S0", "S1", "S2", "S3", "S4", "S5", "S6")
+SISTEMAS: tuple[str, ...] = ("S0", "S1", "S2")
+
+# Quantos ids cada sistema devolve (o que as métricas avaliam).
+TOP_K = 20
 
 # Profundidade da consulta de cada canal, igual para qualquer k: assim o top-10 de
 # referência do pool é prefixo do top-20 de S0/S1 (com k variável, o corte mudava).
-PROFUNDIDADE = N_RESULTS_FINAL * CANDIDATOS_POR_CANAL
+PROFUNDIDADE = TOP_K * CANDIDATOS_POR_CANAL
 
 
 def top_bm25(hybrid, estrutura: EstruturaArgumentativa, k: int) -> list[str]:
@@ -43,7 +46,7 @@ def top_denso(hybrid, estrutura: EstruturaArgumentativa, k: int) -> list[str]:
 
 
 def candidatos_hibrido(
-    estrutura: EstruturaArgumentativa, *, hybrid, retriever, n: int = N_CANDIDATOS_PARA_RERANK
+    estrutura: EstruturaArgumentativa, *, hybrid, retriever, n: int = N_RESULTADOS_TRIAGEM
 ) -> list[str]:
     """Os n candidatos do híbrido (ordem do RRF) que o retriever encontra."""
     bm25_query = query_builder.build_bm25_query(estrutura)
@@ -53,46 +56,13 @@ def candidatos_hibrido(
     return [doc_id for doc_id, _ in rankings if doc_id in docs]
 
 
-def rodar_sistema(
-    sistema: str, estrutura: EstruturaArgumentativa, deps, rerankers: dict[str, object]
-) -> list[str]:
-    """Top-20 de ids do sistema. `rerankers` mapeia "S3".."S6" ao reranker."""
+def rodar_sistema(sistema: str, estrutura: EstruturaArgumentativa, deps) -> list[str]:
+    """Top-20 de ids do sistema."""
     if sistema not in SISTEMAS:
         raise KeyError(f"Sistema desconhecido: {sistema!r} (esperado um de {SISTEMAS})")
     if sistema == "S0":
-        return top_bm25(deps.hybrid, estrutura, N_RESULTS_FINAL)
+        return top_bm25(deps.hybrid, estrutura, TOP_K)
     if sistema == "S1":
-        return top_denso(deps.hybrid, estrutura, N_RESULTS_FINAL)
-    reranker = None
-    if sistema != "S2":
-        if sistema not in rerankers:
-            raise KeyError(f"Reranker do sistema {sistema} não foi passado em `rerankers`")
-        reranker = rerankers[sistema]
-    cards = buscar(estrutura, hybrid=deps.hybrid, retriever=deps.retriever, reranker=reranker)
-    return [card.id for card in cards]
-
-
-def _monoptt5():
-    from query.search.reranker_monoptt5 import MonoPTT5
-
-    return MonoPTT5()  # levanta RuntimeError orientando `uv sync --group benchmark`
-
-
-def construir_rerankers(nomes: list[str]) -> dict[str, object]:
-    """Monta só os rerankers pedidos (cada modelo é carregado apenas se pedido).
-
-    S6 (monoPTT5) exige o grupo opcional `benchmark` (torch + transformers).
-    """
-    from query.search.reranker import Reranker
-    from query.search.reranker_onnx import BGE, GTE, CrossEncoderOnnx
-
-    fabricas = {
-        "S3": Reranker,
-        "S4": lambda: CrossEncoderOnnx(*GTE),
-        "S5": lambda: CrossEncoderOnnx(*BGE),
-        "S6": _monoptt5,
-    }
-    desconhecidos = [n for n in nomes if n not in fabricas]
-    if desconhecidos:
-        raise ValueError(f"Reranker desconhecido: {desconhecidos} (esperado um de {sorted(fabricas)})")
-    return {nome: fabricas[nome]() for nome in nomes}
+        return top_denso(deps.hybrid, estrutura, TOP_K)
+    cards = buscar(estrutura, hybrid=deps.hybrid, retriever=deps.retriever, n_resultados=N_RESULTADOS_TRIAGEM)
+    return [card.id for card in cards][:TOP_K]

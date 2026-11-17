@@ -1,17 +1,16 @@
-"""Benchmark multissistema (S0-S6): roda os sistemas e gera o relatório estatístico.
+"""Benchmark multissistema (S0, S1, S2, S7): roda os sistemas e gera o relatório estatístico.
 
-    python -m avaliacao.benchmark rodar [--sistemas S0,...,S6] [--split dev|teste|todos]
+    python -m avaliacao.benchmark rodar [--sistemas S0,S1,S2,S7] [--split dev|teste|todos]
     python -m avaliacao.benchmark relatorio RUNS.json
 
 `rodar` grava `data/eval/runs/<AAAA-MM-DD_HHMMSS>_runs.json` (top-20 e latência de
-cada sistema por tese, mais os 30 candidatos do híbrido e o top-10 de BM25 e de
+cada sistema por tese, mais os 50 candidatos do híbrido e o top-10 de BM25 e de
 denso, para o teto e os relevantes perdidos). `relatorio` lê esse arquivo, junta
 os rótulos finais do banco e grava `<mesmo prefixo>_relatorio.json`.
 """
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import os
 import subprocess
@@ -37,12 +36,12 @@ from avaliacao.metricas import (
     precisao_at_k,
     recall_at_k,
 )
-from avaliacao.sistemas import SISTEMAS, candidatos_hibrido, construir_rerankers, rodar_sistema, top_bm25, top_denso
+from avaliacao.sistemas import SISTEMAS, candidatos_hibrido, rodar_sistema, top_bm25, top_denso
 from avaliacao.store import Tese
 
 METRICAS = ("ndcg_10", "mrr_10", "p_5", "p_10", "recall_10", "map_10", "recall_20", "judged_10")
 # (tratamento, controle): diferença = tratamento - controle em nDCG@10.
-CONTRASTES = (("S3", "S2"), ("S4", "S3"), ("S5", "S3"), ("S6", "S3"), ("S0", "S2"), ("S1", "S2"))
+CONTRASTES = (("S7", "S2"), ("S0", "S2"), ("S1", "S2"))
 N_BOOTSTRAP = 10_000
 SEED_BOOTSTRAP = 42
 WILCOXON_ZERO_METHOD = "pratt"
@@ -70,14 +69,6 @@ def _commit_git() -> str | None:
         return None
 
 
-def _nomes_dos_modelos(sistemas: list[str]) -> dict[str, str]:
-    from query.search.reranker import MODEL_NAME
-    from query.search.reranker_onnx import BGE, GTE
-
-    todos = {"S3": MODEL_NAME, "S4": GTE[0], "S5": BGE[0], "S6": "unicamp-dl/monoptt5-base"}
-    return {s: todos[s] for s in sistemas if s in todos}
-
-
 class _EmbedderMemoizado:
     """Embedder com `embed_text` memorizado por texto; o resto vai para o original."""
 
@@ -94,38 +85,20 @@ class _EmbedderMemoizado:
         return getattr(self._embedder, nome)
 
 
-def _checar_dependencias(sistemas: list[str]) -> None:
-    """S6 (monoPTT5) precisa de torch e transformers: falhar antes de carregar tudo."""
-    if "S6" not in sistemas:
-        return
-    for modulo in ("torch", "transformers"):
-        try:
-            __import__(modulo)
-        except ImportError as e:
-            raise RuntimeError(
-                f"S6 precisa de {modulo} (grupo opcional): rode com `uv run --group benchmark "
-                f"python -m avaliacao.benchmark rodar ...` ou tire S6 de --sistemas"
-            ) from e
-
-
 def rodar(
     teses: list[Tese],
     deps,
     sistemas: list[str],
-    rerankers: dict[str, object] | None = None,
     saida: Path | None = SAIDA_PADRAO,
 ) -> dict:
     """Roda cada sistema em todas as teses, um sistema por vez, medindo a latência.
 
-    Input:  teses; deps (hybrid, retriever); sistemas ("S0".."S6");
-            rerankers — dict pronto (testes) ou None: então o reranker de cada
-            sistema é construído antes e liberado depois (`del` + gc), porque
-            os modelos não cabem juntos na RAM; saida — diretório do JSON
-            (None não grava).
+    Input:  teses; deps (hybrid, retriever); sistemas (de SISTEMAS);
+            saida — diretório do JSON (None não grava).
     Returns: {"data", "commit", "sistemas", "modelos", "teses": [{tese_id, origem,
              tema, split, candidatos, top10_bm25, top10_denso,
              "sistemas": {S: {"ids": top-20, "latencia_s": float,
-             "fora_dos_candidatos": ids de S2-S6 fora dos 30 de referência}}}],
+             "fora_dos_candidatos": ids de S2/S7 fora dos 50 de referência}}}],
              "teses_com_erro": [{tese_id, sistema, erro}], "arquivo"}.
     O `embed_text` do embedder é memorizado durante a execução (restaurado no fim):
     a latência exclui o embedding repetido. Falha numa tese/sistema é avisada em
@@ -166,29 +139,22 @@ def rodar(
                 continue
             pares.append((tese, linha))
         for sistema in sistemas:
-            usados: dict[str, object] = {}
-            if sistema in ("S0", "S1", "S2"):
-                pass
-            elif rerankers is not None:
-                usados = rerankers
-            else:
-                usados = construir_rerankers([sistema])
             if pares:  # aquecimento sem cronometrar (cache de modelo, conexões, primeira chamada)
                 try:
-                    rodar_sistema(sistema, EstruturaArgumentativa(**pares[0][0].estrutura), deps, usados)
+                    rodar_sistema(sistema, EstruturaArgumentativa(**pares[0][0].estrutura), deps)
                 except Exception as e:  # noqa: BLE001
                     print(f"Aviso: aquecimento de {sistema} falhou: {e}", file=sys.stderr)
             for tese, linha in pares:
                 try:
                     est = EstruturaArgumentativa(**tese.estrutura)
                     t0 = time.perf_counter()
-                    ids = rodar_sistema(sistema, est, deps, usados)
+                    ids = rodar_sistema(sistema, est, deps)
                     entrada = {"ids": ids, "latencia_s": time.perf_counter() - t0}
                 except Exception as e:  # noqa: BLE001
                     registrar_erro(tese, sistema, e)
                     continue
                 if sistema not in ("S0", "S1"):
-                    # S2-S6 reordenam os 30 candidatos de referência: ids fora deles
+                    # S2/S7 ordenam os 50 candidatos de referência: ids fora deles
                     # denunciam que o sistema viu um conjunto diferente.
                     ref = set(linha["candidatos"])
                     entrada["fora_dos_candidatos"] = [i for i in ids if i not in ref]
@@ -196,9 +162,6 @@ def rodar(
                         print(f"Aviso: {sistema} devolveu {len(entrada['fora_dos_candidatos'])} id(s) fora dos "
                               f"candidatos de referência na tese {tese.id}", file=sys.stderr)
                 linha["sistemas"][sistema] = entrada
-            if rerankers is None:
-                del usados
-                gc.collect()
             print(f"{sistema} concluído ({len(pares)} teses)", file=sys.stderr)
     finally:
         if embedder is not None:
@@ -208,7 +171,7 @@ def rodar(
         "data": agora.isoformat(timespec="seconds"),
         "commit": _commit_git(),
         "sistemas": list(sistemas),
-        "modelos": _nomes_dos_modelos(sistemas),
+        "modelos": {},
         "teses": linhas,
         "teses_com_erro": erros,
         "arquivo": None,
@@ -505,17 +468,12 @@ def _cmd_rodar(args) -> int:
     from avaliacao.contexto import carregar_dependencias
 
     sistemas = [s.strip().upper() for s in args.sistemas.split(",") if s.strip()]
-    try:
-        _checar_dependencias(sistemas)
-    except RuntimeError as e:
-        print(f"Erro: {e}", file=sys.stderr)
-        return 1
     deps = carregar_dependencias()  # lento: BM25 e embedder
     teses = deps.store.listar_teses(None if args.split == "todos" else args.split)
     if not teses:
         print(f"Aviso: nenhuma tese no split '{args.split}'.", file=sys.stderr)
         return 1
-    runs = rodar(teses, deps, sistemas, None, args.saida)
+    runs = rodar(teses, deps, sistemas, args.saida)
     for s in runs["sistemas"]:
         lat = [t["sistemas"][s]["latencia_s"] for t in runs["teses"] if s in t["sistemas"]]
         if not lat:

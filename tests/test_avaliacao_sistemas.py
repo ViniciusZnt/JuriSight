@@ -1,4 +1,4 @@
-"""Testes dos sistemas S0-S3 do benchmark (fakes; sem Qdrant/BM25/banco)."""
+"""Testes dos sistemas S0-S2 do benchmark (fakes; sem Qdrant/BM25/banco)."""
 from types import SimpleNamespace
 
 import pytest
@@ -31,17 +31,6 @@ class _Retriever:
         return {i: self._docs[i] for i in ids if i in self._docs}
 
 
-class _Reranker:
-    """Inverte a ordem de entrada."""
-
-    def __init__(self):
-        self.chamadas = 0
-
-    def rerank_scores(self, query, passagens):
-        self.chamadas += 1
-        return [float(i) for i in range(len(passagens))]
-
-
 ESTRUTURA = EstruturaArgumentativa(tese_central="tese fake")
 
 
@@ -51,37 +40,30 @@ def _deps(ids, achados=None):
     )
 
 
-def test_rodar_sistema_s2_s3():
-    ids = [f"a{i}" for i in range(25)]
-    deps = _deps(ids)
-    rr = _Reranker()
-
-    assert rodar_sistema("S2", ESTRUTURA, deps, {}) == ids[:20]
-    assert rr.chamadas == 0
-
-    s3 = rodar_sistema("S3", ESTRUTURA, deps, {"S3": rr})
-    assert rr.chamadas == 1
-    assert s3 == list(reversed(ids[:25]))[:20]
+def test_rodar_sistema_s2_busca_50_e_devolve_top20_na_ordem_do_rrf():
+    ids = [f"a{i}" for i in range(60)]
+    assert rodar_sistema("S2", ESTRUTURA, _deps(ids)) == ids[:20]
 
 
 def test_rodar_sistema_s0_usa_bm25_k20():
-    ids = rodar_sistema("S0", ESTRUTURA, _deps([]), {})
+    ids = rodar_sistema("S0", ESTRUTURA, _deps([]))
     assert ids == [f"b{i}" for i in range(20)]
-
-
-def test_rodar_sistema_sem_reranker_falha():
-    with pytest.raises(KeyError, match="S4"):
-        rodar_sistema("S4", ESTRUTURA, _deps(["a0"]), {})
 
 
 def test_sistema_desconhecido_falha():
     with pytest.raises(KeyError):
-        rodar_sistema("S9", ESTRUTURA, _deps(["a0"]), {})
+        rodar_sistema("S3", ESTRUTURA, _deps(["a0"]))
 
 
 def test_candidatos_hibrido_so_os_que_o_retriever_acha():
     deps = _deps(["a0", "a1", "a2"], achados=["a0", "a2"])
     assert candidatos_hibrido(ESTRUTURA, hybrid=deps.hybrid, retriever=deps.retriever) == ["a0", "a2"]
+
+
+def test_candidatos_hibrido_pede_50_por_padrao():
+    ids = [f"a{i}" for i in range(60)]
+    deps = _deps(ids)
+    assert len(candidatos_hibrido(ESTRUTURA, hybrid=deps.hybrid, retriever=deps.retriever)) == 50
 
 
 def test_top_denso_funde_colecoes_por_rrf():
@@ -97,23 +79,6 @@ def test_top_denso_funde_colecoes_por_rrf():
     estrutura = EstruturaArgumentativa(tese_central="EPI não elide a insalubridade.")
     # x está nas duas coleções: o RRF o põe na frente de a e b.
     assert top_denso(hybrid, estrutura, 1) == ["x"]
-
-
-def test_construir_rerankers_nome_desconhecido():
-    import pytest
-    from avaliacao.sistemas import construir_rerankers
-
-    with pytest.raises(ValueError):
-        construir_rerankers(["S9"])
-    assert construir_rerankers([]) == {}
-
-
-def test_construir_rerankers_s6_usa_monoptt5(monkeypatch):
-    import query.search.reranker_monoptt5 as mod
-    from avaliacao.sistemas import construir_rerankers
-
-    monkeypatch.setattr(mod, "MonoPTT5", lambda: "mono")
-    assert construir_rerankers(["S6"]) == {"S6": "mono"}
 
 
 class _Bm25Chunks:

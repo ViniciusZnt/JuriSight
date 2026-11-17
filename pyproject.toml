@@ -10,7 +10,6 @@ dependencies = [
     "dagster>=1.13.30",
     "dagster-webserver>=1.13.30",
     "fastapi>=0.115",
-    "flashrank>=0.2.10",
     "ollama>=0.6.2",
     "openai>=2.46.0",
     "openpyxl>=3.1",
@@ -42,17 +41,3 @@ include = ["scraper*", "processing*", "query*", "indexing*", "interface*"]
 dev = [
     "pytest>=9.1.1",
 ]
-# Opcional: reranker monoPTT5 (S6) do benchmark. `uv sync --group benchmark`.
-benchmark = [
-    "torch",
-    "transformers",
-    "sentencepiece",
-]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
