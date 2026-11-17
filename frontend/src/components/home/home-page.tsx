@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useUsoDiario } from "@/lib/uso-diario";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowRight, X, Loader2 } from "lucide-react";
 import { SearchInput, type SearchInputHandle, type SearchSubmitPayload } from "@/components/home/search-input";
@@ -58,6 +59,7 @@ export function HomePage() {
   const router = useRouter();
   const { create } = useConversations();
   const { setEnrichResult } = useSearchSession();
+  const { atualizar: atualizarUso } = useUsoDiario();
   const searchInputRef = useRef<SearchInputHandle>(null);
   const [loading, setLoading] = useState(false);
   const [largeFileName, setLargeFileName] = useState<string | null>(null);
@@ -96,7 +98,7 @@ export function HomePage() {
     if (isLarge) setLargeFileName(fileName);
 
     try {
-      const res = await enrich({ pdf: file, intencao: query || null });
+      const res = await enrich({ pdf: file, intencao: query || null }).finally(atualizarUso);
       setEnrichResult({
         estrutura: res.estrutura,
         hasFile,

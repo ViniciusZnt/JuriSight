@@ -277,6 +277,17 @@ export async function gerarResposta(estrutura: EstruturaArgumentativa, ids: stri
   return enviarJson<RespostaIA>("/resposta", "POST", { estrutura, ids: ids.slice(0, 25) });
 }
 
+export interface UsoAcao {
+  acao: string;
+  usado: number;
+  limite: number;
+}
+
+/** GET /uso — quanto a conta gastou hoje de cada limite diário (enrich, query, triagem, resposta). */
+export async function getUso(): Promise<{ acoes: UsoAcao[] }> {
+  return request<{ acoes: UsoAcao[] }>("/uso");
+}
+
 /** Nota da triagem: 3 mesmo problema e fato, 2 mesmo pedido, 1 mesmo ramo, 0 outro tema. */
 export type NotaTriagem = 0 | 1 | 2 | 3;
 

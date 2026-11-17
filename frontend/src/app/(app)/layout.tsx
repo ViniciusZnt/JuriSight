@@ -4,9 +4,10 @@ import { SavedProvider } from "@/lib/saved";
 import { ProfileProvider } from "@/lib/profile";
 import { RequireAuth } from "@/lib/auth";
 import { SearchSessionProvider } from "@/lib/search-session";
+import { UsoDiarioProvider } from "@/lib/uso-diario";
 
 /** Layout das telas autenticadas: exige sessão, provê as conversas, os salvos, o perfil, o
- *  estado do fluxo de busca (Home -> Revisão -> Resultados -> Decisão) e a casca com a sidebar. */
+ *  estado do fluxo de busca (Home -> Revisão -> Resultados -> Decisão), o uso diário e a casca com a sidebar. */
 export default function AppGroupLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
@@ -14,7 +15,9 @@ export default function AppGroupLayout({ children }: { children: React.ReactNode
         <ConversationsProvider>
           <SavedProvider>
             <SearchSessionProvider>
-              <AppShell>{children}</AppShell>
+              <UsoDiarioProvider>
+                <AppShell>{children}</AppShell>
+              </UsoDiarioProvider>
             </SearchSessionProvider>
           </SavedProvider>
         </ConversationsProvider>

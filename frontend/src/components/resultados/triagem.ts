@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, avaliarLote, type Avaliacao, type EstruturaArgumentativa, type ResultCard } from "@/lib/api";
+import { useUsoDiario } from "@/lib/uso-diario";
 
 /** Decisões por chamada a POST /triagem e quantas chamadas ficam em voo ao mesmo tempo. Com 2
  *  em voo, "Parar e responder" ainda economiza: os lotes que não saíram não são pagos. */
@@ -56,6 +57,7 @@ export function useTriagem(
   const atual: Estado = estado.chave === chave ? estado : inicial();
 
   // Cada execução tem um número: resposta de execução antiga (parada, chave trocada) é ignorada.
+  const { atualizar: atualizarUso } = useUsoDiario();
   const execucao = useRef(0);
   const controles = useRef(new Set<AbortController>());
 
@@ -106,6 +108,7 @@ export function useTriagem(
             .then((novas) => {
               emVoo -= 1;
               controles.current.delete(controle);
+              if (modo === "avaliar" && !controle.signal.aborted) atualizarUso();
               if (!vivo()) return;
               atualizar((e) => ({ ...e, avaliacoes: new Map([...e.avaliacoes, ...Object.entries(novas)]) }));
               disparar();
@@ -114,6 +117,7 @@ export function useTriagem(
             .catch((err: unknown) => {
               emVoo -= 1;
               controles.current.delete(controle);
+              if (modo === "avaliar" && !controle.signal.aborted) atualizarUso();
               if (!vivo()) return;
               if (err instanceof ApiError && err.status === 429) {
                 abortarTudo();
@@ -136,7 +140,7 @@ export function useTriagem(
       disparar();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chave, abortarTudo, atualizar],
+    [chave, abortarTudo, atualizar, atualizarUso],
   );
 
   // Ao montar ou trocar de consulta: avalia (busca nova) ou só lê o cache (reaberta).

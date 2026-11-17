@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { gerarResposta, type EstruturaArgumentativa, type RespostaIA } from "@/lib/api";
+import { useUsoDiario } from "@/lib/uso-diario";
 
 export const FEEDBACK_KEY = "jurisight:feedback-resposta";
 // Voltar da decisão para a lista não gera (nem cobra) a resposta de novo.
@@ -28,6 +29,7 @@ export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, idsP
   const aguardando = idsPedidos === null;
   const ids = estrutura && idsPedidos ? idsPedidos : [];
   const chave = `${ids.join(",")}|${JSON.stringify(estrutura)}`;
+  const { atualizar: atualizarUso } = useUsoDiario();
   const [recebida, setRecebida] = useState<{ chave: string; erro?: string } | null>(null);
 
   useEffect(() => {
@@ -38,7 +40,8 @@ export function useRespostaGerada(estrutura: EstruturaArgumentativa | null, idsP
         cache.set(chave, r);
         if (vivo) setRecebida({ chave });
       })
-      .catch((e: Error) => vivo && setRecebida({ chave, erro: e.message }));
+      .catch((e: Error) => vivo && setRecebida({ chave, erro: e.message }))
+      .finally(atualizarUso);
     return () => {
       vivo = false;
     };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useUsoDiario } from "@/lib/uso-diario";
 import { useRouter, useSearchParams } from "next/navigation";
 import { StepIndicator } from "@/components/step-indicator";
 import { PageTopbar } from "@/components/ui/page-topbar";
@@ -276,6 +277,7 @@ export function EntityReviewPage() {
   const manualParam = searchParams.get("modo") === "manual";
   const { estrutura: sessionEstrutura, hasFile, fileName, pdfExtraido, aviso, dispositivosIa, expressoesSugeridas, dispositivosSugeridos, setEstrutura: persistEstrutura, loadVersion } = useSearchSession();
   const { activeId, addVersion } = useConversations();
+  const { atualizar: atualizarUso } = useUsoDiario();
 
   // Sem estrutura na sessão (ex.: acesso direto à URL) cai no mesmo modo manual do UC02.
   const manual = manualParam || sessionEstrutura === null;
@@ -301,7 +303,9 @@ export function EntityReviewPage() {
     busca.current?.abort();
     const controle = (busca.current = new AbortController());
     try {
-      const resultados = await queryJurisprudencia({ estrutura: data }, controle.signal);
+      const resultados = await queryJurisprudencia({ estrutura: data }, controle.signal).finally(
+        () => !controle.signal.aborted && atualizarUso(),
+      );
       if (controle.signal.aborted) return;
       persistEstrutura(data);
       const snapshot = { estrutura: data, hasFile, fileName, pdfExtraido, aviso, resultados };
