@@ -225,3 +225,15 @@ test("decisão sem ementa vai para 'Sem ementa (1)', sem selo de nota e fora da 
   expect(container.querySelector(`#decisao-${r[1].id} [data-nota]`)).toBeNull();
   await waitFor(() => expect(gerarResposta).toHaveBeenCalledWith(sessao.estrutura, [r[0].id, r[2].id]));
 });
+
+test("parada automática avisa o motivo e oferece avaliar o resto", async () => {
+  const r = cards(25);
+  sessao.resultados = r;
+  render(<SearchResultsPage />);
+  await waitFor(() => expect(chamadas).toHaveLength(2));
+  await act(async () => chamadas[0].resolver(Object.fromEntries(r.slice(0, 10).map((d) => [d.id, av(3)]))));
+  await act(async () => chamadas[1].resolver(Object.fromEntries(r.slice(10, 20).map((d) => [d.id, av(1)]))));
+  expect(screen.getByText(/Parou ao encontrar 5 decisões com o mesmo problema e fato/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Avaliar 5 restantes" })).toBeInTheDocument();
+  await waitFor(() => expect(gerarResposta).toHaveBeenCalled());
+});
