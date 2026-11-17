@@ -11,6 +11,7 @@ exigem sessão (cookie httpOnly, `auth_routes.get_current_user`), exceto /health
   - POST /query/livre     — a mesma busca sem os filtros restritos (faixa "livre").
   - POST /query/explicacao — os textos que a busca usa (só monta, sem OpenAI).
   - POST /resposta        — resposta curta sobre as ementas (OpenAI).
+  - GET  /uso             — quanto a conta gastou hoje de cada limite diário.
   - GET  /document/{id}   — detalhe completo de um documento.
   - GET  /health          — liveness (público).
 Os routers de /auth, /conversas, /provimento e /filtros vêm de seus próprios módulos.
@@ -68,7 +69,7 @@ from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados
 from query.search.resposta import Resposta, chave_da_resposta, gerar_resposta
 from query.search.resposta_cache import RespostaCache, ensure_schema as ensure_resposta_cache_schema
 from query.api.provimento_routes import get_provimento_store, router as provimento_router
-from query.api.uso_diario import LimiteDiarioExcedido, UsoDiario, ensure_schema as ensure_uso_diario_schema
+from query.api.uso_diario import ACOES_PAGAS, LimiteDiarioExcedido, UsoDiario, ensure_schema as ensure_uso_diario_schema
 from query.search.result_formatter import ClassificacaoProvimentoView, DocumentoDetalhe, ResultCard
 from scraper.provimento_jev_db import ProvimentoJevStore, ensure_schema_correcoes
 from scraper.schema import Provimento
@@ -481,6 +482,36 @@ async def resposta(
         except psycopg.Error as exc:
             logger.warning("Resposta não foi guardada no cache: %s", exc)
     return gerada
+
+
+# --------------------------------------------------------------------------- #
+# GET /uso                                                                     #
+# --------------------------------------------------------------------------- #
+
+class UsoAcao(BaseModel):
+    acao: str
+    usado: int
+    limite: int
+
+
+class UsoResponse(BaseModel):
+    acoes: list[UsoAcao]
+
+
+@app.get("/uso", response_model=UsoResponse)
+async def uso_de_hoje(
+    usuario: Usuario = Depends(get_current_user),
+    uso: UsoDiario | None = Depends(get_uso_diario),
+) -> UsoResponse:
+    """Uso de hoje da conta em cada ação paga ("Uso de hoje" na sidebar). Não consome nada."""
+    if uso is None:
+        raise HTTPException(status_code=503, detail="Uso diário indisponível agora.")
+    try:
+        do_dia = await run_in_threadpool(uso.do_dia, usuario.id)
+    except psycopg.Error as exc:
+        logger.warning("Uso diário indisponível: %s", exc)
+        raise HTTPException(status_code=503, detail="Uso diário indisponível agora.") from exc
+    return UsoResponse(acoes=[UsoAcao(acao=a, usado=do_dia.get(a, 0), limite=uso.limites(a)[0]) for a in ACOES_PAGAS])
 
 
 # --------------------------------------------------------------------------- #
