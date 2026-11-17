@@ -297,18 +297,19 @@ export interface Avaliacao {
   motivo: string;
 }
 
-/** POST /triagem — avalia um lote de até 10 decisões (ids na ordem do RRF). Devolve só as
- *  avaliadas, por id. `apenasCache` nunca chama a IA (reabrir uma conversa); 503 = IA indisponível. */
+/** POST /triagem — avalia um lote de até 10 decisões (ids na ordem do RRF). Devolve as avaliadas,
+ *  por id, e as sem ementa (a IA não tem o que ler: ficam sem nota). `apenasCache` nunca chama a IA
+ *  (reabrir uma conversa); 503 = IA indisponível. */
 export async function avaliarLote(
   estrutura: EstruturaArgumentativa,
   ids: string[],
   opcoes: { apenasCache?: boolean },
   signal?: AbortSignal,
-): Promise<Record<string, Avaliacao>> {
-  const r = await enviarJson<{ avaliacoes: (Avaliacao & { id: string })[] }>(
+): Promise<{ avaliacoes: Record<string, Avaliacao>; semEmenta: string[] }> {
+  const r = await enviarJson<{ avaliacoes: (Avaliacao & { id: string })[]; sem_ementa?: string[] }>(
     "/triagem", "POST", { estrutura, ids, apenas_cache: opcoes.apenasCache ?? false }, signal,
   );
-  return Object.fromEntries(r.avaliacoes.map(({ id, ...a }) => [id, a]));
+  return { avaliacoes: Object.fromEntries(r.avaliacoes.map(({ id, ...a }) => [id, a])), semEmenta: r.sem_ementa ?? [] };
 }
 
 /** GET /document/{id} — detalhe completo de um documento (404 se não existir). */

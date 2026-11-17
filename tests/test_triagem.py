@@ -80,3 +80,16 @@ def test_chave_muda_com_tese_doc_e_modelo_mas_nao_com_filtros(monkeypatch):
     assert base != chave_da_triagem(EstruturaArgumentativa(tese_central="calor"), "b")
     monkeypatch.setenv("OPENAI_TRIAGEM_MODEL", "outro")
     assert base != chave_da_triagem(EstruturaArgumentativa(tese_central="calor"), "a")
+
+
+def test_ementa_vazia_nao_vai_ao_modelo_nem_recebe_nota():
+    fake = _fake(_item(1, 3), _item(2, 3))
+    r = avaliar_lote(EST, {"vazia": documento_fake(ementa="  "), "a": documento_fake(ementa="EMENTA A")}, fake)
+    user = fake.chamadas[0]["messages"][1]["content"]
+    assert "#1 (" in user and "#2 (" not in user and "EMENTA A" in user
+    assert set(r) == {"a"}
+
+
+def test_lote_so_com_ementas_vazias_nao_chama_a_openai():
+    fake = _fake()
+    assert avaliar_lote(EST, {"v": documento_fake(ementa="")}, fake) == {} and fake.chamadas == []

@@ -55,3 +55,13 @@ test("numeracao com prefixo: as decisões da resposta salva vêm primeiro, na or
   const s = organizar(r, new Map([["a", av(3)], ["b", av(3)], ["c", av(2)], ["d", av(0)]]), []);
   expect([...numeracao(s, ["c", "x", "a"])]).toEqual([["c", 1], ["a", 2], ["b", 3], ["d", 4]]);
 });
+
+test("sem ementa: seção própria, no fim da numeração, fora da resposta", () => {
+  const r = ["a", "b", "c"].map(c);
+  const m = new Map([["a", av(0)], ["c", av(3)]]);
+  const s = organizar(r, m, [], new Set(["b"]));
+  expect(ids(s.semEmenta)).toEqual(["b"]);
+  expect(ids(s.naoAvaliadas)).toEqual([]);
+  expect([...numeracao(s)]).toEqual([["c", 1], ["a", 2], ["b", 3]]);
+  expect(idsParaResposta(s, m)).toEqual(["c"]);
+});

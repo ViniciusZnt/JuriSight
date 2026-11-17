@@ -76,7 +76,7 @@ test("fora do provider, useUsoDiario não quebra", () => {
 
 test("cada lote da triagem que termina atualiza o uso; a leitura só do cache não", async () => {
   (getUso as jest.Mock).mockResolvedValue(uso(0, 0));
-  (avaliarLote as jest.Mock).mockReset().mockResolvedValue({});
+  (avaliarLote as jest.Mock).mockReset().mockResolvedValue({ avaliacoes: {}, semEmenta: [] });
   const r = Array.from({ length: 15 }, (_, i) => ({ id: `uso-d${i}` }) as ResultCard);
   const est = { ...emptyEstrutura(), tese_central: "t" };
   const wrapper = ({ children }: { children: React.ReactNode }) => <UsoDiarioProvider>{children}</UsoDiarioProvider>;

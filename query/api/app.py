@@ -69,7 +69,7 @@ from query.search.pipeline import (  # noqa: F401 — nomes reexportados (usados
 )
 from query.search.resposta import Resposta, chave_da_resposta, gerar_resposta
 from query.search.resposta_cache import RespostaCache, ensure_schema as ensure_resposta_cache_schema
-from query.search.triagem import MAX_LOTE, Avaliacao, avaliar_lote, chave_da_triagem, tese_para_ia
+from query.search.triagem import MAX_LOTE, Avaliacao, avaliar_lote, chave_da_triagem, tem_ementa, tese_para_ia
 from query.search.triagem_cache import TriagemCache, avaliacoes_do_cache, ensure_schema as ensure_triagem_cache_schema
 from query.api.provimento_routes import get_provimento_store, router as provimento_router
 from query.api.uso_diario import ACOES_PAGAS, LimiteDiarioExcedido, UsoDiario, ensure_schema as ensure_uso_diario_schema
@@ -463,6 +463,7 @@ class AvaliacaoItem(Avaliacao):
 
 class TriagemResponse(BaseModel):
     avaliacoes: list[AvaliacaoItem]  # na ordem de `ids`; quem não foi avaliado não vem
+    sem_ementa: list[str] = []  # sem ementa a IA não tem o que ler: não recebem nota (nem custam)
 
 
 @app.post("/triagem", response_model=TriagemResponse)
@@ -481,10 +482,11 @@ async def triagem(
     ids = list(dict.fromkeys(str(i) for i in body.ids))
     avaliacoes = await run_in_threadpool(avaliacoes_do_cache, cache, body.estrutura, ids)
     faltam = [i for i in ids if i not in avaliacoes]
-    if faltam and not body.apenas_cache:
+    docs = await run_in_threadpool(retriever.fetch, faltam, False) if faltam else {}
+    sem_ementa = [i for i in faltam if i in docs and not tem_ementa(docs[i])]
+    decisoes = {i: docs[i] for i in faltam if i in docs and tem_ementa(docs[i])}
+    if decisoes and not body.apenas_cache:
         await consumir_limite(uso, usuario, "triagem")
-        docs = await run_in_threadpool(retriever.fetch, faltam, False)
-        decisoes = {i: docs[i] for i in faltam if i in docs}
         try:
             novas = await run_in_threadpool(avaliar_lote, body.estrutura, decisoes, client)
         except openai.OpenAIError as exc:
@@ -497,7 +499,10 @@ async def triagem(
                 await run_in_threadpool(cache.gravar_varios, itens)
             except psycopg.Error as exc:
                 logger.warning("Triagem não foi guardada no cache: %s", exc)
-    return TriagemResponse(avaliacoes=[AvaliacaoItem(id=i, **avaliacoes[i].model_dump()) for i in ids if i in avaliacoes])
+    return TriagemResponse(
+        avaliacoes=[AvaliacaoItem(id=i, **avaliacoes[i].model_dump()) for i in ids if i in avaliacoes],
+        sem_ementa=sem_ementa,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -534,7 +539,7 @@ async def resposta(
             logger.warning("Cache da resposta indisponível: %s", exc)
     await consumir_limite(uso, usuario, "resposta")  # só conta quando vai gerar (cache não gasta)
     docs = await run_in_threadpool(retriever.fetch, ids)
-    decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs}
+    decisoes = {n: docs[i] for n, i in enumerate(ids, start=1) if i in docs and tem_ementa(docs[i])}
     avaliacoes = await run_in_threadpool(avaliacoes_do_cache, triagem, body.estrutura, ids)
     posicoes = {n: avaliacoes[i].posicao for n, i in enumerate(ids, start=1) if i in avaliacoes}
     try:

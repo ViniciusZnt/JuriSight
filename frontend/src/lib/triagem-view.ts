@@ -16,6 +16,8 @@ export interface Secoes {
   relacionadas: ResultCard[];
   naoAvaliadas: ResultCard[];
   poucoRelacionadas: ResultCard[];
+  /** Sem ementa: a IA não tem o que ler, então não recebem nota. */
+  semEmenta: ResultCard[];
 }
 
 /** Separa os resultados (na ordem do RRF) em três seções:
@@ -23,7 +25,12 @@ export interface Secoes {
  *    "É relevante", na ordem do voto;
  *  - não avaliadas: na ordem do RRF;
  *  - pouco relacionadas: nota 1, depois 0. */
-export function organizar(resultados: ResultCard[], avaliacoes: Map<string, Avaliacao>, relevantesUsuario: string[]): Secoes {
+export function organizar(
+  resultados: ResultCard[],
+  avaliacoes: Map<string, Avaliacao>,
+  relevantesUsuario: string[],
+  semEmenta: Set<string> = new Set(),
+): Secoes {
   const votadas = new Set(relevantesUsuario);
   const porNota = (a: ResultCard, b: ResultCard) => avaliacoes.get(b.id)!.nota - avaliacoes.get(a.id)!.nota;
   const avaliadas = resultados.filter((d) => avaliacoes.has(d.id) && !votadas.has(d.id));
@@ -33,16 +40,17 @@ export function organizar(resultados: ResultCard[], avaliacoes: Map<string, Aval
       ...avaliadas.filter((d) => avaliacoes.get(d.id)!.nota >= 2).sort(porNota),
       ...relevantesUsuario.flatMap((id) => porId.get(id) ?? []),
     ],
-    naoAvaliadas: resultados.filter((d) => !avaliacoes.has(d.id) && !votadas.has(d.id)),
+    naoAvaliadas: resultados.filter((d) => !avaliacoes.has(d.id) && !votadas.has(d.id) && !semEmenta.has(d.id)),
     poucoRelacionadas: avaliadas.filter((d) => avaliacoes.get(d.id)!.nota < 2).sort(porNota),
+    semEmenta: resultados.filter((d) => semEmenta.has(d.id) && !avaliacoes.has(d.id) && !votadas.has(d.id)),
   };
 }
 
-/** #1..#N na ordem relacionadas → não avaliadas → pouco relacionadas (a que a resposta cita).
+/** #1..#N na ordem relacionadas → não avaliadas → pouco relacionadas → sem ementa (a que a resposta cita).
  *  `prefixo` (as decisões de uma resposta já salva) vem primeiro, na ordem dela: reabrir uma
  *  conversa mantém os #N que a resposta cita, mesmo que a triagem tenha avaliado mais depois. */
 export function numeracao(s: Secoes, prefixo: string[] = []): Map<string, number> {
-  const todas = [...s.relacionadas, ...s.naoAvaliadas, ...s.poucoRelacionadas];
+  const todas = [...s.relacionadas, ...s.naoAvaliadas, ...s.poucoRelacionadas, ...s.semEmenta];
   const presentes = new Set(todas.map((d) => d.id));
   const primeiro = prefixo.filter((id) => presentes.has(id));
   const fixos = new Set(primeiro);
