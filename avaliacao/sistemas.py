@@ -1,6 +1,7 @@
 """Sistemas do benchmark.
 
-S0 BM25 sozinho; S1 denso sozinho; S2 híbrido RRF (os 50 do /query, na ordem do RRF).
+S0 BM25 sozinho; S1 denso sozinho; S2 híbrido RRF (os 50 do /query, na ordem do RRF);
+S7 = S2 + triagem por IA (o que a tela mostra: os 50 ordenados pela nota 0-3).
 Cada sistema devolve o top-20 de ids de documento.
 """
 from __future__ import annotations
@@ -14,8 +15,10 @@ from query.search.hybrid_search import (
     reciprocal_rank_fusion,
 )
 from query.search.pipeline import N_RESULTADOS_TRIAGEM, buscar
+from query.search.triagem import MAX_LOTE, Avaliacao, avaliar_lote, chave_da_triagem
+from query.search.triagem_cache import avaliacoes_do_cache
 
-SISTEMAS: tuple[str, ...] = ("S0", "S1", "S2")
+SISTEMAS: tuple[str, ...] = ("S0", "S1", "S2", "S7")
 
 # Quantos ids cada sistema devolve (o que as métricas avaliam).
 TOP_K = 20
@@ -56,6 +59,28 @@ def candidatos_hibrido(
     return [doc_id for doc_id, _ in rankings if doc_id in docs]
 
 
+def ordenar_por_triagem(ids: list[str], avaliacoes: dict[str, Avaliacao]) -> list[str]:
+    """Nota decrescente; empate fica na ordem de entrada (RRF); sem avaliação vai para o fim."""
+    return sorted(ids, key=lambda i: -avaliacoes[i].nota if i in avaliacoes else 1)
+
+
+def triagem_s7(estrutura: EstruturaArgumentativa, ids: list[str], deps) -> dict[str, Avaliacao]:
+    """Avalia os ids como a tela faz (lotes de MAX_LOTE), reaproveitando e gravando no cache da
+    triagem — em sequência, porque o benchmark não precisa de paralelismo."""
+    avaliacoes = avaliacoes_do_cache(deps.triagem_cache, estrutura, ids)
+    faltam = [i for i in ids if i not in avaliacoes]
+    for k in range(0, len(faltam), MAX_LOTE):
+        lote = faltam[k:k + MAX_LOTE]
+        docs = deps.retriever.fetch(lote, completo=False)
+        novas = avaliar_lote(estrutura, {i: docs[i] for i in lote if i in docs}, deps.openai)
+        if deps.triagem_cache is not None and novas:
+            deps.triagem_cache.gravar_varios(
+                {chave_da_triagem(estrutura, i): a.model_dump(mode="json") for i, a in novas.items()}
+            )
+        avaliacoes.update(novas)
+    return avaliacoes
+
+
 def rodar_sistema(sistema: str, estrutura: EstruturaArgumentativa, deps) -> list[str]:
     """Top-20 de ids do sistema."""
     if sistema not in SISTEMAS:
@@ -65,4 +90,7 @@ def rodar_sistema(sistema: str, estrutura: EstruturaArgumentativa, deps) -> list
     if sistema == "S1":
         return top_denso(deps.hybrid, estrutura, TOP_K)
     cards = buscar(estrutura, hybrid=deps.hybrid, retriever=deps.retriever, n_resultados=N_RESULTADOS_TRIAGEM)
-    return [card.id for card in cards][:TOP_K]
+    ids = [card.id for card in cards]
+    if sistema == "S7":
+        ids = ordenar_por_triagem(ids, triagem_s7(estrutura, ids, deps))
+    return ids[:TOP_K]

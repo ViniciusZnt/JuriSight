@@ -107,3 +107,50 @@ def test_top10_e_prefixo_do_top20_bm25_e_denso():
     assert sistemas.top_bm25(hybrid, est, 10) == sistemas.top_bm25(hybrid, est, 20)[:10]
     assert sistemas.top_denso(hybrid, est, 10) == sistemas.top_denso(hybrid, est, 20)[:10]
     assert len(sistemas.top_bm25(hybrid, est, 20)) == 15  # 100 chunks / 7 por doc: profundidade fixa
+
+
+# --- S7: S2 + triagem por IA ------------------------------------------------------------------
+
+from query.search.triagem import Avaliacao  # noqa: E402
+
+
+def _av(nota):
+    return Avaliacao(nota=nota, posicao="deferiu", motivo="m")
+
+
+def test_ordenar_por_triagem_nota_desc_desempate_pela_entrada_e_sem_nota_no_fim():
+    av = {"b": _av(3), "c": _av(3), "a": _av(1)}
+    assert sistemas.ordenar_por_triagem(["a", "b", "c", "d"], av) == ["b", "c", "a", "d"]
+
+
+class _CacheMemoria:
+    def __init__(self):
+        self.salvas = {}
+
+    def ler_varios(self, chaves):
+        return {c: self.salvas[c] for c in chaves if c in self.salvas}
+
+    def gravar_varios(self, itens):
+        self.salvas.update(itens)
+
+
+def test_s7_avalia_os_50_em_lotes_de_10_usando_o_cache_e_devolve_top20(monkeypatch):
+    ids = [f"a{i}" for i in range(60)]
+    lotes = []
+
+    def avaliar_lote(estrutura, decisoes, client):
+        lotes.append(list(decisoes))
+        # as 10 últimas dos 50 viram nota 3, o resto nota 1
+        return {i: _av(3 if int(i[1:]) >= 40 else 1) for i in decisoes}
+
+    monkeypatch.setattr(sistemas, "avaliar_lote", avaliar_lote)
+    deps = _deps(ids)
+    deps.openai, deps.triagem_cache = object(), _CacheMemoria()
+
+    top = rodar_sistema("S7", ESTRUTURA, deps)
+    assert [len(lote) for lote in lotes] == [10] * 5
+    assert top[:10] == [f"a{i}" for i in range(40, 50)] and len(top) == 20
+
+    lotes.clear()
+    assert rodar_sistema("S7", ESTRUTURA, deps) == top
+    assert lotes == []  # 2ª vez: tudo do cache
