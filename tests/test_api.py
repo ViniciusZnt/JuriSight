@@ -284,6 +284,7 @@ def test_query_explicacao_devolve_texto_semantico_e_termos(client):
     assert resp.json() == {
         "semantica": "A gestante tem estabilidade.",
         "termos": ["reintegração", "ADCT art. 10, II, b", "estabilidade da gestante"],
+        "dispositivos": ["ADCT art. 10, II, b"],
     }
 
 

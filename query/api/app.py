@@ -56,7 +56,7 @@ from query.api.filtros_routes import (
 from query.enrichment import pdf_extractor, query_builder
 from query.enrichment.query_enrichment import QueryEnricher
 from query.enrichment.schema import EstruturaArgumentativa
-from query.filtros.dispositivos import citada_em, codigo_de_texto
+from query.filtros.dispositivos import citada_em, codigo_de_texto, rotulo
 from query.filtros.fases import tem_filtro_restrito
 from query.filtros.store import FiltroIndisponivel, FiltroStore
 from query.search.doc_retriever import DocRetriever
@@ -434,6 +434,7 @@ class ExplicacaoRequest(BaseModel):
 class ExplicacaoResponse(BaseModel):
     semantica: str  # texto exato que virou embedding
     termos: list[str]  # termos exatos enviados ao BM25, na ordem
+    dispositivos: list[str]  # rótulos dos dispositivos exigidos (filtro restrito), para a prévia da Revisão
 
 
 @app.post("/query/explicacao", response_model=ExplicacaoResponse, dependencies=[Depends(get_current_user)])
@@ -444,7 +445,11 @@ async def query_explicacao(body: ExplicacaoRequest) -> ExplicacaoResponse:
         semantica = query_builder.build_frase_tese(body.estrutura)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ExplicacaoResponse(semantica=semantica, termos=query_builder.termos_bm25(body.estrutura))
+    return ExplicacaoResponse(
+        semantica=semantica,
+        termos=query_builder.termos_bm25(body.estrutura),
+        dispositivos=[rotulo(c) for c in body.estrutura.dispositivos],
+    )
 
 
 # --------------------------------------------------------------------------- #

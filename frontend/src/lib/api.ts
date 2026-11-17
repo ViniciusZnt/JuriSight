@@ -226,6 +226,8 @@ export interface SugestaoDispositivo {
 export interface ExplicacaoBusca {
   semantica: string;
   termos: string[];
+  /** Rótulos dos dispositivos exigidos pelo filtro restrito. */
+  dispositivos: string[];
 }
 
 export async function explicarBusca(estrutura: EstruturaArgumentativa): Promise<ExplicacaoBusca> {
