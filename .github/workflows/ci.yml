@@ -21,7 +21,11 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv sync --frozen
-      - run: uv run pytest -q
+      - run: uv run pytest -q --cov --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: coverage.xml
 
   frontend:
     runs-on: ubuntu-latest
@@ -39,10 +43,49 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      - run: pnpm test -- --coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend
+          path: frontend/coverage/lcov.info
       - run: pnpm build
         env:
           NEXT_PUBLIC_API_URL: https://exemplo.invalid/api
+
+  # Análise do SonarCloud (não bloqueia o deploy). Sem SONAR_TOKEN (secret ausente ou PR de fork), só avisa.
+  sonar:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Confere o token
+        id: token
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::warning::SONAR_TOKEN ausente; análise do SonarCloud pulada."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.token.outputs.ok == 'true'
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        if: steps.token.outputs.ok == 'true'
+        with:
+          name: coverage-backend
+      - uses: actions/download-artifact@v4
+        if: steps.token.outputs.ok == 'true'
+        with:
+          name: coverage-frontend
+          path: frontend/coverage
+      - name: Caminhos do lcov relativos à raiz do repositório
+        if: steps.token.outputs.ok == 'true'
+        run: sed -i 's#^SF:src/#SF:frontend/src/#' frontend/coverage/lcov.info
+      - uses: SonarSource/sonarqube-scan-action@v5.3.2
+        if: steps.token.outputs.ok == 'true'
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

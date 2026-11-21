@@ -1,5 +1,11 @@
 # JuriSight
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ViniciusZnt_JuriSight&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ViniciusZnt_JuriSight)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=ViniciusZnt_JuriSight&metric=bugs)](https://sonarcloud.io/summary/new_code?id=ViniciusZnt_JuriSight)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=ViniciusZnt_JuriSight&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=ViniciusZnt_JuriSight)
+
+A análise de qualidade e cobertura roda no CI (SonarCloud, secret `SONAR_TOKEN`).
+
 > Sistema de Análise Contextual de Jurisprudência Trabalhista com IA
 
 **Autor:** Vinicius Gabriel Zanatta\
