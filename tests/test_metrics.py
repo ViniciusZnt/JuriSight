@@ -39,3 +39,10 @@ def test_metrics_nao_conta_metrics_nem_health(client):
     corpo = client.get("/metrics").text
     assert 'handler="/metrics"' not in corpo
     assert 'handler="/health"' not in corpo
+
+
+def test_metrics_latencia_tem_buckets_largos(client):
+    client.get(f"/document/{_UUID}")
+    corpo = client.get("/metrics").text
+    assert 'http_request_duration_seconds_bucket{handler="/document/{documento_id}"' in corpo
+    assert 'le="30.0"' in corpo

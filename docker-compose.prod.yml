@@ -103,8 +103,6 @@ services:
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-    depends_on:
-      - api
 
   node-exporter:
     image: prom/node-exporter:v1.13.1
