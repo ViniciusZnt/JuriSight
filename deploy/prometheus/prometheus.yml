@@ -10,3 +10,47 @@ scrape_configs:
   - job_name: node
     static_configs:
       - targets: ["node-exporter:9100"]
+
+  # Health checks: o blackbox sonda cada serviço; o rótulo "servico" vem de __servico__.
+  - job_name: servicos
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ["http://web:3000/"]
+        labels: {__servico__: site}
+      - targets: ["http://api:8000/health"]
+        labels: {__servico__: api}
+      - targets: ["http://qdrant:6333/readyz"]
+        labels: {__servico__: qdrant}
+      - targets: ["http://ollama:11434/api/tags"]
+        labels: {__servico__: ollama}
+      - targets: ["http://dagster:3000/server_info"]
+        labels: {__servico__: dagster}
+      - targets: ["postgres:5432"]
+        labels: {__servico__: postgres}
+        # módulo TCP só para este alvo (ver relabel abaixo)
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        regex: postgres:5432
+        target_label: __param_module
+        replacement: tcp_connect
+      - source_labels: [__servico__]
+        target_label: servico
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: qdrant
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["qdrant:6333"]
+
+  - job_name: caddy
+    static_configs:
+      - targets: ["caddy:9180"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
