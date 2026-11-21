@@ -1,0 +1,58 @@
+// Alloy: lê os logs de todos os conteineres pelo socket do Docker e manda para o Loki.
+
+discovery.docker "conteineres" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Rótulo "servico" = nome do serviço no compose. Contêineres fora do compose ficam de fora.
+discovery.relabel "servicos" {
+  targets = discovery.docker.conteineres.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "(.+)"
+    target_label  = "servico"
+  }
+
+  // Mesmo valor em "service_name", que o Grafana usa para agrupar os logs.
+  rule {
+    source_labels = ["servico"]
+    target_label  = "service_name"
+  }
+
+  // Não coleta os logs do próprio Alloy nem do Loki (evita ciclo de logs sobre logs).
+  rule {
+    source_labels = ["servico"]
+    regex         = "alloy|loki"
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["servico"]
+    regex         = ""
+    action        = "drop"
+  }
+}
+
+loki.source.docker "logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.servicos.output
+  labels     = {}
+  forward_to = [loki.process.ruido.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// Descarta ruído das sondas do blackbox: pacote incompleto do Postgres (sonda TCP)
+// e linhas de acesso com o user agent do blackbox.
+loki.process "ruido" {
+  stage.drop {
+    expression = "incomplete startup packet|Blackbox Exporter"
+  }
+
+  forward_to = [loki.write.local.receiver]
+}

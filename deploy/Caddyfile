@@ -1,5 +1,10 @@
 # HTTPS automático (Let's Encrypt) para o domínio do .env. Mesma origem para front e API:
 # /api/* vai para o FastAPI sem o prefixo; o resto vai para o Next.js.
+{
+	# Métricas por requisição; a API de administração (2019) fica só em localhost, sem porta publicada.
+	metrics
+}
+
 {$DOMINIO} {
 	encode zstd gzip
 
@@ -27,4 +32,9 @@
 	handle {
 		reverse_proxy web:3000
 	}
+}
+
+# Só para o Prometheus, dentro da rede do Compose (porta não publicada).
+:9180 {
+	metrics
 }

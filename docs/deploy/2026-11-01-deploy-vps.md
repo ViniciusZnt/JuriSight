@@ -237,13 +237,22 @@ Para o CD funcionar:
 
 Pronto quando: o check fica verde no PR e a alteração do teste aparece no site alguns minutos depois do merge.
 
-Depois de mudar `deploy/Caddyfile` ou `deploy/prometheus/prometheus.yml` (o `git pull` troca o arquivo por um novo inode e o Compose não recria o contêiner só por isso), reinicie na mão, como o CD faz:
+Depois de mudar `deploy/Caddyfile`, `deploy/prometheus/prometheus.yml` ou qualquer config montada (o `git pull` troca o arquivo por um novo inode e o Compose não recria o contêiner só por isso), rode `deploy/atualizar.sh`: ele faz `git pull`, `up -d --build`, `restart caddy prometheus blackbox loki alloy grafana` e `image prune`, igual ao CD.
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml restart caddy prometheus
+/opt/jurisight/deploy/atualizar.sh
 curl -s -o /dev/null -w '%{http_code}' https://$DOMINIO/api/metrics   # deve imprimir 404
 ```
+
+### Chave do CI com comando fixo
+
+A linha da chave do CI em `/home/deploy/.ssh/authorized_keys` tem um comando fixo, então o que o `ci.yml` envia pelo SSH é ignorado. Mantenha as restrições que já existem na linha (por exemplo `no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty`) e troque só a parte do comando para:
+
+```
+command="/opt/jurisight/deploy/atualizar.sh"
+```
+
+Para verificar: faça um deploy (commit na `main`) e rode `docker compose -f docker-compose.prod.yml ps`; `caddy` e `prometheus` devem aparecer com "Up" de poucos minutos.
 
 ## 13. Riscos e volta atrás
 
