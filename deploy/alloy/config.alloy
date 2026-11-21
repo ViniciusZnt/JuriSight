@@ -14,6 +14,12 @@ discovery.relabel "servicos" {
     target_label  = "servico"
   }
 
+  // Mesmo valor em "service_name", que o Grafana usa para agrupar os logs.
+  rule {
+    source_labels = ["servico"]
+    target_label  = "service_name"
+  }
+
   // Não coleta os logs do próprio Alloy (evita ciclo de logs sobre logs).
   rule {
     source_labels = ["servico"]
