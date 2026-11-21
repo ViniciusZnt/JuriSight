@@ -13,6 +13,7 @@ scrape_configs:
 
   # Health checks: o blackbox sonda cada serviço; o rótulo "servico" vem de __servico__.
   - job_name: servicos
+    scrape_interval: 30s
     metrics_path: /probe
     params:
       module: [http_2xx]

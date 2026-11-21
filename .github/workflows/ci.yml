@@ -108,6 +108,6 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          # restart: o git pull troca Caddyfile/prometheus.yml/blackbox.yml/loki.yml/config.alloy por novos inodes e o Compose não recria o contêiner só por isso
+          # A chave tem comando fixo no authorized_keys (deploy/atualizar.sh): git pull, up -d --build, restart dos serviços com config montada e prune
           ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
-            'cd /opt/jurisight && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker compose -f docker-compose.prod.yml restart caddy prometheus blackbox loki alloy && docker image prune -f'
+            /opt/jurisight/deploy/atualizar.sh
