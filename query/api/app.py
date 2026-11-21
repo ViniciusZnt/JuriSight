@@ -36,6 +36,7 @@ import openai
 import psycopg
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field, field_validator
 from qdrant_client import QdrantClient
 from starlette.concurrency import run_in_threadpool
@@ -111,6 +112,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="JuriSight API", lifespan=lifespan)
+# /metrics para o Prometheus (rede interna; o Caddy responde 404 a /api/metrics por fora).
+# O rótulo `handler` é o template da rota, não a URL com o id.
+Instrumentator(excluded_handlers=["/metrics", "/health"], should_group_status_codes=True).instrument(app).expose(
+    app, include_in_schema=False
+)
 app.add_exception_handler(FiltroIndisponivel, tratar_filtro_indisponivel)
 app.add_exception_handler(ConversaNaoEncontradaError, tratar_conversa_nao_encontrada)
 
