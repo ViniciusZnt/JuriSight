@@ -13,7 +13,7 @@
 
 	handle_path /api/* {
 		# Métricas do Prometheus são só da rede interna.
-		@metricas path /metrics
+		@metricas path /metrics /metrics/*
 		respond @metricas 404
 
 		# Acima do limite do PDF na API (MAX_PDF_MB=20), com folga para o resto do formulário:
