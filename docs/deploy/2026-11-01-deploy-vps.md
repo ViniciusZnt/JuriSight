@@ -237,6 +237,14 @@ Para o CD funcionar:
 
 Pronto quando: o check fica verde no PR e a alteração do teste aparece no site alguns minutos depois do merge.
 
+Depois de mudar `deploy/Caddyfile` ou `deploy/prometheus/prometheus.yml` (o `git pull` troca o arquivo por um novo inode e o Compose não recria o contêiner só por isso), reinicie na mão, como o CD faz:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml restart caddy prometheus
+curl -s -o /dev/null -w '%{http_code}' https://$DOMINIO/api/metrics   # deve imprimir 404
+```
+
 ## 13. Riscos e volta atrás
 
 | Risco | O que fazer |

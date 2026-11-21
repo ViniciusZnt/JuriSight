@@ -43,7 +43,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test -- --coverage
+      - run: pnpm test --coverage
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-frontend
@@ -108,5 +108,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          # restart: o git pull troca Caddyfile/prometheus.yml por novos inodes e o Compose não recria o contêiner só por isso
           ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
-            'cd /opt/jurisight && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker image prune -f'
+          # restart: o git pull troca Caddyfile/prometheus.yml por novos inodes e o Compose não recria esses contêineres só por isso
+            'cd /opt/jurisight && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker compose -f docker-compose.prod.yml restart caddy prometheus && docker image prune -f'

@@ -10,6 +10,7 @@ const config = {
   testEnvironment: "jsdom",
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   testPathIgnorePatterns: ["<rootDir>/.next/", "<rootDir>/node_modules/"],
+  collectCoverageFrom: ["src/**/*.{ts,tsx}", "!src/__tests__/**", "!src/**/*.d.ts"],
   coverageReporters: ["lcov", "text-summary"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
