@@ -110,5 +110,4 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
           # restart: o git pull troca Caddyfile/prometheus.yml por novos inodes e o Compose não recria o contêiner só por isso
           ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
-          # restart: o git pull troca Caddyfile/prometheus.yml por novos inodes e o Compose não recria esses contêineres só por isso
             'cd /opt/jurisight && git pull --ff-only && docker compose -f docker-compose.prod.yml up -d --build && docker compose -f docker-compose.prod.yml restart caddy prometheus && docker image prune -f'
