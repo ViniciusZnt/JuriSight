@@ -448,6 +448,15 @@ para trocar depois:
 docker compose -f docker-compose.prod.yml exec grafana grafana cli admin reset-admin-password '<nova>'
 ```
 
+Abaixo desses painéis, o mesmo dashboard tem mais seções:
+
+- **Saúde dos serviços**: "Serviços no ar" (verde "No ar" / vermelho "Fora do ar" para `site`, `api`, `qdrant`, `ollama`, `dagster` e `postgres`, via blackbox) e o tempo de resposta de cada um.
+- **Qdrant e Caddy**: pedidos e latência do Qdrant (só aparecem depois da primeira requisição real) e requisições do Caddy por código de status.
+- **Contêineres**: CPU e RAM de cada serviço do compose (cAdvisor).
+- **Logs**: logs de todos os contêineres (Loki + Alloy, guardados por 15 dias), com filtro por serviço no topo do painel.
+
+O Alloy e o cAdvisor leem o socket do Docker somente leitura; nenhum deles publica porta.
+
 As métricas da API ficam em `/metrics`, que o Caddy bloqueia: `/api/metrics` não é público.
 
 ## Pipeline de dados (Dagster)
