@@ -140,6 +140,28 @@ services:
       - /sys:/host/sys:ro
       - /:/host:ro
 
+  loki:
+    image: grafana/loki:3.5.8
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./deploy/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.11.3
+    restart: unless-stopped
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
   grafana:
     image: grafana/grafana:13.1.10
     restart: unless-stopped
@@ -155,6 +177,7 @@ services:
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+      - loki
 
 volumes:
   postgres_data:
@@ -164,4 +187,5 @@ volumes:
   caddy_config:
   dagster_home:
   prometheus_data:
+  loki_data:
   grafana_data:
