@@ -29,14 +29,16 @@ scrape_configs:
         labels: {__servico__: dagster}
       - targets: ["postgres:5432"]
         labels: {__servico__: postgres}
-        # módulo TCP só para este alvo (ver relabel abaixo)
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
+      # módulo TCP só para o postgres
       - source_labels: [__param_target]
         regex: postgres:5432
         target_label: __param_module
         replacement: tcp_connect
+      - source_labels: [__param_target]
+        target_label: instance
       - source_labels: [__servico__]
         target_label: servico
       - target_label: __address__

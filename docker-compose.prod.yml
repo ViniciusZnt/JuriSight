@@ -123,10 +123,9 @@ services:
       - --disable_metrics=advtcp,cpu_topology,hugetlb,memory_numa,percpu,referenced_memory,resctrl,sched,tcp,udp,process,disk,diskIO,network
     volumes:
       - /:/rootfs:ro
-      - /var/run:/var/run:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
 
   node-exporter:
     image: prom/node-exporter:v1.13.1
