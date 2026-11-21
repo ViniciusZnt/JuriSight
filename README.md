@@ -1,5 +1,11 @@
 # JuriSight
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ViniciusZnt_JuriSight&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ViniciusZnt_JuriSight)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=ViniciusZnt_JuriSight&metric=bugs)](https://sonarcloud.io/summary/new_code?id=ViniciusZnt_JuriSight)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=ViniciusZnt_JuriSight&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=ViniciusZnt_JuriSight)
+
+A análise de qualidade e cobertura roda no CI (SonarCloud, secret `SONAR_TOKEN`).
+
 > Sistema de Análise Contextual de Jurisprudência Trabalhista com IA
 
 **Autor:** Vinicius Gabriel Zanatta\
@@ -422,6 +428,27 @@ docker compose -f docker-compose.prod.yml exec api uv run --no-sync python -m qu
   preparo (reescreve as tabelas) só roda com `JURISIGHT_TESTAR_PREPARO=1`.
 
 ---
+
+## Observabilidade
+
+Em produção, o `docker-compose.prod.yml` sobe Prometheus (coleta a cada 15 s, guarda 15 dias),
+node-exporter e Grafana. O Grafana só escuta em `127.0.0.1:3001` da VPS; acesse por túnel:
+
+```bash
+ssh -L 3001:localhost:3001 deploy@IP    # depois abra http://localhost:3001
+```
+
+Usuário `admin` e a senha `GRAFANA_ADMIN_PASSWORD` do `.env` (obrigatória). O painel
+**JuriSight** já vem configurado e mostra pedidos por minuto e erros 4xx/5xx por rota,
+latência p50 e p95 de `/enrich`, `/query`, `/triagem` e `/resposta`, e CPU, RAM e disco da VPS.
+A `GRAFANA_ADMIN_PASSWORD` só vale na criação do volume de dados do Grafana (primeira subida);
+para trocar depois:
+
+```bash
+docker compose -f docker-compose.prod.yml exec grafana grafana cli admin reset-admin-password '<nova>'
+```
+
+As métricas da API ficam em `/metrics`, que o Caddy bloqueia: `/api/metrics` não é público.
 
 ## Pipeline de dados (Dagster)
 

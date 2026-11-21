@@ -36,3 +36,8 @@ Thumbs.db
 Legal AI Research Platform.zip
 
 logs/
+# Cobertura / Sonar
+coverage.xml
+.coverage
+frontend/coverage/
+.scannerwork/

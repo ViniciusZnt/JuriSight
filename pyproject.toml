@@ -15,6 +15,7 @@ dependencies = [
     "openpyxl>=3.1",
     "pdfplumber>=0.11",
     "playwright>=1.60.0",
+    "prometheus-fastapi-instrumentator>=8.1.0",
     "psycopg[binary]>=3.2",
     "pwdlib[argon2]>=0.3.1",
     "pydantic>=2.0",
@@ -40,4 +41,5 @@ include = ["scraper*", "processing*", "query*", "indexing*", "interface*"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
 ]
