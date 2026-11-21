@@ -423,6 +423,20 @@ docker compose -f docker-compose.prod.yml exec api uv run --no-sync python -m qu
 
 ---
 
+## Observabilidade
+
+Em produção, o `docker-compose.prod.yml` sobe Prometheus (coleta a cada 15 s, guarda 15 dias),
+node-exporter e Grafana. O Grafana só escuta em `127.0.0.1:3001` da VPS; acesse por túnel:
+
+```bash
+ssh -L 3001:localhost:3001 deploy@IP    # depois abra http://localhost:3001
+```
+
+Usuário `admin` e a senha `GRAFANA_ADMIN_PASSWORD` do `.env` (obrigatória). O painel
+**JuriSight** já vem configurado e mostra pedidos por minuto e erros 4xx/5xx por rota,
+latência p50 e p95 de `/enrich`, `/query`, `/triagem` e `/resposta`, e CPU, RAM e disco da VPS.
+As métricas da API ficam em `/metrics`, que o Caddy bloqueia: `/api/metrics` não é público.
+
 ## Pipeline de dados (Dagster)
 
 Em produção a coleta, a indexação e o preparo dos filtros rodam pelo Dagster, no serviço `dagster` do
