@@ -204,7 +204,7 @@ def exportar_lote(tese, pares: list, documentos: dict, caminho: Path, seed: int)
     caminho = Path(caminho)
     # Sonar (path traversal): falso positivo, o caminho vem do operador (CLI/ambiente), não de requisição HTTP.
     caminho.parent.mkdir(parents=True, exist_ok=True)  # NOSONAR
-    wb.save(caminho)  # NOSONAR (mesmo caso acima)
+    wb.save(caminho)  # NOSONAR
     return len(ordem)
 
 

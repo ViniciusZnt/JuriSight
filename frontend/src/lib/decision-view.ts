@@ -15,6 +15,12 @@ export function semPalavraCortada(texto: string): string {
   return i < 0 ? texto : texto.slice(0, i).trimEnd();
 }
 
+/** Texto longo recolhido: até `limite` caracteres, cortado no fim de palavra, com "…".
+ *  Com `inteiro` (ou texto curto), devolve o texto todo. */
+export function textoRecolhido(texto: string, inteiro: boolean, limite = 3000): string {
+  return texto.length > limite && !inteiro ? `${semPalavraCortada(texto.slice(0, limite))}…` : texto;
+}
+
 /** O schema real não tem um campo de "título" — a ementa é o único texto de manchete. Usa a
  *  verbetação do começo (os temas em caixa alta: "ADICIONAL DE INSALUBRIDADE. RUÍDO. EPI."), sem os
  *  genéricos que quase toda ementa repete ("DIREITO DO TRABALHO. RECURSO ORDINÁRIO."), para os

@@ -1,4 +1,4 @@
-import { assuntoDoCard, orgaoDe, orgaosCitados, vereditoDe, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, paraSalvo, relevanceRanks, respostaParaCopiar, semPalavraCortada, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
+import { assuntoDoCard, orgaoDe, orgaosCitados, vereditoDe, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, paraSalvo, relevanceRanks, respostaParaCopiar, semPalavraCortada, textoRecolhido, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -229,5 +229,25 @@ describe("semPalavraCortada", () => {
     const inicio = Date.now();
     semPalavraCortada(`${"a ".repeat(100_000)}b`);
     expect(Date.now() - inicio).toBeLessThan(200);
+  });
+});
+
+describe("textoRecolhido", () => {
+  it("texto longo recolhido termina em palavra inteira com reticências", () => {
+    expect(textoRecolhido("um dois três", false, 8)).toBe("um dois…");
+  });
+
+  it("texto curto ou pedido inteiro volta igual", () => {
+    expect(textoRecolhido("um dois", false, 8)).toBe("um dois");
+    expect(textoRecolhido("um dois três", true, 8)).toBe("um dois três");
+  });
+});
+
+describe("titleFromEmenta com primeira frase longa", () => {
+  it("corta em 140 caracteres no fim de palavra, com reticências", () => {
+    const frase = `${"palavra ".repeat(30)}fim.`;
+    const titulo = titleFromEmenta(frase);
+    expect(titulo.endsWith("palavra…")).toBe(true);
+    expect(titulo.length).toBeLessThanOrEqual(141);
   });
 });
