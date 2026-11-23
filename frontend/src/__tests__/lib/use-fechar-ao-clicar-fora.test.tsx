@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { useRef } from "react";
 import { useFecharAoClicarFora } from "@/lib/use-fechar-ao-clicar-fora";
 
-function Caixa({ aberto, fechar, comEsc }: { aberto: boolean; fechar: () => void; comEsc?: boolean }) {
+function Caixa({ aberto, fechar, comEsc }: { aberto: boolean; fechar: () => void; comEsc?: boolean | (() => void) }) {
   const ref = useRef<HTMLDivElement>(null);
   useFecharAoClicarFora(ref, aberto, fechar, comEsc);
   return (
@@ -38,6 +38,17 @@ describe("useFecharAoClicarFora", () => {
     rerender(<Caixa aberto fechar={fechar} comEsc />);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(fechar).toHaveBeenCalledTimes(1);
+  });
+
+  it("com uma função em `comEsc`, o Esc chama ela no lugar de `fechar`; outras teclas não fazem nada", () => {
+    const fechar = jest.fn();
+    const aoEsc = jest.fn();
+    render(<Caixa aberto fechar={fechar} comEsc={aoEsc} />);
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(aoEsc).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(aoEsc).toHaveBeenCalledTimes(1);
+    expect(fechar).not.toHaveBeenCalled();
   });
 
   it("chama o `fechar` mais recente, sem refazer os listeners", () => {
