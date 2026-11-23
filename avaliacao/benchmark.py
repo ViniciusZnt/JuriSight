@@ -517,7 +517,8 @@ def _cmd_relatorio(args) -> int:
         adjudicador=adjudicador,
     )
     destino = args.runs.with_name(args.runs.name.removesuffix("_runs.json").removesuffix(".json") + "_relatorio.json")
-    destino.write_text(json.dumps(rel, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Sonar (path traversal): falso positivo, o destino vem do argumento de CLI; do arquivo só vem o conteúdo.
+    destino.write_text(json.dumps(rel, ensure_ascii=False, indent=2), encoding="utf-8")  # NOSONAR
     imprimir_relatorio(rel)
     print(f"Relatório gravado em {destino}")
     return 0

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bookmark, Scale, Calendar, FileText, Search, X } from "lucide-react";
 import { MetaItem } from "@/components/ui/meta-item";
@@ -47,9 +48,7 @@ export function SavedPage() {
             {saved.map((d) => (
               <div
                 key={d.id}
-                onMouseEnter={() => router.prefetch(`/decisao/${d.id}`)}
-                onClick={() => router.push(`/decisao/${d.id}`)}
-                className="group flex items-start justify-between gap-4 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all px-5 py-4 cursor-pointer"
+                className="group relative flex items-start justify-between gap-4 bg-white dark:bg-[#17171B] rounded-xl border border-[#E4E4EC] dark:border-[#26262C] shadow-[0_1px_6px_rgba(0,0,0,0.04)] hover:shadow-[0_3px_16px_rgba(0,0,0,0.09)] dark:shadow-none dark:hover:border-[#33333C] transition-all px-5 py-4 cursor-pointer"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1.5">
@@ -59,7 +58,10 @@ export function SavedPage() {
                     className="text-[#0F1117] dark:text-[#ECECEF] leading-snug group-hover:text-[#1A3A5C] dark:group-hover:text-[#8AB0DC] transition-colors mb-1.5"
                     style={{ fontSize: "15.5px", fontWeight: 600 }}
                   >
-                    {d.title}
+                    {/* Link esticado (after:inset-0): o card inteiro abre a decisão, como nos resultados. */}
+                    <Link href={`/decisao/${d.id}`} className="after:absolute after:inset-0">
+                      {d.title}
+                    </Link>
                   </h3>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "12.6px" }}>
                     <MetaItem icon={Scale} compacto>
@@ -74,13 +76,10 @@ export function SavedPage() {
                   </div>
                 </div>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggle(d);
-                  }}
+                  onClick={() => toggle(d)}
                   title="Remover dos salvos"
                   aria-label={`Remover "${d.title}" dos salvos`}
-                  className="flex items-center justify-center w-7 h-7 rounded-lg text-[#AEAEBF] dark:text-[#6E6E7C] hover:bg-[#FBF0F0] hover:text-[#C44040] dark:hover:bg-[#2A1517] dark:hover:text-[#D96B6B] transition-colors flex-shrink-0"
+                  className="flex items-center justify-center w-7 h-7 rounded-lg text-[#AEAEBF] dark:text-[#6E6E7C] hover:bg-[#FBF0F0] hover:text-[#C44040] dark:hover:bg-[#2A1517] dark:hover:text-[#D96B6B] transition-colors flex-shrink-0 relative z-10"
                 >
                   <X className="w-3.5 h-3.5" strokeWidth={2} />
                 </button>

@@ -4,6 +4,17 @@ import { rotuloTribunal, type EstruturaArgumentativa, type ResultCard, type Tipo
 
 const GENERICO = /^(ementa|direito (processual )?do trabalho( e processual do trabalho)?|recurso ordin[áa]rio( trabalhista)?)$/i;
 
+/** Corta o texto no fim da última palavra inteira (some a palavra cortada no meio e os espaços
+ *  antes dela); sem espaço nenhum, devolve o texto como está. Mesmo efeito de
+ *  `replace(/\s+\S*$/, "")`, sem o backtracking quadrático desse regex em textos longos. */
+export function semPalavraCortada(texto: string): string {
+  const semEspacoFinal = texto.trimEnd();
+  if (semEspacoFinal.length < texto.length) return semEspacoFinal;
+  let i = texto.length - 1;
+  while (i >= 0 && !/\s/.test(texto[i])) i--;
+  return i < 0 ? texto : texto.slice(0, i).trimEnd();
+}
+
 /** O schema real não tem um campo de "título" — a ementa é o único texto de manchete. Usa a
  *  verbetação do começo (os temas em caixa alta: "ADICIONAL DE INSALUBRIDADE. RUÍDO. EPI."), sem os
  *  genéricos que quase toda ementa repete ("DIREITO DO TRABALHO. RECURSO ORDINÁRIO."), para os
@@ -12,7 +23,8 @@ export function titleFromEmenta(ementa: string): string {
   const trimmed = ementa.trim().replace(/^ementa\s*:?\s*/i, "");
   if (!trimmed) return "Decisão sem ementa disponível";
   const temas: string[] = [];
-  for (const seg of trimmed.split(/\.\s+|\s+[-–—]\s+/)) {
+  // `\s[-–—]` (e não `\s+[-–—]`): o trim de cada pedaço já tira os espaços que sobram antes do travessão.
+  for (const seg of trimmed.split(/\.\s+|\s[-–—]\s+/)) {
     const t = seg.trim().replace(/\.$/, "");
     const minusculas = t.match(/\p{Ll}/gu)?.length ?? 0;
     if (!t || minusculas > t.length * 0.2 || /^([IVX]+|\d+)$|CASO EM EXAME/.test(t)) break;
@@ -21,7 +33,7 @@ export function titleFromEmenta(ementa: string): string {
     temas.push(t);
   }
   const titulo = temas.length ? `${temas.join(". ")}.` : (trimmed.split(/(?<=[.!?])\s/)[0] ?? trimmed);
-  return titulo.length > 140 ? `${titulo.slice(0, 140).replace(/\s+\S*$/, "")}…` : titulo;
+  return titulo.length > 140 ? `${semPalavraCortada(titulo.slice(0, 140))}…` : titulo;
 }
 
 /** Ementa praticamente igual à de um resultado mais bem posicionado (mesmas palavras em ≥ 90%,

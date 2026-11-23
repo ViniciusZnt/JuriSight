@@ -59,7 +59,6 @@ export function ForgotPasswordPage() {
             icone={Mail}
             type="email"
             autoComplete="email"
-            autoFocus
             valor={email}
             onChange={setEmail}
             placeholder="voce@escritorio.com.br"

@@ -47,6 +47,19 @@ describe("citacoesDe", () => {
   it("não conta a mesma citação duas vezes no mesmo texto", () => {
     expect(citacoesDe("NR-15 ... NR 15 ... Norma Regulamentadora 15")).toEqual(["NR-15"]);
   });
+
+  it("aceita qualificadores encadeados sem vírgula antes de 'da CLT'", () => {
+    expect(citacoesDe("art. 5, parágrafo único inciso II da CLT")).toEqual(["art. 5 da CLT"]);
+    expect(citacoesDe("art. 9, I II III IV V VI da CLT")).toEqual(["art. 9 da CLT"]);
+    expect(citacoesDe("art. 896, § 1º-A, inciso I alínea a da CLT")).toEqual(["art. 896 da CLT"]);
+    expect(citacoesDe("art. 7º, XXIX, da CF/88 e da CLT")).toEqual([]);
+  });
+
+  it("não trava em texto longo sem citação completa (sem backtracking super-linear)", () => {
+    const inicio = Date.now();
+    citacoesDe(`Súmula 1${" ".repeat(50_000)}x NR${" ".repeat(50_000)}x OJ 1${" ".repeat(50_000)}x art. 1, ${"I ".repeat(5_000)}x`);
+    expect(Date.now() - inicio).toBeLessThan(500);
+  });
 });
 
 describe("sintetizar", () => {

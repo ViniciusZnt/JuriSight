@@ -6,11 +6,12 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Dependências primeiro (camada em cache enquanto o uv.lock não muda); sem dev nem benchmark.
+# --no-build: só wheels prontos, sem rodar scripts de build de dependência. O projeto não é instalado:
+# uvicorn/dagster rodam em /app e importam os pacotes (query, auth, pipeline…) dali.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-build --no-install-project
 
 COPY . .
-RUN uv sync --frozen --no-dev
 
 EXPOSE 8000
 CMD ["uv", "run", "--no-sync", "uvicorn", "query.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

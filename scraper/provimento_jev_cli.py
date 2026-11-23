@@ -261,7 +261,8 @@ def sincronizar(
         from indexing.lexical import bm25_builder
 
         indice = indice_bm25 or bm25_builder.BM25_INDEX_PATH
-        with open(Path(indice) / "chunk_ids.json") as f:
+        # Sonar (path traversal): falso positivo, o caminho vem do operador (CLI/ambiente), não de requisição HTTP.
+        with open(Path(indice) / "chunk_ids.json") as f:  # NOSONAR
             chunk_ids = json.load(f)
         provimentos, orfaos = provimentos_dos_chunks(chunk_ids, por_documento)
         bm25_builder.gravar_provimentos(Path(indice), provimentos)
@@ -284,7 +285,8 @@ def _cmd_sincronizar(args, store, qdrant) -> int:
 def _cmd_correcoes(args, store) -> int:
     """Exporta as correções enviadas pelos usuários e resume onde discordam do Jev."""
     linhas = store.correcoes()
-    with open(args.csv, "w", newline="", encoding="utf-8") as f:
+    # Sonar (path traversal): falso positivo, o caminho vem do operador (CLI/ambiente), não de requisição HTTP.
+    with open(args.csv, "w", newline="", encoding="utf-8") as f:  # NOSONAR
         w = csv.DictWriter(f, fieldnames=list(linhas[0]) if linhas else ["documento_id"])
         w.writeheader()
         w.writerows(linhas)
