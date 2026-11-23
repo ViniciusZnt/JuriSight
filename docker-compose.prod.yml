@@ -49,10 +49,23 @@ services:
       ollama:
         condition: service_started
 
+  # Roda uma vez antes do dagster (que não é root): passa para DAGSTER_UID o que ainda não é dele
+  # em ./data e no dagster_home (arquivos do rsync, de um `exec` como root, volume antigo).
+  # Idempotente: com tudo certo, só percorre e sai.
+  dagster-permissoes:
+    image: alpine:3.22
+    restart: "no"
+    volumes:
+      - ./data:/app/data
+      - dagster_home:/app/dagster_home
+    command: ["sh", "-c", "find /app/data /app/dagster_home ! -user ${DAGSTER_UID:-1000} -exec chown ${DAGSTER_UID:-1000}:${DAGSTER_UID:-1000} {} +"]
+
   dagster:
     build:
       context: .
       target: dagster
+      args:
+        DAGSTER_UID: ${DAGSTER_UID:-1000}
     restart: unless-stopped
     env_file: .env
     volumes:
@@ -61,6 +74,8 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
+      dagster-permissoes:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       qdrant:
