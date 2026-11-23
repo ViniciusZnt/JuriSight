@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
+// Inter servida do repositório (latin, variável; licença em fonts/OFL.txt). Com next/font/google o
+// build baixava a fonte do Google e quebrava quando a rede do CI falhava. É o mesmo arquivo que o
+// next/font/google gerava para o subset latin.
+const inter = localFont({
+  src: "./fonts/inter-latin-variable.woff2",
   variable: "--font-inter",
-  weight: ["300", "400", "500", "600", "700"],
+  weight: "300 700",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
