@@ -155,6 +155,7 @@ cd /opt/jurisight && cp .env.production.example .env && chmod 600 .env && nano .
 | `QDRANT_URL` | `http://qdrant:6333` |
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | `http://ollama:11434` / `llama3.2:3b` |
 | `BM25_INDEX_PATH` | `/app/data/index/bm25s_index` |
+| `DAGSTER_UID` | uid do dono de `./data` na VPS, o usuário do `rsync` (`id -u deploy`); padrão `1000`. O Dagster roda com esse uid (não root), e o serviço `dagster-permissoes` passa para ele o que estiver com outro dono em `./data` e no `dagster_home` a cada `up` |
 | `JWT_SECRET_KEY` | `openssl rand -hex 32` (novo: invalida as sessões locais) |
 | `COOKIE_SECURE` | `true` |
 | `CORS_ORIGINS` | `https://<DOMINIO>` |

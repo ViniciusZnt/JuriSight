@@ -17,8 +17,17 @@ EXPOSE 8000
 CMD ["uv", "run", "--no-sync", "uvicorn", "query.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Pipeline de dados (Dagster): mesma base da api + Chromium do Playwright para o scraper.
+# Roda como o usuário `dagster` (não root). O uid deve ser o mesmo do dono de ./data na VPS
+# (o usuário do rsync), para os dois conseguirem gravar lá: DAGSTER_UID no .env, padrão 1000.
+# O serviço dagster-permissoes do compose de produção acerta o dono de ./data e do dagster_home.
 FROM api AS dagster
-RUN uv run --no-sync playwright install --with-deps chromium
-ENV DAGSTER_HOME=/app/dagster_home
+ARG DAGSTER_UID=1000
+# Chromium fora do /root, para o usuário dagster conseguir abrir.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright DAGSTER_HOME=/app/dagster_home
+RUN uv run --no-sync playwright install --with-deps chromium \
+ && useradd --uid "$DAGSTER_UID" --create-home --shell /usr/sbin/nologin dagster \
+ && mkdir -p "$DAGSTER_HOME" /app/data \
+ && chown dagster:dagster "$DAGSTER_HOME" /app/data
+USER dagster
 EXPOSE 3000
 CMD ["sh", "-c", "mkdir -p $DAGSTER_HOME && cp pipeline/dagster.yaml $DAGSTER_HOME/dagster.yaml && exec uv run --no-sync dagster dev -f pipeline/definitions.py -h 0.0.0.0 -p 3000"]
