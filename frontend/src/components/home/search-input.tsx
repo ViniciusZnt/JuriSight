@@ -107,7 +107,7 @@ export const SearchInput = forwardRef<
                   {uploadedFile.name}
                 </span>
                 <span className="text-[#7A9AB8]" style={{ fontSize: "12.6px" }}>{uploadedFile.size}</span>
-                <button onClick={removeFile} className="text-[#7A9AB8] hover:text-[#1A3A5C] transition-colors ml-0.5">
+                <button onClick={removeFile} aria-label="Remover arquivo" className="text-[#7A9AB8] hover:text-[#1A3A5C] transition-colors ml-0.5">
                   <X className="w-3 h-3" strokeWidth={2} />
                 </button>
               </div>
@@ -155,6 +155,7 @@ export const SearchInput = forwardRef<
               <button
                 disabled={!canSubmit}
                 onClick={submit}
+                aria-label="Pesquisar"
                 className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all ${
                   canSubmit
                     ? "bg-[#1A3A5C] hover:bg-[#1E4570] text-white shadow-sm active:scale-95"
