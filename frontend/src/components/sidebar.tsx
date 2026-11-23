@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Plus,
@@ -32,6 +32,11 @@ export function Sidebar() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const renomearRef = useRef<HTMLInputElement>(null);
+  // Foco no campo quando o usuário pede para renomear (no lugar de autoFocus).
+  useEffect(() => {
+    if (editingId) renomearRef.current?.focus();
+  }, [editingId]);
 
   const closeMenu = () => {
     setMenuId(null);
@@ -145,7 +150,7 @@ export function Sidebar() {
                 <div key={c.id} className="relative">
                   {editingId === c.id ? (
                     <input
-                      autoFocus
+                      ref={renomearRef}
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onBlur={commitRename}
@@ -203,9 +208,10 @@ export function Sidebar() {
 
                   {menuId === c.id && (
                     <>
-                      <div className="fixed inset-0 z-40" onClick={closeMenu} />
+                      <button type="button" aria-label="Fechar menu" tabIndex={-1} className="fixed inset-0 z-40 cursor-default" onClick={closeMenu} />
                       <div
                         role="menu"
+                        tabIndex={-1}
                         onKeyDown={(e) => {
                           if (e.key === "Escape") closeMenu();
                         }}

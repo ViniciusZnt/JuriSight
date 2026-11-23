@@ -62,7 +62,7 @@ export function ProvimentoPanel({ documentoId, provimento, classificacao, compac
 
   if (!classificacao) {
     return (
-      <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.2px" }}>
+      <div className="flex items-center gap-2 text-[#8A8A9A] dark:text-[#9494A2]" style={{ fontSize: "13.2px" }}>
         <Gavel className="w-3.5 h-3.5" strokeWidth={1.8} />
         <span>
           Provimento: <span className="text-[#4A4A5A] dark:text-[#C4C4CE] font-medium">{PROVIMENTO_LABEL[provimento]}</span> · ainda não classificado pela IA
@@ -91,7 +91,7 @@ export function ProvimentoPanel({ documentoId, provimento, classificacao, compac
     "w-full rounded-lg border border-[#E0E0EA] dark:border-[#2A2A32] bg-white dark:bg-[#1C1C21] text-[#4A4A5A] dark:text-[#C4C4CE] px-2 py-1.5 outline-none focus:border-[#1A3A5C] dark:focus:border-[#8AB0DC]";
 
   return (
-    <div onClick={(e) => e.stopPropagation()} className="cursor-default">
+    <div className="cursor-default">
       {compacto && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-start gap-2 min-w-0 text-[#4A4A5A] dark:text-[#C4C4CE]" style={{ fontSize: "13.2px" }}>

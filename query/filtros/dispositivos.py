@@ -7,6 +7,7 @@ Também são dispositivos `nr_<n>`, `tema_<n>` e `sv_<n>` (súmula vinculante): 
 codifica, então saem do texto da decisão (`codigos_do_texto`).
 """
 import re
+from itertools import chain
 
 from query.filtros.expressoes import sem_acento
 
@@ -44,7 +45,7 @@ def niveis(codigo: str) -> list[str]:
     if i is None:
         return []
     unidades, resto = _unidades(tokens[:i]), tokens[i:]
-    return ["_".join(sum(unidades[k:], []) + resto) for k in range(len(unidades) + 1)]
+    return ["_".join([*chain.from_iterable(unidades[k:]), *resto]) for k in range(len(unidades) + 1)]
 
 
 def _numero(n: str) -> str:
@@ -104,10 +105,10 @@ def tokens_da_busca(texto: str) -> list[str]:
     t = sem_acento(texto)
     t = re.sub(r"\bnorma regulamentadora\b", "nr", t)
     t = re.sub(r"\bsumulas? vinculantes?\b", "sv", t)
-    t = re.sub(r"\bn\s*[º°]?\.?\s*(?=\d)", " ", t)  # "nº 85", "n. 85"
+    t = re.sub(r"\bn\s*(?:[º°]\.?\s*|\.\s*)?(?=\d)", " ", t)  # "nº 85", "n. 85"
     t = re.sub(r"[ºª°]", "", t).replace("§", " prgf ")
     t = re.sub(r"(?<=\d)\.(?=\d)", "", t)
-    t = re.sub(r"\bsb?di\s*-?\s*(\d)", r"sdi\1", t)
+    t = re.sub(r"\bsb?di\s*(?:-\s*)?(\d)", r"sdi\1", t)
     t = re.sub(r"\bcf\s*/\s*(19)?88\b", "cf", t)
     trocas = {"artigo": "art", "arts": "art", "paragrafo": "prgf", "cc": "ccb", "vinculante": "sv"}
     return [trocas.get(f, f) for f in re.findall(r"[a-z0-9]+", t) if f not in _CONECTIVOS]

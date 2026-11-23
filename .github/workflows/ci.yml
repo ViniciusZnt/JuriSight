@@ -17,11 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           python-version: "3.13"
-      - run: uv sync --frozen
-      - run: uv run pytest -q --cov --cov-report=xml
+      # --no-build: só wheels prontos, sem rodar setup.py de dependência. O projeto em si não é
+      # instalado (--no-install-project): os pacotes são importados da raiz do repositório.
+      - run: uv sync --frozen --no-build --no-install-project
+      - run: uv run --no-sync pytest -q --cov --cov-report=xml
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-backend
@@ -34,7 +36,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           package_json_file: frontend/package.json
       - uses: actions/setup-node@v5

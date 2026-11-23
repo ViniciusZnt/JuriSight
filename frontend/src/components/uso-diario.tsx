@@ -56,7 +56,7 @@ export function UsoDiarioMenu() {
   const { acoes } = useUsoDiario();
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useFecharAoClicarFora(ref, aberto, () => setAberto(false));
+  useFecharAoClicarFora(ref, aberto, () => setAberto(false), true);
   if (!acoes) return null;
 
   const fracoes = acoes.map((a) => (a.limite > 0 ? a.usado / a.limite : 0));
@@ -67,7 +67,7 @@ export function UsoDiarioMenu() {
   const maior = Math.min(1, Math.max(0, ...fracoes));
 
   return (
-    <div ref={ref} className="relative flex-shrink-0" onKeyDown={(e) => e.key === "Escape" && setAberto(false)}>
+    <div ref={ref} className="relative flex-shrink-0">
       <button
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}

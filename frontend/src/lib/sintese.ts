@@ -9,21 +9,24 @@ const SDI: Record<string, string> = { "1": "1", I: "1", "2": "2", II: "2" };
 
 /** Normas e precedentes citados no texto, por regex simples (sem LLM): Súmula, OJ, art. da CLT,
  *  NR, Tema e ARE/RE do STF. Rótulos normalizados para contar a mesma citação escrita de jeitos
- *  diferentes ("SÚMULA Nº 289 DO C. TST" e "Súmula 289/TST" viram "Súmula 289 do TST"). */
+ *  diferentes ("SÚMULA Nº 289 DO C. TST" e "Súmula 289/TST" viram "Súmula 289 do TST").
+ *  Sem dois `\s*` vizinhos nem repetição ambígua: `\s*(?:,\s*)?` no lugar de `\s*,?\s*`, e no
+ *  art. da CLT os qualificadores (§, inciso…) são separados por vírgula, com o último até "da CLT" —
+ *  evita backtracking super-linear em textos longos. */
 const PADROES: [RegExp, (m: RegExpMatchArray) => string[]][] = [
   [
-    /\bs[úu]mula\s+(?:n[º°o.]*\s*)?(\d{1,3})(?:\s*,\s*[IVX]{1,4}\b)?(?:\s*,?\s*(?:d[oa]\s+(?:c\.\s*|e\.\s*)?|\/\s*)(TST|STF|STJ))?/gi,
+    /\bs[úu]mula\s+(?:n[º°o.]*\s*)?(\d{1,3})(?:\s*,\s*[IVX]{1,4}\b)?(?:\s*(?:,\s*)?(?:d[oa]\s+(?:c\.\s*|e\.\s*)?|\/\s*)(TST|STF|STJ))?/gi,
     (m) => [`Súmula ${+m[1]}${m[2] ? ` do ${m[2].toUpperCase()}` : ""}`],
   ],
   [
-    /\b(?:OJ|orienta[çc][ãa]o\s+jurisprudencial)\s+(?:n[º°o.]*\s*)?(\d{1,3})(?:\s*,?\s*(?:da\s+)?S\.?B?\.?D\.?I\.?\s*[-–]?\s*(1|2|II|I)\b)?/gi,
+    /\b(?:OJ|orienta[çc][ãa]o\s+jurisprudencial)\s+(?:n[º°o.]*\s*)?(\d{1,3})(?:\s*(?:,\s*)?(?:da\s+)?S\.?B?\.?D\.?I\.?\s*(?:[-–]\s*)?(1|2|II|I)\b)?/gi,
     (m) => [`OJ ${+m[1]}${m[2] ? ` da SDI-${SDI[m[2].toUpperCase()]}` : ""}`],
   ],
   [
-    /\barts?\.?\s*(\d{1,3}(?:-[A-Z])?[º°o]?(?:\s*(?:,|e)\s*\d{1,3}(?:-[A-Z])?[º°o]?)*)\s*,?\s*(?:(?:§|par[áa]grafo|inciso|caput|[IVX]{1,4}\b)[^,;]{0,15},?\s*)*da\s+(?:CLT|consolida[çc][ãa]o\s+das\s+leis\s+do\s+trabalho)/gi,
+    /\barts?\.?\s*(\d{1,3}(?:-[A-Z])?[º°o]?(?:\s*(?:,|e)\s*\d{1,3}(?:-[A-Z])?[º°o]?)*)\s*(?:,\s*)?(?:(?:§|par[áa]grafo|inciso|caput|[IVX]{1,4}\b)[^,;]{0,30},\s*)*(?:(?:§|par[áa]grafo|inciso|caput|[IVX]{1,4}\b)[^,;]{0,30})?da\s+(?:CLT|consolida[çc][ãa]o\s+das\s+leis\s+do\s+trabalho)/gi,
     (m) => (m[1].match(/\d+(?:-[A-Z])?/gi) ?? []).map((n) => `art. ${n.toUpperCase()} da CLT`),
   ],
-  [/\b(?:NR|norma\s+regulamentadora)\s*(?:n[º°o.]*\s*)?[-–]?\s*(\d{1,2})\b/gi, (m) => [`NR-${+m[1]}`]],
+  [/\b(?:NR|norma\s+regulamentadora)\s*(?:n[º°o.]*\s*)?(?:[-–]\s*)?(\d{1,2})\b/gi, (m) => [`NR-${+m[1]}`]],
   [/\btema\s+(?:repetitivo\s+|de\s+repercuss[ãa]o\s+geral\s+)?(?:n[º°o.]*\s*)?(\d{1,4})\b/gi, (m) => [`Tema ${+m[1]}`]],
   [/\b(ARE|RE)\s+(?:n[º°o.]*\s*)?(\d{3}\.?\d{3})\b/g, (m) => [`${m[1]} ${m[2].replace(/^(\d{3})\.?(\d{3})$/, "$1.$2")}`]],
 ];

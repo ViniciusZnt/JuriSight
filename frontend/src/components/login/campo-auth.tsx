@@ -18,7 +18,6 @@ export function CampoAuth({
   placeholder,
   type = "text",
   autoComplete,
-  autoFocus,
   olho,
   erro,
   acao,
@@ -31,7 +30,6 @@ export function CampoAuth({
   placeholder: string;
   type?: "text" | "email" | "password";
   autoComplete: string;
-  autoFocus?: boolean;
   /** Mostra o olho; `visivel` vira type="text" e `alternar` troca o estado. */
   olho?: { visivel: boolean; alternar: () => void };
   erro?: string;
@@ -52,7 +50,6 @@ export function CampoAuth({
         <input
           type={olho?.visivel ? "text" : type}
           autoComplete={autoComplete}
-          autoFocus={autoFocus}
           value={valor}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}

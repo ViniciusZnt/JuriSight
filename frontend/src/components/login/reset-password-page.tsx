@@ -59,7 +59,6 @@ export function ResetPasswordPage() {
             icone={Lock}
             type="password"
             autoComplete="new-password"
-            autoFocus
             valor={password}
             onChange={setPassword}
             placeholder={`Mínimo ${SENHA_MINIMA} caracteres`}

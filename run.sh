@@ -32,8 +32,8 @@ FRONTEND_PID=""
 cleanup() {
     echo
     info "Encerrando…"
-    [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null
-    [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null
+    [[ -n "$BACKEND_PID" ]] && kill "$BACKEND_PID" 2>/dev/null
+    [[ -n "$FRONTEND_PID" ]] && kill "$FRONTEND_PID" 2>/dev/null
     wait 2>/dev/null
     ok "Backend e frontend parados. Infra (postgres/ollama/qdrant) continua no ar — 'docker compose down' pra derrubar também."
     exit 0
@@ -49,10 +49,10 @@ espera_http() {
     while ! curl -s -o /dev/null -m 15 "$url"; do
         sleep 3
         decorrido=$((decorrido + 3))
-        if [ "$decorrido" -ge "$timeout" ]; then
+        if [[ "$decorrido" -ge "$timeout" ]]; then
             return 1
         fi
-        if [ $((decorrido % 20)) -lt 3 ]; then
+        if [[ $((decorrido % 20)) -lt 3 ]]; then
             avisa "ainda esperando $rotulo… (${decorrido}s${dica:+ — $dica})"
         fi
     done
@@ -62,17 +62,17 @@ espera_http() {
 # --------------------------------------------------------------------------- #
 # 1) .env — precisa existir com o essencial preenchido                        #
 # --------------------------------------------------------------------------- #
-if [ ! -f .env ]; then
+if [[ ! -f .env ]]; then
     erro ".env não existe. Rode: cp .env.example .env — e preencha OPENAI_API_KEY e JWT_SECRET_KEY."
     exit 1
 fi
 set -a; source .env; set +a
 
-if [ -z "${OPENAI_API_KEY:-}" ] || [ "${OPENAI_API_KEY:-}" = "sk-..." ]; then
+if [[ -z "${OPENAI_API_KEY:-}" ]] || [[ "${OPENAI_API_KEY:-}" = "sk-..." ]]; then
     erro "OPENAI_API_KEY não está preenchida no .env (obrigatória, com crédito pré-pago)."
     exit 1
 fi
-if [ -z "${JWT_SECRET_KEY:-}" ]; then
+if [[ -z "${JWT_SECRET_KEY:-}" ]]; then
     erro "JWT_SECRET_KEY não está preenchida no .env. Gere uma: openssl rand -hex 32"
     exit 1
 fi
@@ -85,9 +85,9 @@ docker compose up -d
 
 info "Esperando Postgres ficar saudável…"
 decorrido=0
-while [ "$(docker inspect -f '{{.State.Health.Status}}' jurisight_postgres 2>/dev/null)" != "healthy" ]; do
+while [[ "$(docker inspect -f '{{.State.Health.Status}}' jurisight_postgres 2>/dev/null)" != "healthy" ]]; do
     sleep 2; decorrido=$((decorrido + 2))
-    if [ "$decorrido" -ge 60 ]; then erro "Postgres não ficou saudável em 60s."; exit 1; fi
+    if [[ "$decorrido" -ge 60 ]]; then erro "Postgres não ficou saudável em 60s."; exit 1; fi
 done
 ok "Postgres no ar."
 
@@ -154,7 +154,7 @@ echo "    Logs:      $BACKEND_LOG · $FRONTEND_LOG"
 echo
 info "Ctrl+C encerra backend e frontend (a infra do docker compose continua no ar)."
 
-if [ "${1:-}" = "--logs" ]; then
+if [[ "${1:-}" = "--logs" ]]; then
     tail -f "$BACKEND_LOG" "$FRONTEND_LOG"
 else
     # Fica esperando (pra Ctrl+C funcionar) sem imprimir log nenhum.

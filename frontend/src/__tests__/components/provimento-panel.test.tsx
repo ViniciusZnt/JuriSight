@@ -103,15 +103,4 @@ describe("ProvimentoPanel", () => {
     expect(screen.getByText(/ainda não classificado pela IA/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /sugerir correção/i })).not.toBeInTheDocument();
   });
-
-  it("não propaga o clique para o card", async () => {
-    const pai = jest.fn();
-    render(
-      <div onClick={pai}>
-        <ProvimentoPanel documentoId="doc-1" provimento="NEGADO" classificacao={classificacao} compacto />
-      </div>
-    );
-    await userEvent.click(screen.getByRole("button", { name: /detalhes do provimento/i }));
-    expect(pai).not.toHaveBeenCalled();
-  });
 });

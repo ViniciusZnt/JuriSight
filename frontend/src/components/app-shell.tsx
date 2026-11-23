@@ -13,8 +13,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen w-full overflow-hidden bg-[#F7F7F9] dark:bg-[#0E0E11]">
       {/* Overlay no mobile */}
       {mobileOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 z-30 md:hidden"
+        <button
+          type="button"
+          aria-label="Fechar menu lateral"
+          tabIndex={-1}
+          className="fixed inset-0 bg-black/30 z-30 md:hidden cursor-default"
           onClick={() => setMobileOpen(false)}
         />
       )}

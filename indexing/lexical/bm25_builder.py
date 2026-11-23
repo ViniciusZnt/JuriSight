@@ -53,9 +53,10 @@ def gravar_provimentos(index_path: Path, provimentos: list[str]) -> None:
     """
     destino = index_path / PROVIMENTOS_FILENAME
     tmp = destino.with_name(destino.name + ".tmp")
-    with open(tmp, "w") as f:
+    # Sonar (path traversal): falso positivo, o caminho vem do operador (CLI/ambiente), não de requisição HTTP.
+    with open(tmp, "w") as f:  # NOSONAR
         json.dump(provimentos, f)
-    os.replace(tmp, destino)
+    os.replace(tmp, destino)  # NOSONAR (mesmo caso acima)
 
 
 def _strip_accents(text: str) -> str:

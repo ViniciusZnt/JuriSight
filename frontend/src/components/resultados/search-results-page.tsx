@@ -70,16 +70,10 @@ function DropdownPill({
     if (returnFocus) triggerRef.current?.focus();
   };
 
-  useFecharAoClicarFora(ref, open, () => setOpen(false));
+  useFecharAoClicarFora(ref, open, () => setOpen(false), () => close(true));
 
   return (
-    <div
-      className="relative"
-      ref={ref}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") close(true);
-      }}
-    >
+    <div className="relative" ref={ref}>
       <button
         ref={triggerRef}
         onClick={() => setOpen((v) => !v)}

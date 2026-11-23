@@ -41,6 +41,7 @@ import {
   paragrafos,
   relevanceRanks,
   paraSalvo,
+  semPalavraCortada,
   titleFromEmenta,
   TIPO_DOCUMENTO_LABEL,
 } from "@/lib/decision-view";
@@ -60,7 +61,7 @@ function TextoLongo({ texto, vazio }: { texto: string; vazio: string }) {
   const longo = texto.length > 3000;
   return (
     <>
-      {paragrafos(longo && !inteiro ? `${texto.slice(0, 3000).replace(/\s+\S*$/, "")}…` : texto).map((p, idx) => (
+      {paragrafos(longo && !inteiro ? `${semPalavraCortada(texto.slice(0, 3000))}…` : texto).map((p, idx) => (
         <p key={idx} className="text-[#4A4A5A] dark:text-[#C4C4CE] leading-relaxed mb-3 last:mb-0" style={{ fontSize: "14.4px" }}>
           {p}
         </p>

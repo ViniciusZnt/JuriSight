@@ -1,4 +1,4 @@
-import { assuntoDoCard, orgaoDe, orgaosCitados, vereditoDe, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, paraSalvo, relevanceRanks, respostaParaCopiar, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
+import { assuntoDoCard, orgaoDe, orgaosCitados, vereditoDe, dispositivoDe, dispositivoETexto, itensDaFrase, ementaComCitacao, ementasRepetidas, paragrafos, paraSalvo, relevanceRanks, respostaParaCopiar, semPalavraCortada, titleFromEmenta, tituloDoCard } from "@/lib/decision-view";
 
 describe("relevanceRanks", () => {
   it("numera do mais ao menos relevante, sem depender da ordem de entrada", () => {
@@ -209,5 +209,25 @@ describe("paraSalvo", () => {
   it("sem posição a relevância é 0 e sem data a data é vazia", () => {
     const salvo = paraSalvo({ ...doc, data_julgamento: null }, "neutral", null);
     expect([salvo.relevance, salvo.date]).toEqual([0, ""]);
+  });
+});
+
+describe("semPalavraCortada", () => {
+  it("tira a palavra cortada no fim e os espaços antes dela", () => {
+    expect(semPalavraCortada("abc def")).toBe("abc");
+    expect(semPalavraCortada("abc   def")).toBe("abc");
+    expect(semPalavraCortada("abc\ndef")).toBe("abc");
+  });
+
+  it("com espaço no fim, só tira o espaço; sem espaço nenhum, devolve igual", () => {
+    expect(semPalavraCortada("abc def  ")).toBe("abc def");
+    expect(semPalavraCortada("abcdef")).toBe("abcdef");
+    expect(semPalavraCortada("")).toBe("");
+  });
+
+  it("é linear em texto longo", () => {
+    const inicio = Date.now();
+    semPalavraCortada(`${"a ".repeat(100_000)}b`);
+    expect(Date.now() - inicio).toBeLessThan(200);
   });
 });
