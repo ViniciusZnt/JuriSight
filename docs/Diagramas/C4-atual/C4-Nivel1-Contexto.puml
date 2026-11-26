@@ -1,0 +1,30 @@
+@startuml C4Context_JuriSight
+skinparam nodesep 120
+skinparam ranksep 120
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title JuriSight — Nível 1: Contexto
+
+Person(user, "Advogado / Assistente Jurídico", "Envia o PDF do caso e/ou a tese que quer sustentar; recebe acórdãos reais ordenados por relevância para a tese.")
+
+System(jurisight, "JuriSight", "Pesquisa contextual de jurisprudência trabalhista.\nExtração da estrutura argumentativa + busca híbrida (BM25 + semântica, RRF)\n+ triagem por IA + provimento de cada decisão.")
+
+System_Ext(falcao, "Jurisprudência Nacional da JT (Falcão)", "jurisprudencia.jt.jus.br\nAcórdãos públicos dos TRTs.")
+System_Ext(openai, "OpenAI", "text-embedding-3-small (embeddings)\ngpt-4o-mini (triagem e resposta).")
+System_Ext(jev, "Typesafe — Jev", "Classificador do provimento:\nresultado, recorrente, quem é favorecido.")
+System_Ext(smtp, "Servidor de e-mail", "SMTP com TLS.")
+
+Lay_R(user, jurisight)
+Lay_R(jurisight, falcao)
+Lay_D(jurisight, openai)
+Lay_R(openai, jev)
+Lay_R(jev, smtp)
+
+Rel_R(user, jurisight, "Pesquisa jurisprudência", "HTTPS")
+Rel_R(jurisight, falcao, "Coleta acórdãos", "API pública + delay adaptativo")
+Rel_D(jurisight, openai, "Embeddings, triagem e resposta", "Só textos públicos e a estrutura revisada — nunca o PDF")
+Rel_D(jurisight, jev, "Classifica o provimento", "HTTPS")
+Rel_D(jurisight, smtp, "Link de redefinição de senha", "SMTP/TLS")
+
+SHOW_LEGEND()
+@enduml
