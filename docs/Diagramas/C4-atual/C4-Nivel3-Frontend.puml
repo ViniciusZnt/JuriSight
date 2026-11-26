@@ -1,0 +1,83 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 120
+skinparam ranksep 110
+skinparam ArrowFontSize 10
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_TOP_DOWN()
+
+title JuriSight — Nível 3: Frontend
+
+Container_Boundary(frontend, "Frontend [Next.js 16 — App Router, React 19]") {
+
+    ' Linha 1: casca, estado e acesso à API
+    Component(shell,   "App Shell + Sidebar",  "Layout (app) — RequireAuth",  "Exige sessão. Histórico de conversas\n(reabrir, renomear, apagar), Salvos, Configurações.")
+    Component(state,   "Estado do fluxo",      "React Context",               "SearchSession (Home → Revisão → Resultados),\nConversations, Saved, Profile, UsoDiario.")
+    Component(apicli,  "API Client",           "lib/api.ts — fetch",          "/enrich · /query · /query/livre · /triagem\n/resposta · /document · /filtros · /provimento\n/auth · /conversas · /uso")
+
+    ' Linha 2: fluxo principal
+    Component(home,    "Home",                 "Página '/'",                  "Tese em texto + PDF opcional; exemplos.\nFA02 (PDF sem texto), FA05 (PDF extenso).\nUC01, UC02.")
+    Component(review,  "Revisão de contexto",  "Página '/revisao'",           "Edita a EstruturaArgumentativa (UC04)\ne mostra a prévia da busca.")
+    Component(results, "Resultados",           "Página '/resultados'",        "Faixa restrita + faixa livre sob demanda.\nVersões V1, V2…; 'Refinar consulta'\nvolta à Revisão (UC08).")
+    Component(detail,  "Detalhe da decisão",   "Página '/decisao/[id]'",      "Ementa, relatório, fundamentação, dispositivo,\ninteiro teor, votos, normas citadas. UC06.")
+
+    ' Linha 3: componentes das páginas
+    Component(filtro,  "Filtro restrito",      "Componente",                  "Normas e dispositivos (autocompletar),\nexpressões, tribunal, fase, período;\ncontagem ao vivo. UC03, UC05.")
+    Component(triagem, "Triagem progressiva",  "Hook useTriagem",             "Lotes de 10 (2 em voo) a /triagem;\nreordena a cada lote; 'Parar e responder'.")
+    Component(parecer, "Parecer da pesquisa",  "Componente",                  "Como a busca foi feita, síntese das citações\ne resposta gerada citando #k.")
+    Component(card,    "Resultado Card",       "Componente",                  "Tribunal, classe, ementa, nota da triagem;\nsalvar e copiar citação (UC07).")
+    Component(prov,    "Painel do provimento", "Componente",                  "Resultado, recorrente e quem é favorecido,\ncom confiança; correção pelo usuário.")
+}
+
+Container(backend, "Backend API", "FastAPI", "REST/JSON com cookie\nde sessão httpOnly.")
+
+' ── Layout ──────────────────────────────────────────
+' Linha 1
+Lay_R(shell,  state)
+Lay_R(state,  apicli)
+Lay_R(apicli, backend)
+
+' Linha 2
+Lay_D(shell,   home)
+Lay_R(home,    review)
+Lay_R(review,  results)
+Lay_R(results, detail)
+
+' Linha 3
+Lay_D(review,  filtro)
+Lay_R(filtro,  triagem)
+Lay_R(triagem, parecer)
+Lay_R(parecer, card)
+Lay_R(card,    prov)
+
+' ── Relações ────────────────────────────────────────
+Rel_R(apicli, backend, "REST / JSON")
+Rel_R(shell,  state,   "lê conversas e versões")
+Rel_R(state,  apicli,  "/conversas · /auth/me · /uso")
+
+' Fluxo principal (linha 2)
+Rel_R(home,    review,  "navega com a estrutura extraída")
+Rel_R(review,  results, "busca (POST /query)")
+Rel_R(results, detail,  "abre a decisão (UC06)")
+
+' Chamadas à API (sobem para a linha 1)
+Rel_U(home,    apicli,  "POST /enrich")
+Rel_U(review,  apicli,  "POST /query")
+Rel_U(detail,  apicli,  "GET /document/{id}")
+
+' Componentes das páginas (linha 3)
+Rel_D(review,  filtro,  "renderiza")
+Rel_D(results, triagem, "inicia a triagem")
+Rel_D(results, parecer, "renderiza")
+Rel_D(results, card,    "renderiza na ordem da triagem")
+Rel_D(detail,  prov,    "renderiza")
+Rel_R(card,    prov,    "renderiza")
+
+Rel_U(filtro,  apicli,  "autocompletar e contagem")
+Rel_U(triagem, apicli,  "POST /triagem")
+Rel_U(parecer, apicli,  "POST /resposta")
+Rel_U(prov,    apicli,  "POST /provimento/{id}/correcao")
+
+@enduml

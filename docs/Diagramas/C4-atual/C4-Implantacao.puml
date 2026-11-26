@@ -1,0 +1,68 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 90
+skinparam ranksep 90
+skinparam ArrowFontSize 10
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+
+title JuriSight — Implantação (produção)
+
+Person(user, "Advogado / Assistente Jurídico")
+
+Deployment_Node(gh, "GitHub", "SaaS") {
+    Container(ci, "GitHub Actions", "ci.yml", "backend (pytest) · frontend (jest + next build)\n· sonar (SonarCloud) · deploy (só push na main)")
+}
+
+Deployment_Node(vps, "VPS MagnoHost", "Ubuntu · 6 vCPU · 16 GB · NVMe · ufw (22/80/443) · fail2ban") {
+
+    Container(runner, "Runner self-hosted", "GitHub Actions runner (systemd, usuário deploy)", "Busca o job deploy por HTTPS e roda\ndeploy/atualizar.sh — sem SSH de entrada.")
+
+    Deployment_Node(compose, "Docker Compose", "docker-compose.prod.yml") {
+
+        Deployment_Node(borda, "Borda", "única com portas públicas (80/443)") {
+            Container(caddy, "caddy", "Caddy 2.10", "HTTPS Let's Encrypt, HSTS")
+        }
+
+        Deployment_Node(app, "Aplicação", "rede interna") {
+            Container(web, "web", "Next.js 16 (standalone, usuário node)")
+            Container(api, "api", "FastAPI (uvicorn)")
+            Container(dagster, "dagster", "Dagster + Chromium (usuário dagster)")
+            Container(ollama, "ollama", "Llama 3.2 3B")
+        }
+
+        Deployment_Node(dados, "Dados", "rede interna · volumes") {
+            ContainerDb(pg, "postgres", "PostgreSQL 16")
+            ContainerDb(qd, "qdrant", "Qdrant 1.19")
+            ContainerDb(bm, "./data", "Índice BM25 (bind mount)")
+        }
+
+        Deployment_Node(obsn, "Observabilidade", "rede interna · Grafana só em 127.0.0.1") {
+            Container(prom, "prometheus + blackbox", "métricas e saúde")
+            Container(loki, "loki + alloy", "logs (15 dias)")
+            Container(graf, "grafana", "painel JuriSight")
+            Container(cad, "cadvisor + node-exporter", "contêineres e máquina")
+        }
+    }
+}
+
+Lay_R(gh, vps)
+
+Rel_D(user, caddy, "HTTPS")
+Rel(caddy, web, "/")
+Rel(caddy, api, "/api")
+Rel(api, pg, "SQL")
+Rel(api, qd, "gRPC/REST")
+Rel(api, bm, "mmap")
+Rel(api, ollama, "HTTP")
+Rel(dagster, pg, "SQL")
+Rel(dagster, qd, "upsert")
+Rel(dagster, bm, "grava")
+Rel(runner, ci, "busca o job (HTTPS)")
+Rel(runner, compose, "up -d --build")
+Rel(prom, api, "/metrics")
+Rel(graf, prom, "consulta")
+Rel(graf, loki, "consulta")
+
+SHOW_LEGEND()
+@enduml

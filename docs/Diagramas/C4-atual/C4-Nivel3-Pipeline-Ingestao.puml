@@ -1,0 +1,98 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 150
+skinparam ranksep 100
+skinparam ArrowFontSize 10
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_TOP_DOWN()
+
+title JuriSight — Nível 3: Pipeline de Ingestão
+
+' ── Externos ────────────────────────────────────────
+System_Ext(falcao,   "Jurisprudência Nacional da JT (Falcão)", "jurisprudencia.jt.jus.br — API pública")
+System_Ext(openai,   "OpenAI",               "text-embedding-3-small")
+ContainerDb(postgres,"PostgreSQL",           "Banco relacional", "Fonte da verdade — DocumentoJuridico\n+ estado da coleta (scraper_state)")
+ContainerDb(qdrant,  "Qdrant",               "Banco vetorial",   "chunks_completo + chunks_ementa")
+ContainerDb(bm25f,   "Índice BM25",          "bm25s (./data)",   "Índice lexical")
+
+Container_Boundary(pipeline, "Pipeline de Ingestão [Dagster: asset acervo → asset indices]") {
+
+    ' Fase 1 — Coleta
+    Component(orch,    "Orchestrator",    "scraper/orchestrator",  "Itera por data e página,\nretry e checkpoint retomável.")
+    Component(delta,   "Delta Control",   "scraper/delta",         "Janela de coleta e estado\n(dia/página) no banco.")
+    Component(scraper, "Web Scraper",     "requests",              "API pública com a sessão do navegador;\ndelay adaptativo (mín. 2 s).")
+    Component(minter,  "Session Minter",  "Playwright (Chromium)", "Abre o portal num navegador real e colhe\nos cookies anti-bot + sessionId (renova no 403).")
+
+    ' Fase 2 — Extração e persistência
+    Component(parser,  "HTML Extractor",  "BeautifulSoup",         "Seções do acórdão (ementa, fundamentação,\ndispositivo…) com títulos normalizados.")
+    Component(clf,     "Provimento Clf",  "Regex",                 "Provimento inicial pelo dispositivo\n(guardado como provimento_regex).")
+    Component(builder, "Doc Builder",     "Pydantic v2",           "Monta e valida o DocumentoJuridico.")
+    Component(mwriter, "DB Writer",       "psycopg",               "Upsert idempotente\n(ON CONFLICT id_documento).")
+
+    ' Fase 3 — Indexação
+    Component(source,  "Doc Source",      "indexing/doc_source",   "Lê do Postgres só os documentos\nainda não indexados (delta).")
+    Component(chunker, "SAC Chunker",     "Python",                "Trechos do acórdão com a ementa\ncomo prefixo (SAC summary).")
+    Component(embedder,"Poly Embedder",   "text-embedding-3-small","2 vetores (1536d): trecho completo\ne ementa do acórdão.")
+    Component(vindexer,"Vector Indexer",  "Qdrant client",         "chunks_completo (por trecho)\n+ chunks_ementa (por acórdão) + payload.")
+    Component(bbuilder,"BM25 Builder",    "bm25s",                 "Constrói e grava o índice\n(troca atômica por os.replace).")
+}
+
+' ── Layout ──────────────────────────────────────────
+' Fase 1 (linha 1)
+Lay_R(orch,     delta)
+Lay_R(delta,    scraper)
+Lay_R(scraper,  minter)
+Lay_R(minter,   falcao)
+
+' Fase 2 (linha 2)
+Lay_R(parser,   clf)
+Lay_R(clf,      builder)
+Lay_R(builder,  mwriter)
+Lay_R(mwriter,  postgres)
+
+' Fase 3 (linha 3)
+Lay_R(source,   chunker)
+Lay_R(chunker,  embedder)
+Lay_R(embedder, vindexer)
+Lay_R(vindexer, bbuilder)
+Lay_R(bbuilder, bm25f)
+
+' Verticais entre fases
+Lay_D(orch,     parser)
+Lay_D(parser,   source)
+
+' Externos da fase 3
+Lay_D(embedder, openai)
+Lay_D(vindexer, qdrant)
+
+' ── Relações ────────────────────────────────────────
+' Fase 1
+Rel(orch,     delta,    "janela e checkpoint")
+Rel(delta,    postgres, "scraper_state")
+Rel(orch,     scraper,  "busca por data/página")
+Rel(scraper,  minter,   "sessão (cookies + sessionId)")
+Rel(minter,   falcao,   "carrega o portal (Chromium)")
+Rel(scraper,  falcao,   "API pública (HTTPS)")
+Rel(scraper,  builder,  "documento bruto")
+
+' Fase 2
+Rel(builder,  parser,   "HTML")
+Rel(builder,  clf,      "dispositivo")
+Rel(builder,  mwriter,  "DocumentoJuridico")
+Rel(mwriter,  postgres, "upsert")
+
+' Fase 2 → Fase 3
+Rel(source,   postgres, "documentos novos")
+
+' Fase 3
+Rel(source,   chunker,  "DocumentoJuridico + id")
+Rel(chunker,  embedder, "trechos + SAC")
+Rel(embedder, openai,   "embeddings")
+Rel(embedder, vindexer, "trechos + vetores")
+Rel(chunker,  bbuilder, "texto dos trechos")
+Rel(vindexer, qdrant,   "upsert")
+Rel(bbuilder, bm25f,    "grava")
+
+@enduml
