@@ -168,7 +168,7 @@ O `.env` nunca vai para o Git; ele existe só no servidor.
 
 ## 8. Copiar os dados (primeira carga)
 
-> Este é o caminho da primeira carga, de uma máquina local para a VPS. O caminho de atualização é o pipeline Dagster (README, "Pipeline de dados (Dagster)").
+> Este é o caminho da primeira carga, de uma máquina local para a VPS. O caminho de atualização é o pipeline Dagster (Wiki, página [Operação](https://github.com/ViniciusZnt/JuriSight/wiki/Operação)).
 
 Nesta máquina, em `~/JuriSight` (o WSL não tem `rsync`: instale antes com `sudo apt install -y rsync`):
 

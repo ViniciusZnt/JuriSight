@@ -5,8 +5,8 @@ régua: um **conjunto-ouro** de pares (tese × acórdão) com **relevância 0–
 (fortalece / enfraquece / neutro), julgados por pessoas. O `benchmark` roda a busca (e o
 pipeline de produção, S7) para cada tese e reporta as métricas. Só mede, não muda a busca.
 
-Precisa do Postgres no ar e do índice Qdrant/BM25 construído (Quick Start do README,
-passos 5 e 7). Variáveis do `.env` (ver `.env.example`): `OPENAI_GEN_MODEL` (escreve as
+Precisa do Postgres no ar e do índice Qdrant/BM25 construído (README, "Rodar localmente";
+detalhes na Wiki, página Operação). Variáveis do `.env` (ver `.env.example`): `OPENAI_GEN_MODEL` (escreve as
 teses sintéticas e atribui o tema), `AVALIACAO_SEED` (sorteios; padrão 42) e
 `AVALIACAO_ADJUDICADOR` (e-mail de quem decide os pares em que os avaliadores discordam).
 
