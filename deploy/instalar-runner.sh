@@ -36,7 +36,9 @@ cd "$DIR"
 
 if [[ ! -x ./config.sh ]]; then
     arquivo="actions-runner-linux-x64-$VERSAO.tar.gz"
-    curl -fsSLo "$arquivo" "https://github.com/actions/runner/releases/download/v$VERSAO/$arquivo"
+    # Só HTTPS, inclusive nos redirecionamentos (o download da release redireciona para outro host).
+    curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 -o "$arquivo" \
+        "https://github.com/actions/runner/releases/download/v$VERSAO/$arquivo"
     echo "$SHA256  $arquivo" | sha256sum -c -
     tar xzf "$arquivo"
     rm "$arquivo"
