@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Atualiza a produção. É o comando fixo da chave SSH do CI (authorized_keys).
+# Atualiza a produção. O job deploy do ci.yml roda este script no runner self-hosted da VPS;
+# também dá para rodar à mão, como o usuário deploy.
 set -euo pipefail
 
 cd /opt/jurisight

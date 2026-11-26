@@ -308,11 +308,12 @@ pull request e em todo push na `main`:
 |-----|-----------|
 | `backend` | Instala com `uv sync --frozen` e roda `uv run pytest -q` |
 | `frontend` | `pnpm install --frozen-lockfile`, `pnpm test` (Jest) e `pnpm build` |
-| `deploy` | Só em push na `main`, com os dois jobs verdes: atualiza a VPS por SSH (ver `docs/deploy/2026-11-01-deploy-vps.md`) |
+| `sonar` | Análise do SonarCloud com a cobertura dos dois jobs acima |
+| `deploy` | Só em push na `main`, com os testes verdes: roda no runner self-hosted da VPS, que busca o job por HTTPS (sem SSH), e executa `deploy/atualizar.sh` (ver `docs/deploy/2026-11-01-deploy-vps.md`, seção 12) |
 
 Nenhum teste precisa de chave: OpenAI, Ollama, Qdrant e Postgres entram como fakes, e os
 testes que usam o banco de verdade são pulados sem `DATABASE_URL`. O workflow não tem chave
-de API; só o deploy usa os secrets `VPS_HOST`, `VPS_USER` e `VPS_SSH_KEY`.
+de API, e o deploy não usa secret nenhum: quem tem acesso à VPS é o runner instalado nela.
 
 ---
 

@@ -1,6 +1,7 @@
 # CI: testes do backend e do front em todo PR e push.
-# CD: em push na main, com os testes verdes, entra na VPS por SSH e atualiza o app.
-# Secrets do repositório: VPS_HOST, VPS_USER, VPS_SSH_KEY (ver docs/deploy/2026-11-01-deploy-vps.md).
+# CD: em push na main, com os testes verdes, o runner self-hosted da VPS (label jurisight-producao)
+# pega o job deploy e atualiza o app. O runner busca o job no GitHub por HTTPS: não há SSH de
+# entrada nem chave no GitHub. Instalação: deploy/instalar-runner.sh e docs/deploy/2026-11-01-deploy-vps.md.
 name: CI
 
 on:
@@ -89,27 +90,18 @@ jobs:
       - uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
         if: steps.token.outputs.ok == 'true'
 
+  # Só em push na main (nunca em PR): é o único job que roda no runner da VPS.
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [backend, frontend]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, jurisight-producao]
+    environment:
+      name: producao
+      url: https://jurisight.16-5-6-82.sslip.io
     concurrency:
       group: deploy-producao
       cancel-in-progress: false
     steps:
-      - name: Atualiza a VPS
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-        run: |
-          if [ -z "$VPS_HOST" ]; then
-            echo "::warning::Secrets da VPS ainda não configurados; deploy pulado."
-            exit 0
-          fi
-          mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-          # A chave tem comando fixo no authorized_keys (deploy/atualizar.sh): git pull, up -d --build, restart dos serviços com config montada e prune
-          ssh -i ~/.ssh/deploy "$VPS_USER@$VPS_HOST" \
-            /opt/jurisight/deploy/atualizar.sh
+      # git pull, up -d --build, restart dos serviços com config montada e image prune.
+      - name: Atualiza a produção
+        run: /opt/jurisight/deploy/atualizar.sh

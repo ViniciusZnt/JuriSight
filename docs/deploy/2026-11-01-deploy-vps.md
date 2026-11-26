@@ -93,7 +93,8 @@ o Caddy publica portas.
 | `deploy/Caddyfile` | `{$DOMINIO}`: `handle_path /api/*` → `api:8000`, o resto → `web:3000`, cabeçalhos de segurança (HSTS, `X-Content-Type-Options`, `Referrer-Policy`). |
 | `.env.production.example` | Lista das variáveis de produção, sem valores. |
 | `deploy/backup.sh` | `pg_dump` diário, guarda 7 dias em `/opt/backups`. |
-| `.github/workflows/ci.yml` | Em todo PR e push: `pytest` do backend, `jest` e `next build` do front. Em push na `main`, com os dois verdes, o job `deploy` entra na VPS por SSH e roda `git pull --ff-only` e `docker compose -f docker-compose.prod.yml up -d --build`. |
+| `.github/workflows/ci.yml` | Em todo PR e push: `pytest` do backend, `jest` e `next build` do front, e a análise do SonarCloud. Em push na `main`, com os testes verdes, o job `deploy` roda no runner self-hosted da VPS e executa `deploy/atualizar.sh`. |
+| `deploy/instalar-runner.sh` | Instala e registra o runner self-hosted do GitHub Actions na VPS (seção 12). |
 
 Pronto quando: `docker compose -f docker-compose.prod.yml up --build` sobe tudo nesta máquina e
 `https://localhost` abre o app (o teste local usa o certificado interno do Caddy).
@@ -225,35 +226,40 @@ docker compose -f docker-compose.prod.yml logs -f api   # espere "Application st
 ## 12. CI/CD no GitHub
 
 - **CI:** o `ci.yml` roda os testes e o `next build` em todo PR e push. O repositório é público, então o GitHub Actions é gratuito.
-- **CD:** o job `deploy` do mesmo `ci.yml` roda depois dos testes verdes num push para a `main`. Ele entra na VPS por SSH e atualiza o app.
+- **CD:** o job `deploy` do mesmo `ci.yml` roda depois dos testes verdes num push para a `main`, num **runner self-hosted** instalado na VPS (label `jurisight-producao`). O runner busca o job no GitHub por HTTPS e roda `deploy/atualizar.sh`. Não há SSH de entrada para o deploy nem chave da VPS guardada no GitHub. Deploy por SSH/FTP é 🚫 Não Usar no Portfólio Directions.
 
-Para o CD funcionar:
-1. Gere um par de chaves só para o GitHub: `ssh-keygen -t ed25519 -f ~/.ssh/jurisight_deploy -N ""`.
-2. Coloque a pública na VPS, em `/home/deploy/.ssh/authorized_keys`.
-3. No GitHub, em Settings → Secrets and variables → Actions, crie:
-    - `VPS_HOST` = o IP;
-    - `VPS_USER` = `deploy`;
-    - `VPS_SSH_KEY` = o conteúdo da chave privada `~/.ssh/jurisight_deploy`.
-4. Teste com um commit pequeno na `main` (no README, por exemplo).
+### Instalar o runner (uma vez)
 
-Pronto quando: o check fica verde no PR e a alteração do teste aparece no site alguns minutos depois do merge.
+1. **Antes de tudo, a segurança.** O repositório é público, e um PR de fork pode mudar o workflow para rodar no runner. No GitHub, em Settings → Actions → General → "Fork pull request workflows from outside collaborators", marque **"Require approval for all outside collaborators"**. Assim nenhum workflow de quem não é colaborador roda sem a sua aprovação. O job `deploy` só roda em push na `main`.
+2. Em Settings → Actions → Runners → **New self-hosted runner** (Linux, x64), copie o **token** do comando `./config.sh` (vale 1 hora). Não precisa rodar os comandos da página.
+3. Na VPS, como `deploy`:
+    ```bash
+    cd /opt/jurisight && git pull --ff-only
+    deploy/instalar-runner.sh <TOKEN>
+    ```
+    O script baixa o runner numa versão fixa e confere o SHA-256. Ele registra o runner como `jurisight-vps`, com a label `jurisight-producao`, e o instala como serviço do systemd rodando como `deploy`, para subir junto com a VPS.
+4. Opcional: em Settings → Environments → `producao` (criado no primeiro deploy), restrinja "Deployment branches" à `main`.
 
-Depois de mudar `deploy/Caddyfile`, `deploy/prometheus/prometheus.yml` ou qualquer config montada (o `git pull` troca o arquivo por um novo inode e o Compose não recria o contêiner só por isso), rode `deploy/atualizar.sh`: ele faz `git pull`, `up -d --build`, `restart caddy prometheus blackbox loki alloy grafana` e `image prune`, igual ao CD.
+Pronto quando: o runner `jurisight-vps` aparece como **Idle** em Settings → Actions → Runners; depois de um merge na `main`, o job `deploy` roda nele e a aba Environments mostra o deploy em `producao`.
+
+Para ver o serviço na VPS: `sudo systemctl status 'actions.runner.*'`. Para os logs: `journalctl -u 'actions.runner.*' -f`.
+
+### Desligar o deploy antigo por SSH
+
+Depois do primeiro deploy pelo runner:
+1. Na VPS, apague de `/home/deploy/.ssh/authorized_keys` a linha da chave do CI (a que tem `command="/opt/jurisight/deploy/atualizar.sh"`).
+2. No GitHub, em Settings → Secrets and variables → Actions, apague `VPS_HOST`, `VPS_USER` e `VPS_SSH_KEY`.
+
+O SSH continua aberto só para administração, com a sua chave.
+
+### Atualizar à mão
+
+Depois de mudar `deploy/Caddyfile`, `deploy/prometheus/prometheus.yml` ou qualquer config montada (o `git pull` troca o arquivo por um novo inode e o Compose não recria o contêiner só por isso), o próprio deploy já reinicia esses serviços. Para fazer o mesmo fora do CD, rode `deploy/atualizar.sh` como `deploy`: ele faz `git pull`, `up -d --build`, `restart caddy prometheus blackbox loki alloy grafana` e `image prune`.
 
 ```bash
 /opt/jurisight/deploy/atualizar.sh
 curl -s -o /dev/null -w '%{http_code}' https://$DOMINIO/api/metrics   # deve imprimir 404
 ```
-
-### Chave do CI com comando fixo
-
-A linha da chave do CI em `/home/deploy/.ssh/authorized_keys` tem um comando fixo, então o que o `ci.yml` envia pelo SSH é ignorado. Mantenha as restrições que já existem na linha (por exemplo `no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty`) e troque só a parte do comando para:
-
-```
-command="/opt/jurisight/deploy/atualizar.sh"
-```
-
-Para verificar: faça um deploy (commit na `main`) e rode `docker compose -f docker-compose.prod.yml ps`; `caddy` e `prometheus` devem aparecer com "Up" de poucos minutos.
 
 ## 13. Riscos e volta atrás
 
