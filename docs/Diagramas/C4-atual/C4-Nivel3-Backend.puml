@@ -1,0 +1,97 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 130
+skinparam ranksep 110
+skinparam ArrowFontSize 10
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_TOP_DOWN()
+
+title JuriSight — Nível 3: Backend API
+
+' ── Externos ────────────────────────────────────────
+Container(frontend,   "Frontend",       "Next.js 16",              "Home, revisão, resultados, detalhe.")
+Container(ollama,     "Ollama",         "Llama 3.2 3B (local)",    "Estrutura argumentativa\ne sumarização.")
+System_Ext(openai,    "OpenAI",         "text-embedding-3-small · gpt-4o-mini")
+ContainerDb(postgres, "PostgreSQL",     "Banco relacional",        "Acórdãos, provimento, dispositivos,\ncontas, conversas, caches.")
+ContainerDb(qdrant,   "Qdrant",         "Banco vetorial",          "chunks_completo + chunks_ementa")
+ContainerDb(bm25f,    "Índice BM25",    "bm25s (mmap)",            "Índice lexical")
+
+Container_Boundary(backend, "Backend API [FastAPI]") {
+
+    ' Espinha: entrada → consulta → busca → resposta
+    Component(ctrl,     "API Routers",       "FastAPI",                  "POST /enrich · /query · /query/livre\n/triagem · /resposta\nGET /document/{id} · /filtros/*\n/auth/* · /conversas/*")
+    Component(qbuilder, "Query Builder",     "Python",                   "Consulta lexical (pedido, fatos, normas)\ne frase semântica (tese).")
+    Component(pipe,     "Search Pipeline",   "query/search/pipeline",    "Busca restrita e livre\n(o mesmo código roda no benchmark).")
+    Component(hybrid,   "Hybrid Search",     "bm25s + Qdrant + RRF",     "BM25 (termos exatos: NR-15, art. 192)\n+ busca vetorial nas 2 coleções\n(embedding da tese) → RRF, k = 60.")
+    Component(retriever,"Doc Retriever",     "psycopg",                  "Documentos completos por id.")
+    Component(formatter,"Result Formatter",  "Pydantic",                 "Cards: tribunal, classe, ementa,\nrelator, provimento do Jev, link.")
+
+    ' Ramos à esquerda
+    Component(guard,    "Sessão e limite",   "auth_routes + uso_diario", "Cookie httpOnly (JWT), Argon2id,\nlimite diário por conta e total.")
+    Component(filtro,   "Filtro restrito",   "query/filtros",            "Dispositivos, NR, Tema, SV, expressões,\ntribunal e fase: todos obrigatórios.")
+
+    ' Coluna da direita: IA
+    Component(pdf,      "PDF Extractor",     "pdfplumber",               "Texto em memória; sumarização\nhierárquica de PDFs longos.")
+    Component(enrich,   "Query Enrichment",  "Llama 3.2 3B",             "EstruturaArgumentativa\n(schema validado, JSON).")
+    Component(triagem,  "Triagem por IA",    "gpt-4o-mini + triagem_cache",  "Nota 0–3 por decisão,\nem lotes de 10.")
+    Component(resposta, "Resposta",          "gpt-4o-mini + resposta_cache", "Texto curto citando só #k\ndas decisões relacionadas.")
+}
+
+' ── Layout ──────────────────────────────────────────
+' Espinha vertical
+Lay_D(ctrl,     qbuilder)
+Lay_D(qbuilder, pipe)
+Lay_D(pipe,     hybrid)
+Lay_D(hybrid,   retriever)
+Lay_D(retriever,formatter)
+
+' Ramos à esquerda
+Lay_L(ctrl,     guard)
+Lay_L(hybrid,   filtro)
+
+' Coluna da direita
+Lay_R(qbuilder, pdf)
+Lay_R(pdf,      triagem)
+Lay_R(pipe,     enrich)
+Lay_R(enrich,   resposta)
+
+' Externos
+Lay_R(ctrl,     frontend)
+Lay_R(triagem,  openai)
+Lay_R(resposta, ollama)
+Lay_D(hybrid,   qdrant)
+Lay_D(filtro,   postgres)
+
+' ── Relações ────────────────────────────────────────
+' Entrada
+BiRel(frontend, ctrl,     "REST/JSON")
+Rel(ctrl,     guard,      "sessão e limite")
+
+' Enriquecimento
+Rel(ctrl,     pdf,        "PDF (memória)")
+Rel(pdf,      enrich,     "texto extraído")
+Rel(enrich,   ollama,     "prompt → JSON e sumarização")
+
+' Busca
+Rel(ctrl,     qbuilder,   "estrutura revisada")
+Rel(qbuilder, pipe,       "consulta lexical + frase")
+Rel(pipe,     filtro,     "ids elegíveis")
+Rel(filtro,   postgres,   "dispositivos e texto")
+Rel(pipe,     hybrid,     "consulta")
+Rel(hybrid,   bm25f,      "busca lexical")
+Rel(hybrid,   qdrant,     "busca vetorial + filtros")
+Rel(hybrid,   openai,     "embedding da tese")
+Rel(hybrid,   retriever,  "top documento_id")
+Rel(retriever,postgres,   "busca por id")
+Rel(retriever,formatter,  "documentos")
+Rel(formatter,ctrl,       "cards (ordem do RRF)")
+
+' Pós-processamento
+Rel(ctrl,     triagem,    "lotes de ementas")
+Rel(triagem,  openai,     "nota 0–3")
+Rel(ctrl,     resposta,   "decisões relacionadas")
+Rel(resposta, openai,     "texto curto")
+
+@enduml

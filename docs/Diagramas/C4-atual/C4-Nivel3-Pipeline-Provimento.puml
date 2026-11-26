@@ -1,0 +1,49 @@
+@startuml
+skinparam linetype ortho
+skinparam nodesep 140
+skinparam ranksep 110
+skinparam ArrowFontSize 10
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_TOP_DOWN()
+
+title JuriSight — Nível 3: Pipeline de Filtros e Provimento
+
+' ── Externos ────────────────────────────────────────
+System_Ext(jev,      "Typesafe — Jev",  "jev-1.13.0 (versão fixa)")
+ContainerDb(postgres,"PostgreSQL",      "Banco relacional", "documentos, provimento_jev,\ndispositivo, documento_dispositivo,\ndocumento_tsv")
+ContainerDb(qdrant,  "Qdrant",          "Banco vetorial",   "payload provimento")
+ContainerDb(bm25f,   "Índice BM25",     "bm25s (./data)",   "provimentos.json")
+
+Container_Boundary(dag, "Pipeline de Dados [Dagster — jobs full, so_filtros e jev; um run por vez]") {
+
+    ' Linha 1 — filtro restrito (asset filtros, depois de indices)
+    Component(filtros,  "Preparo dos filtros",    "query/filtros/preparar",  "Extrai dispositivos, NR, Tema e Súmula Vinculante\ndo texto e monta o índice de texto (tsvector).")
+
+    ' Linha 2 — provimento (assets jev_*)
+    Component(jevclf,   "Classificador Jev",      "asset jev_classificacoes", "Resultado, recorrente e quem é favorecido,\ncom probabilidades. Retomável; limite por run.")
+    Component(aplicar,  "Aplicar provimento",     "asset jev_provimento",     "Grava em documentos.provimento só com\nconfiança ≥ 0,8 (o resto fica com a regex).")
+    Component(sync,     "Sincronizar índices",    "asset jev_sincronizado",   "Leva o provimento ao payload do Qdrant\ne ao provimentos.json do BM25.")
+}
+
+' ── Layout ──────────────────────────────────────────
+Lay_R(filtros, postgres)
+Lay_D(filtros, jevclf)
+Lay_R(jevclf,  aplicar)
+Lay_R(aplicar, sync)
+Lay_U(jevclf,  jev)
+Lay_D(sync,    qdrant)
+Lay_R(qdrant,  bm25f)
+
+' ── Relações ────────────────────────────────────────
+Rel(filtros, postgres, "dispositivos e índice de texto")
+Rel(jevclf,  jev,      "ementa + fim do acórdão")
+Rel(jevclf,  postgres, "provimento_jev")
+Rel(jevclf,  aplicar,  "classificações")
+Rel(aplicar, postgres, "documentos.provimento")
+Rel(aplicar, sync,     "provimento aplicado")
+Rel(sync,    qdrant,   "atualiza payload")
+Rel(sync,    bm25f,    "grava provimentos.json")
+
+@enduml
